@@ -23,13 +23,13 @@ struct ProcedureStepResponse: Codable {
   let timestampEnd: Double
   let tips: [String]
   let warnings: [String]
-  let keyframeUrl: String?
+  let clipUrl: String?
 
   enum CodingKeys: String, CodingKey {
     case title, description, tips, warnings
     case stepNumber = "step_number"
     case timestampStart = "timestamp_start"
     case timestampEnd = "timestamp_end"
-    case keyframeUrl = "keyframe_url"
+    case clipUrl = "clip_url"
   }
 }

@@ -1,19 +1,3 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-//
-// StreamView.swift
-//
-// Main UI for video streaming from Meta wearable devices using the DAT SDK.
-// This view demonstrates the complete streaming API: video streaming with real-time display, photo capture,
-// and error handling.
-//
-
 import MWDATCore
 import SwiftUI
 
@@ -43,8 +27,16 @@ struct StreamView: View {
           .foregroundColor(.white)
       }
 
-      // Bottom controls layer
+      // Recording indicator overlay
+      if viewModel.recordingManager.isRecording {
+        VStack {
+          RecordingTimerView(duration: viewModel.recordingManager.recordingDuration)
+            .padding(.top, 60)
+          Spacer()
+        }
+      }
 
+      // Bottom controls layer
       VStack {
         Spacer()
         ControlsView(viewModel: viewModel)
@@ -53,6 +45,9 @@ struct StreamView: View {
     }
     .onDisappear {
       Task {
+        if viewModel.recordingManager.isRecording {
+          _ = await viewModel.recordingManager.stopRecording()
+        }
         if viewModel.streamingStatus != .stopped {
           await viewModel.stopSession()
         }
@@ -69,30 +64,113 @@ struct StreamView: View {
         )
       }
     }
+    // Show recording review after stopping recording
+    .sheet(isPresented: $viewModel.showRecordingReview) {
+      if let recordingURL = viewModel.recordingManager.recordingURL {
+        ExpertRecordingReviewView(
+          recordingURL: recordingURL,
+          duration: viewModel.recordingManager.recordingDuration,
+          uploadService: viewModel.uploadService,
+          onDismiss: {
+            viewModel.showRecordingReview = false
+          }
+        )
+      }
+    }
   }
 }
 
-// Extracted controls for clarity
+// MARK: - Recording Timer
+
+struct RecordingTimerView: View {
+  let duration: TimeInterval
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Circle()
+        .fill(Color.red)
+        .frame(width: 10, height: 10)
+      Text(formattedDuration)
+        .font(.system(size: 16, weight: .semibold, design: .monospaced))
+        .foregroundColor(.white)
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 8)
+    .background(Color.black.opacity(0.6))
+    .cornerRadius(20)
+  }
+
+  private var formattedDuration: String {
+    let minutes = Int(duration) / 60
+    let seconds = Int(duration) % 60
+    return String(format: "%02d:%02d", minutes, seconds)
+  }
+}
+
+// MARK: - Controls
+
 struct ControlsView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
+
   var body: some View {
-    // Controls row
     HStack(spacing: 8) {
+      // Stop streaming — disabled while recording
       CustomButton(
         title: "Stop streaming",
         style: .destructive,
-        isDisabled: false
+        isDisabled: viewModel.recordingManager.isRecording
       ) {
         Task {
           await viewModel.stopSession()
         }
       }
 
-      // Photo button
-      CircleButton(icon: "camera.fill", text: nil) {
-        viewModel.capturePhoto()
+      // Record toggle button
+      RecordButton(isRecording: viewModel.recordingManager.isRecording) {
+        Task {
+          if viewModel.recordingManager.isRecording {
+            _ = await viewModel.recordingManager.stopRecording()
+            viewModel.showRecordingReview = true
+          } else {
+            viewModel.recordingManager.startRecording()
+          }
+        }
       }
-      .accessibilityIdentifier("capture_photo_button")
+
+      // Photo button — hidden during recording
+      if !viewModel.recordingManager.isRecording {
+        CircleButton(icon: "camera.fill", text: nil) {
+          viewModel.capturePhoto()
+        }
+        .accessibilityIdentifier("capture_photo_button")
+      }
+    }
+  }
+}
+
+// MARK: - Record Button
+
+struct RecordButton: View {
+  let isRecording: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      ZStack {
+        Circle()
+          .stroke(Color.white, lineWidth: 3)
+          .frame(width: 56, height: 56)
+
+        if isRecording {
+          RoundedRectangle(cornerRadius: 4)
+            .fill(Color.red)
+            .frame(width: 20, height: 20)
+        } else {
+          Circle()
+            .fill(Color.red)
+            .frame(width: 44, height: 44)
+        }
+      }
     }
   }
 }

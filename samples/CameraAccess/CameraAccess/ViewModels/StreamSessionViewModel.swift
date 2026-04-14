@@ -40,6 +40,13 @@ class StreamSessionViewModel: ObservableObject {
   // Photo capture properties
   @Published var capturedPhoto: UIImage?
   @Published var showPhotoPreview: Bool = false
+
+  // Recording properties
+  @Published var showRecordingReview: Bool = false
+  let audioCaptureManager = AudioCaptureManager()
+  lazy var recordingManager = ExpertRecordingManager(audioCaptureManager: audioCaptureManager)
+  let uploadService = UploadService()
+
   // The core DAT SDK StreamSession - handles all streaming operations
   private var streamSession: StreamSession
   // Listener tokens are used to manage DAT SDK event subscriptions
@@ -86,6 +93,10 @@ class StreamSessionViewModel: ObservableObject {
           self.currentVideoFrame = image
           if !self.hasReceivedFirstFrame {
             self.hasReceivedFirstFrame = true
+          }
+          // Forward frames to recorder when recording
+          if self.recordingManager.isRecording {
+            self.recordingManager.appendVideoFrame(image)
           }
         }
       }

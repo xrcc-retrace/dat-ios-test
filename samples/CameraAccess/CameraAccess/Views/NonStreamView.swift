@@ -23,7 +23,7 @@ struct NonStreamView: View {
 
   var body: some View {
     ZStack {
-      Color.black.edgesIgnoringSafeArea(.all)
+      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
 
       VStack {
         HStack {
@@ -37,46 +37,47 @@ struct NonStreamView: View {
             Image(systemName: "gearshape")
               .resizable()
               .aspectRatio(contentMode: .fit)
-              .foregroundColor(.white)
+              .foregroundColor(.textSecondary)
               .frame(width: 24, height: 24)
           }
         }
 
         Spacer()
 
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.lg) {
           Image(.cameraAccessIcon)
             .resizable()
             .renderingMode(.template)
-            .foregroundColor(.white)
+            .foregroundColor(.textPrimary)
             .aspectRatio(contentMode: .fit)
             .frame(width: 120)
 
           Text("Stream Your Glasses Camera")
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundColor(.white)
+            .font(.retraceTitle2)
+            .fontWeight(.semibold)
+            .foregroundColor(.textPrimary)
 
           Text("Tap the Start streaming button to stream video from your glasses or use the camera button to take a photo from your glasses.")
-            .font(.system(size: 15))
+            .font(.retraceBody)
             .multilineTextAlignment(.center)
-            .foregroundColor(.white)
+            .foregroundColor(.textSecondary)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Spacing.lg)
 
         Spacer()
 
-        HStack(spacing: 8) {
+        HStack(spacing: Spacing.md) {
           Image(systemName: "hourglass")
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .foregroundColor(.white.opacity(0.7))
+            .foregroundColor(.textTertiary)
             .frame(width: 16, height: 16)
 
           Text("Waiting for an active device")
-            .font(.system(size: 14))
-            .foregroundColor(.white.opacity(0.7))
+            .font(.retraceCallout)
+            .foregroundColor(.textTertiary)
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, Spacing.lg)
         .opacity(viewModel.hasActiveDevice ? 0 : 1)
 
         CustomButton(
@@ -89,7 +90,7 @@ struct NonStreamView: View {
           }
         }
       }
-      .padding(.all, 24)
+      .padding(.all, Spacing.screenPadding)
     }
     .sheet(isPresented: $wearablesVM.showGettingStartedSheet) {
       if #available(iOS 16.0, *) {

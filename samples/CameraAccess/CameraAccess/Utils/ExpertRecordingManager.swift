@@ -13,7 +13,7 @@ class ExpertRecordingManager: ObservableObject {
   private var audioInput: AVAssetWriterInput?
   private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
 
-  private let audioCaptureManager: AudioCaptureManager
+  private let audioSessionManager: AudioSessionManager
 
   private let recordingQueue = DispatchQueue(label: "com.retrace.recording")
   private var frameCount: Int64 = 0
@@ -26,8 +26,8 @@ class ExpertRecordingManager: ObservableObject {
   private let videoHeight = 480
   private let videoFPS: Int32 = 24
 
-  init(audioCaptureManager: AudioCaptureManager) {
-    self.audioCaptureManager = audioCaptureManager
+  init(audioSessionManager: AudioSessionManager) {
+    self.audioSessionManager = audioSessionManager
   }
 
   // MARK: - Recording Control
@@ -74,7 +74,7 @@ class ExpertRecordingManager: ObservableObject {
     }
 
     // Audio input — read actual hardware format after audio session is configured
-    let sampleRate = audioCaptureManager.hardwareSampleRate
+    let sampleRate = audioSessionManager.hardwareSampleRate
     let audioSettings: [String: Any] = [
       AVFormatIDKey: kAudioFormatMPEG4AAC,
       AVSampleRateKey: sampleRate > 0 ? sampleRate : 16000.0,
@@ -101,10 +101,10 @@ class ExpertRecordingManager: ObservableObject {
     recordingURL = outputURL
 
     // Wire up audio capture
-    audioCaptureManager.onAudioBuffer = { [weak self] buffer, time in
+    audioSessionManager.onAudioBuffer = { [weak self] buffer, time in
       self?.appendAudioBuffer(buffer, time: time)
     }
-    audioCaptureManager.startCapture()
+    audioSessionManager.startCapture()
 
     isRecording = true
 
@@ -127,8 +127,8 @@ class ExpertRecordingManager: ObservableObject {
     durationTimer = nil
 
     // Stop audio capture
-    audioCaptureManager.onAudioBuffer = nil
-    audioCaptureManager.stopCapture()
+    audioSessionManager.onAudioBuffer = nil
+    audioSessionManager.stopCapture()
 
     // Finalize writing
     videoInput?.markAsFinished()

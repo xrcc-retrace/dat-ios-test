@@ -62,6 +62,9 @@ struct CameraAccessApp: App {
     }
     #endif
 
+    // Start Bonjour discovery for the Retrace server
+    BonjourDiscovery.shared.startBrowsing()
+
     let wearables = Wearables.shared
     self.wearables = wearables
     self._wearablesViewModel = StateObject(wrappedValue: WearablesViewModel(wearables: wearables))

@@ -14,53 +14,81 @@ struct ModeSelectionView: View {
   var body: some View {
     NavigationStack {
       ZStack {
-        Color.black.edgesIgnoringSafeArea(.all)
+        Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
 
-        VStack(spacing: 32) {
+        // Subtle ambient glow
+        RadialGradient(
+          colors: [Color.appPrimary.opacity(0.06), .clear],
+          center: UnitPoint(x: 0.5, y: 0.25),
+          startRadius: 0,
+          endRadius: 280
+        )
+        .edgesIgnoringSafeArea(.all)
+
+        VStack(spacing: Spacing.section) {
           Spacer()
 
-          Text("Retrace")
-            .font(.system(size: 36, weight: .bold))
-            .foregroundColor(.white)
+          VStack(spacing: Spacing.lg) {
+            Text("Retrace")
+              .font(.retraceDisplay)
+              .foregroundColor(.textPrimary)
 
-          Text("Record an expert once.\nCoach every learner forever.")
-            .font(.system(size: 16))
-            .foregroundColor(.gray)
-            .multilineTextAlignment(.center)
-
-          Spacer()
-
-          // Expert Mode
-          ModeCard(
-            icon: "video.fill",
-            title: "Expert Mode",
-            subtitle: "Record a procedure for learners",
-            isEnabled: true
-          ) {
-            selectedMode = .expert
+            Text("Record an expert once.\nCoach every learner forever.")
+              .font(.retraceBody)
+              .foregroundColor(.textSecondary)
+              .multilineTextAlignment(.center)
           }
 
-          // Learner Mode
-          ModeCard(
-            icon: "headphones",
-            title: "Learner Mode",
-            subtitle: "Coming Soon",
-            isEnabled: false
-          ) {}
+          Spacer()
+
+          VStack(spacing: Spacing.xl) {
+            ModeCard(
+              icon: "video.fill",
+              title: "Expert Mode",
+              subtitle: "Record a procedure for learners",
+              isEnabled: true
+            ) {
+              selectedMode = .expert
+            }
+
+            ModeCard(
+              icon: "person.wave.2.fill",
+              title: "Learner Mode",
+              subtitle: "Learn procedures with AI coaching",
+              isEnabled: true
+            ) {
+              selectedMode = .learner
+            }
+          }
 
           Spacer()
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, Spacing.screenPadding)
       }
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          NavigationLink {
+            ServerSettingsView()
+          } label: {
+            Image(systemName: "gearshape")
+              .foregroundColor(.textSecondary)
+          }
+        }
+      }
+      .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
+      .toolbarBackground(.visible, for: .navigationBar)
       .navigationDestination(item: $selectedMode) { mode in
         switch mode {
         case .expert:
-          StreamSessionView(wearables: wearables, wearablesVM: wearablesVM)
+          ExpertTabView(wearables: wearables, wearablesVM: wearablesVM)
+            .navigationBarBackButtonHidden(false)
         case .learner:
-          EmptyView()
+          LearnerTabView(wearables: wearables, wearablesVM: wearablesVM)
+            .navigationBarBackButtonHidden(false)
         }
       }
     }
+    .tint(.appPrimary)
   }
 }
 
@@ -75,38 +103,40 @@ struct ModeCard: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 16) {
+      HStack(spacing: Spacing.xl) {
         Image(systemName: icon)
-          .font(.system(size: 28))
-          .foregroundColor(isEnabled ? .white : .gray)
+          .font(.system(size: 24))
+          .foregroundColor(isEnabled ? .appPrimary : .textTertiary)
           .frame(width: 48, height: 48)
-          .background(isEnabled ? Color.appPrimary : Color(.systemGray4))
-          .cornerRadius(12)
+          .background(isEnabled ? Color.accentMuted : Color.surfaceRaised)
+          .cornerRadius(Radius.md)
 
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
           Text(title)
-            .font(.system(size: 18, weight: .semibold))
-            .foregroundColor(isEnabled ? .white : .gray)
+            .font(.retraceTitle3)
+            .foregroundColor(isEnabled ? .textPrimary : .textTertiary)
           Text(subtitle)
-            .font(.system(size: 14))
-            .foregroundColor(isEnabled ? .gray : .gray.opacity(0.6))
+            .font(.retraceCallout)
+            .foregroundColor(.textSecondary)
         }
 
         Spacer()
 
         if isEnabled {
           Image(systemName: "chevron.right")
-            .foregroundColor(.gray)
+            .font(.retraceSubheadline)
+            .foregroundColor(.textTertiary)
         }
       }
-      .padding(20)
-      .background(Color(.systemGray6).opacity(0.15))
-      .cornerRadius(16)
+      .padding(Spacing.xxl)
+      .background(Color.surfaceBase)
+      .cornerRadius(Radius.lg)
       .overlay(
-        RoundedRectangle(cornerRadius: 16)
-          .stroke(isEnabled ? Color.appPrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+        RoundedRectangle(cornerRadius: Radius.lg)
+          .stroke(Color.borderSubtle, lineWidth: 1)
       )
     }
+    .buttonStyle(ScaleButtonStyle())
     .disabled(!isEnabled)
   }
 }

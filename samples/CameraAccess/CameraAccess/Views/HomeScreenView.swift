@@ -6,13 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-//
-// HomeScreenView.swift
-//
-// Welcome screen that guides users through the DAT SDK registration process.
-// This view is displayed when the app is not yet registered.
-//
-
 import MWDATCore
 import SwiftUI
 
@@ -21,9 +14,9 @@ struct HomeScreenView: View {
 
   var body: some View {
     ZStack {
-      Color.white.edgesIgnoringSafeArea(.all)
+      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
 
-      VStack(spacing: 12) {
+      VStack(spacing: Spacing.lg) {
         Spacer()
 
         Image(.cameraAccessIcon)
@@ -31,7 +24,7 @@ struct HomeScreenView: View {
           .aspectRatio(contentMode: .fit)
           .frame(width: 120)
 
-        VStack(spacing: 12) {
+        VStack(spacing: Spacing.lg) {
           HomeTipItemView(
             resource: .smartGlassesIcon,
             title: "Video Capture",
@@ -51,13 +44,13 @@ struct HomeScreenView: View {
 
         Spacer()
 
-        VStack(spacing: 20) {
+        VStack(spacing: Spacing.xxl) {
           Text("You'll be redirected to the Meta AI app to confirm your connection.")
-            .font(.system(size: 14))
-            .foregroundColor(.gray)
+            .font(.retraceCallout)
+            .foregroundColor(.textSecondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Spacing.lg)
 
           CustomButton(
             title: viewModel.registrationState == .registering ? "Connecting..." : "Connect my glasses",
@@ -68,10 +61,9 @@ struct HomeScreenView: View {
           }
         }
       }
-      .padding(.all, 24)
+      .padding(.all, Spacing.screenPadding)
     }
   }
-
 }
 
 struct HomeTipItemView: View {
@@ -80,24 +72,24 @@ struct HomeTipItemView: View {
   let text: String
 
   var body: some View {
-    HStack(alignment: .top, spacing: 12) {
+    HStack(alignment: .top, spacing: Spacing.lg) {
       Image(resource)
         .resizable()
         .renderingMode(.template)
-        .foregroundColor(.black)
+        .foregroundColor(.textPrimary)
         .aspectRatio(contentMode: .fit)
         .frame(width: 24)
-        .padding(.leading, 4)
-        .padding(.top, 4)
+        .padding(.leading, Spacing.xs)
+        .padding(.top, Spacing.xs)
 
-      VStack(alignment: .leading, spacing: 6) {
+      VStack(alignment: .leading, spacing: Spacing.sm) {
         Text(title)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(.black)
+          .font(.retraceTitle3)
+          .foregroundColor(.textPrimary)
 
         Text(text)
-          .font(.system(size: 15))
-          .foregroundColor(.gray)
+          .font(.retraceBody)
+          .foregroundColor(.textSecondary)
       }
       Spacer()
     }

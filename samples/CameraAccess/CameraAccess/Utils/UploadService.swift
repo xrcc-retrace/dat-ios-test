@@ -4,15 +4,25 @@ import Foundation
 class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
   @Published var uploadProgress: Double = 0
   @Published var isUploading = false
+  @Published var isProcessing = false
   @Published var uploadResult: ProcedureResponse?
   @Published var uploadError: String?
 
-  // Default to local network — update this to your Mac's IP
-  var serverBaseURL = "http://192.168.1.100:8000"
+  private static let serverURLKey = "serverBaseURL"
+  private static let defaultServerURL = "http://192.168.1.100:8000"
+
+  var serverBaseURL: String {
+    get {
+      UserDefaults.standard.string(forKey: Self.serverURLKey) ?? Self.defaultServerURL
+    }
+    set {
+      UserDefaults.standard.set(newValue, forKey: Self.serverURLKey)
+    }
+  }
 
   private lazy var session: URLSession = {
     let config = URLSessionConfiguration.default
-    config.timeoutIntervalForRequest = 300 // 5 min for Gemini processing
+    config.timeoutIntervalForRequest = 60
     return URLSession(configuration: config, delegate: self, delegateQueue: .main)
   }()
 
@@ -34,7 +44,7 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-    request.timeoutInterval = 300
+    request.timeoutInterval = 60
 
     // Build multipart body
     var body = Data()
@@ -65,7 +75,7 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
         return
       }
 
-      guard httpResponse.statusCode == 200 else {
+      guard httpResponse.statusCode == 200 || httpResponse.statusCode == 202 else {
         let body = String(data: data, encoding: .utf8) ?? "no body"
         uploadError = "Server error (\(httpResponse.statusCode)): \(body)"
         isUploading = false
@@ -73,15 +83,55 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
       }
 
       let decoder = JSONDecoder()
-      let procedure = try decoder.decode(ProcedureResponse.self, from: data)
-      uploadResult = procedure
-      print("[Upload] Success: \(procedure.title) (\(procedure.steps.count) steps)")
+      let uploadResp = try decoder.decode(UploadResponse.self, from: data)
+      print("[Upload] Accepted: procedure \(uploadResp.id), status: \(uploadResp.status)")
+
+      isUploading = false
+      isProcessing = true
+
+      // Poll for completion
+      await pollForResult(procedureId: uploadResp.id)
+
     } catch {
       uploadError = "Upload failed: \(error.localizedDescription)"
       print("[Upload] Error: \(error)")
+      isUploading = false
+    }
+  }
+
+  private func pollForResult(procedureId: String) async {
+    guard let pollURL = URL(string: "\(serverBaseURL)/api/procedures/\(procedureId)") else {
+      uploadError = "Invalid server URL for polling"
+      isProcessing = false
+      return
     }
 
-    isUploading = false
+    let decoder = JSONDecoder()
+
+    while isProcessing {
+      try? await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
+
+      do {
+        let (data, _) = try await URLSession.shared.data(from: pollURL)
+        let procedure = try decoder.decode(ProcedureResponse.self, from: data)
+
+        if procedure.status == "completed" {
+          uploadResult = procedure
+          isProcessing = false
+          print("[Upload] Processing complete: \(procedure.title) (\(procedure.steps.count) steps)")
+          return
+        } else if procedure.status == "failed" {
+          uploadError = procedure.errorMessage ?? "Processing failed"
+          isProcessing = false
+          return
+        }
+        // status == "processing" → continue polling
+      } catch {
+        uploadError = "Lost connection to server: \(error.localizedDescription)"
+        isProcessing = false
+        return
+      }
+    }
   }
 
   // MARK: - URLSessionTaskDelegate (upload progress)

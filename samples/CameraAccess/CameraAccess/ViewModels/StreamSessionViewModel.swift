@@ -43,8 +43,8 @@ class StreamSessionViewModel: ObservableObject {
 
   // Recording properties
   @Published var showRecordingReview: Bool = false
-  let audioCaptureManager = AudioCaptureManager()
-  lazy var recordingManager = ExpertRecordingManager(audioCaptureManager: audioCaptureManager)
+  let audioSessionManager = AudioSessionManager()
+  lazy var recordingManager = ExpertRecordingManager(audioSessionManager: audioSessionManager)
   let uploadService = UploadService()
 
   // The core DAT SDK StreamSession - handles all streaming operations

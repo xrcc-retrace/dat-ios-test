@@ -7,8 +7,8 @@ struct StreamView: View {
 
   var body: some View {
     ZStack {
-      // Black background for letterboxing/pillarboxing
-      Color.black
+      // Dark background for letterboxing/pillarboxing
+      Color.backgroundPrimary
         .edgesIgnoringSafeArea(.all)
 
       // Video backdrop
@@ -24,7 +24,7 @@ struct StreamView: View {
       } else {
         ProgressView()
           .scaleEffect(1.5)
-          .foregroundColor(.white)
+          .foregroundColor(.textPrimary)
       }
 
       // Recording indicator overlay
@@ -92,12 +92,11 @@ struct RecordingTimerView: View {
         .frame(width: 10, height: 10)
       Text(formattedDuration)
         .font(.system(size: 16, weight: .semibold, design: .monospaced))
-        .foregroundColor(.white)
+        .foregroundColor(.textPrimary)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 8)
-    .background(Color.black.opacity(0.6))
-    .cornerRadius(20)
+    .padding(.horizontal, Spacing.xl)
+    .padding(.vertical, Spacing.md)
+    .glassPanel(cornerRadius: Radius.xl)
   }
 
   private var formattedDuration: String {

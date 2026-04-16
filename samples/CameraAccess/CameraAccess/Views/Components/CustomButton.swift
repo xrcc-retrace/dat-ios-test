@@ -1,58 +1,68 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
-//
-// CustomButton.swift
-//
-// Reusable button component used throughout the CameraAccess app for consistent styling.
-//
-
 import SwiftUI
 
 struct CustomButton: View {
   let title: String
-  let style: ButtonStyle
+  let style: ButtonVariant
   let isDisabled: Bool
   let action: () -> Void
 
-  enum ButtonStyle {
-    case primary, destructive
+  enum ButtonVariant {
+    case primary, secondary, ghost, destructive
 
     var backgroundColor: Color {
       switch self {
-      case .primary:
-        return .appPrimary
-      case .destructive:
-        return .destructiveBackground
+      case .primary: return .appPrimary
+      case .secondary: return .surfaceRaised
+      case .ghost: return .clear
+      case .destructive: return .semanticError
       }
     }
 
     var foregroundColor: Color {
       switch self {
-      case .primary:
-        return .white
-      case .destructive:
-        return .destructiveForeground
+      case .primary: return Color("backgroundPrimary")
+      case .secondary: return .textPrimary
+      case .ghost: return .appPrimary
+      case .destructive: return .white
       }
     }
+
+    var hasBorder: Bool {
+      self == .secondary
+    }
   }
+
+  @State private var isPressed = false
 
   var body: some View {
     Button(action: action) {
       Text(title)
-        .font(.system(size: 15, weight: .semibold))
+        .font(.retraceBody)
+        .fontWeight(.semibold)
         .foregroundColor(style.foregroundColor)
         .frame(maxWidth: .infinity)
-        .frame(height: 56)
+        .frame(height: 52)
         .background(style.backgroundColor)
-        .cornerRadius(30)
+        .cornerRadius(Radius.full)
+        .overlay(
+          Group {
+            if style.hasBorder {
+              RoundedRectangle(cornerRadius: Radius.full)
+                .stroke(Color.borderSubtle, lineWidth: 1)
+            }
+          }
+        )
     }
+    .buttonStyle(ScaleButtonStyle())
     .disabled(isDisabled)
-    .opacity(isDisabled ? 0.6 : 1.0)
+    .opacity(isDisabled ? 0.5 : 1.0)
+  }
+}
+
+struct ScaleButtonStyle: SwiftUI.ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+      .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
   }
 }

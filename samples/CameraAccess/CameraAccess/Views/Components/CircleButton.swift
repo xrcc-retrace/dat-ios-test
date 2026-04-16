@@ -6,12 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-//
-// CircleButton.swift
-//
-// Reusable circular button component used in streaming controls and UI actions.
-//
-
 import SwiftUI
 
 struct CircleButton: View {
@@ -22,20 +16,20 @@ struct CircleButton: View {
   var body: some View {
     Button(action: action) {
       if let text {
-        VStack(spacing: 2) {
+        VStack(spacing: Spacing.xxs) {
           Image(systemName: icon)
-            .font(.system(size: 14))
+            .font(.retraceCallout)
           Text(text)
             .font(.system(size: 10, weight: .medium))
         }
       } else {
         Image(systemName: icon)
-          .font(.system(size: 16))
+          .font(.retraceHeadline)
       }
     }
-    .foregroundColor(.black)
+    .foregroundColor(Color("backgroundPrimary"))
     .frame(width: 56, height: 56)
-    .background(.white)
+    .background(Color.textPrimary)
     .clipShape(Circle())
   }
 }

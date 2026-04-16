@@ -120,24 +120,23 @@ class GeminiLiveService: ObservableObject {
 
   private func establishConnection(token: EphemeralTokenResponse) async throws {
     guard let url = URL(string: token.websocketUrl) else {
+      print("[GeminiLive] Invalid WebSocket URL: \(token.websocketUrl)")
       throw LiveServiceError.invalidURL
     }
 
-    let session = URLSession(configuration: .default)
+    print("[GeminiLive] Connecting to: \(url.host ?? "unknown")")
+
+    let config = URLSessionConfiguration.default
+    config.timeoutIntervalForRequest = 30
+    let session = URLSession(configuration: config)
     let task = session.webSocketTask(with: url)
     task.resume()
-
-    // Send an initial ping to verify the connection is alive.
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      task.sendPing { error in
-        if let error {
-          continuation.resume(throwing: error)
-        } else {
-          continuation.resume()
-        }
-      }
-    }
     webSocketTask = task
+
+    // The constrained endpoint doesn't send a message until the client sends
+    // audio, so we can't verify with ping or receive here. The receive loop
+    // (started by the caller) will detect connection failures asynchronously.
+    print("[GeminiLive] WebSocket task resumed, handshake in progress")
   }
 
   private func startReceiveLoop() {

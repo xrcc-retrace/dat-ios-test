@@ -43,9 +43,13 @@ class StreamSessionViewModel: ObservableObject {
 
   // Recording properties
   @Published var showRecordingReview: Bool = false
-  let audioSessionManager = AudioSessionManager()
+  let audioSessionManager = AudioSessionManager(mode: .recording)
   lazy var recordingManager = ExpertRecordingManager(audioSessionManager: audioSessionManager)
-  let uploadService = UploadService()
+  let uploadService: UploadService
+
+  /// Preview is throttled at ~10 Hz so MainActor work doesn't compete with the
+  /// writer for CPU — the writer needs every frame at full rate.
+  private var lastPreviewUpdateAt: Date = .distantPast
 
   // The core DAT SDK StreamSession - handles all streaming operations
   private var streamSession: StreamSession
@@ -58,14 +62,15 @@ class StreamSessionViewModel: ObservableObject {
   private let deviceSelector: AutoDeviceSelector
   private var deviceMonitorTask: Task<Void, Never>?
 
-  init(wearables: WearablesInterface) {
+  init(wearables: WearablesInterface, uploadService: UploadService) {
     self.wearables = wearables
+    self.uploadService = uploadService
     // Let the SDK auto-select from available devices
     self.deviceSelector = AutoDeviceSelector(wearables: wearables)
     let config = StreamSessionConfig(
       videoCodec: VideoCodec.raw,
-      resolution: StreamingResolution.low,
-      frameRate: 24)
+      resolution: StreamingResolution.high,
+      frameRate: 30)
     streamSession = StreamSession(streamSessionConfig: config, deviceSelector: deviceSelector)
 
     // Monitor device availability
@@ -83,20 +88,28 @@ class StreamSessionViewModel: ObservableObject {
       }
     }
 
-    // Subscribe to video frames from the device camera
-    // Each VideoFrame contains the raw camera data that we convert to UIImage
+    // Subscribe to video frames from the device camera.
+    // Every frame: pass the CMSampleBuffer straight to the writer (cheap —
+    // just an enqueue onto recordingQueue). Real presentation timestamps
+    // and the already-decoded pixel buffer flow through unchanged.
+    // Preview update (`makeUIImage` + SwiftUI rerender) is throttled to
+    // ~10 Hz so MainActor isn't burning CPU on display work that competes
+    // with the recording path.
     videoFrameListenerToken = streamSession.videoFramePublisher.listen { [weak self] videoFrame in
       Task { @MainActor [weak self] in
         guard let self else { return }
 
+        if self.recordingManager.isRecording {
+          self.recordingManager.appendVideoFrame(videoFrame.sampleBuffer)
+        }
+
+        let now = Date()
+        guard now.timeIntervalSince(self.lastPreviewUpdateAt) >= 0.1 else { return }
+        self.lastPreviewUpdateAt = now
         if let image = videoFrame.makeUIImage() {
           self.currentVideoFrame = image
           if !self.hasReceivedFirstFrame {
             self.hasReceivedFirstFrame = true
-          }
-          // Forward frames to recorder when recording
-          if self.recordingManager.isRecording {
-            self.recordingManager.appendVideoFrame(image)
           }
         }
       }
@@ -164,6 +177,10 @@ class StreamSessionViewModel: ObservableObject {
   func dismissError() {
     showError = false
     errorMessage = ""
+  }
+
+  func reportRecordingFailure() {
+    showError("Recording failed — no usable video was captured. Please try again.")
   }
 
   func capturePhoto() {

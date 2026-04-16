@@ -17,16 +17,19 @@ struct RecordTabView: View {
       Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
 
       if showStreaming {
-        StreamSessionView(wearables: wearables, wearablesVM: wearablesVM)
+        StreamSessionView(
+          wearables: wearables,
+          wearablesVM: wearablesVM,
+          uploadService: uploadService,
+          onAcknowledgeProcedure: handleProcedureAcknowledged
+        )
       } else {
         landingView
       }
     }
     .navigationTitle("Record")
     .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
     .sheet(isPresented: $showMediaPicker) {
       MediaPickerView(mode: .video) { url, _ in
         selectedVideoURL = url
@@ -43,14 +46,16 @@ struct RecordTabView: View {
           onDismiss: {
             selectedVideoURL = nil
             showReview = false
-          }
+          },
+          onAcknowledgeResult: handleProcedureAcknowledged
         )
       }
     }
-    .onChange(of: uploadService.uploadResult?.id) { _, newId in
-      if let newId {
-        onProcedureCreated(newId)
-      }
+  }
+
+  private func handleProcedureAcknowledged() {
+    if let id = uploadService.uploadResult?.id {
+      onProcedureCreated(id)
     }
   }
 

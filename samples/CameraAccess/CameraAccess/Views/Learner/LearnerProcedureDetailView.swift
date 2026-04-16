@@ -34,9 +34,8 @@ struct LearnerProcedureDetailView: View {
       }
     }
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .navigationTitle(viewModel.procedure?.title ?? "")
+    .toolbarBackground(.hidden, for: .navigationBar)
     .task {
       await viewModel.fetchProcedure(id: procedureId)
     }

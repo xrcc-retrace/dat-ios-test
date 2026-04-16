@@ -234,9 +234,7 @@ struct ServerSettingsView: View {
     }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
     .onAppear {
       fetchDeviceIP()
     }

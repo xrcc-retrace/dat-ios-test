@@ -75,6 +75,7 @@ struct CameraAccessApp: App {
       // Main app view with access to the shared Wearables SDK instance
       // The Wearables.shared singleton provides the core DAT API
       MainAppView(wearables: Wearables.shared, viewModel: wearablesViewModel)
+        .preferredColorScheme(.light)
         // Show error alerts for view model failures
         .alert("Error", isPresented: $wearablesViewModel.showError) {
           Button("OK") {

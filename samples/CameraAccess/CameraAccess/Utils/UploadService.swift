@@ -115,10 +115,11 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
         let (data, _) = try await URLSession.shared.data(from: pollURL)
         let procedure = try decoder.decode(ProcedureResponse.self, from: data)
 
-        if procedure.status == "completed" {
+        if procedure.status == "completed" || procedure.status == "completed_partial" {
           uploadResult = procedure
           isProcessing = false
-          print("[Upload] Processing complete: \(procedure.title) (\(procedure.steps.count) steps)")
+          let suffix = procedure.status == "completed_partial" ? " (some clips failed)" : ""
+          print("[Upload] Processing complete: \(procedure.title) (\(procedure.steps.count) steps)\(suffix)")
           return
         } else if procedure.status == "failed" {
           uploadError = procedure.errorMessage ?? "Processing failed"

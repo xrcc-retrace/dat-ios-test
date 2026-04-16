@@ -75,8 +75,7 @@ struct ModeSelectionView: View {
           }
         }
       }
-      .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-      .toolbarBackground(.visible, for: .navigationBar)
+      .toolbarBackground(.hidden, for: .navigationBar)
       .navigationDestination(item: $selectedMode) { mode in
         switch mode {
         case .expert:

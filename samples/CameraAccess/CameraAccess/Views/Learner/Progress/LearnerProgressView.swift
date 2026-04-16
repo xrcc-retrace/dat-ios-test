@@ -34,9 +34,7 @@ struct LearnerProgressView: View {
     }
     .navigationTitle("Training Log")
     .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
   }
 
   // MARK: - Activity Overview

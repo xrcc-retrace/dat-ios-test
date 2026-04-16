@@ -6,8 +6,10 @@ struct ExpertRecordingReviewView: View {
   let duration: TimeInterval
   @ObservedObject var uploadService: UploadService
   let onDismiss: () -> Void
+  var onAcknowledgeResult: (() -> Void)? = nil
 
   @State private var fileSize: String = ""
+  @State private var hasAcknowledgedResult: Bool = false
 
   var body: some View {
     NavigationStack {
@@ -16,29 +18,12 @@ struct ExpertRecordingReviewView: View {
 
         ScrollView {
           VStack(spacing: Spacing.screenPadding) {
-            // Recording info card
-            VStack(spacing: Spacing.xl) {
-              Image(systemName: "film")
-                .font(.system(size: 48))
-                .foregroundColor(.appPrimary)
+            RecordingPreviewPlayer(url: recordingURL)
 
-              Text("Expert Recording")
-                .font(.retraceTitle2)
-                .fontWeight(.bold)
-                .foregroundColor(.textPrimary)
-
-              HStack(spacing: Spacing.screenPadding) {
-                InfoItem(label: "Duration", value: formattedDuration)
-                InfoItem(label: "Size", value: fileSize)
-              }
-            }
-            .padding(Spacing.screenPadding)
-            .background(Color.surfaceBase)
-            .cornerRadius(Radius.lg)
-            .overlay(
-              RoundedRectangle(cornerRadius: Radius.lg)
-                .stroke(Color.borderSubtle, lineWidth: 1)
-            )
+            Text("\(formattedDuration) · \(fileSize)")
+              .font(.retraceCaption1)
+              .foregroundColor(.textSecondary)
+              .monospacedDigit()
 
             // Upload state
             if uploadService.isUploading {
@@ -90,8 +75,8 @@ struct ExpertRecordingReviewView: View {
                 .padding(.horizontal)
             }
 
-            // Result
-            if let result = uploadService.uploadResult {
+            // Result — gated behind the acknowledgement tap so it doesn't pop in unannounced.
+            if let result = uploadService.uploadResult, hasAcknowledgedResult {
               ProcedureSummaryView(procedure: result, serverBaseURL: uploadService.serverBaseURL)
             }
 
@@ -120,12 +105,21 @@ struct ExpertRecordingReviewView: View {
                 }
               }
             } else if uploadService.uploadResult != nil {
-              CustomButton(
-                title: "Done",
-                style: .primary,
-                isDisabled: false
-              ) {
-                onDismiss()
+              if hasAcknowledgedResult {
+                CustomButton(
+                  title: "Done",
+                  style: .primary,
+                  isDisabled: false
+                ) {
+                  onDismiss()
+                }
+              } else {
+                AcknowledgeResultButton {
+                  withAnimation(.easeInOut(duration: 0.25)) {
+                    hasAcknowledgedResult = true
+                  }
+                  onAcknowledgeResult?()
+                }
               }
             }
           }
@@ -314,6 +308,63 @@ struct StepDetailView: View {
   }
 }
 
+// MARK: - Acknowledge Result Button
+
+struct AcknowledgeResultButton: View {
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: Spacing.sm) {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.retraceHeadline)
+        Text("Everything is processed")
+          .font(.retraceBody)
+          .fontWeight(.semibold)
+      }
+      .foregroundColor(.white)
+      .frame(maxWidth: .infinity)
+      .frame(height: 52)
+      .background(Color.semanticSuccess)
+      .cornerRadius(Radius.full)
+    }
+    .buttonStyle(ScaleButtonStyle())
+  }
+}
+
+// MARK: - Recording Preview Player
+
+struct RecordingPreviewPlayer: View {
+  let url: URL
+  @State private var player: AVPlayer?
+
+  var body: some View {
+    Group {
+      if let player {
+        VideoPlayer(player: player)
+      } else {
+        RoundedRectangle(cornerRadius: Radius.lg)
+          .fill(Color.surfaceRaised)
+          .overlay {
+            Button {
+              let p = AVPlayer(url: url)
+              player = p
+              p.play()
+            } label: {
+              Image(systemName: "play.circle.fill")
+                .font(.system(size: 56))
+                .foregroundColor(.textPrimary.opacity(0.85))
+            }
+          }
+      }
+    }
+    .aspectRatio(9.0 / 16.0, contentMode: .fit)
+    .frame(maxHeight: 400)
+    .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    .frame(maxWidth: .infinity)
+  }
+}
+
 // MARK: - Step Clip Player
 
 struct StepClipPlayer: View {
@@ -324,12 +375,9 @@ struct StepClipPlayer: View {
     Group {
       if let player {
         VideoPlayer(player: player)
-          .aspectRatio(16 / 9, contentMode: .fit)
-          .cornerRadius(Radius.sm)
       } else {
         RoundedRectangle(cornerRadius: Radius.sm)
           .fill(Color.surfaceRaised)
-          .aspectRatio(16 / 9, contentMode: .fit)
           .overlay {
             Button {
               let p = AVPlayer(url: url)
@@ -343,6 +391,12 @@ struct StepClipPlayer: View {
           }
       }
     }
+    // Clips are 9:16 portrait. Without an aspect constraint, VideoPlayer's
+    // intrinsic height is near zero and the view collapses.
+    .aspectRatio(9.0 / 16.0, contentMode: .fit)
+    .frame(maxHeight: 400)
+    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+    .frame(maxWidth: .infinity)
   }
 }
 

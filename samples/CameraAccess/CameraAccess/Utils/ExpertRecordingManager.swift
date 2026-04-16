@@ -11,20 +11,25 @@ class ExpertRecordingManager: ObservableObject {
   private var assetWriter: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
   private var audioInput: AVAssetWriterInput?
-  private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
 
   private let audioSessionManager: AudioSessionManager
 
   private let recordingQueue = DispatchQueue(label: "com.retrace.recording")
-  private var frameCount: Int64 = 0
-  private var audioStartTime: CMTime?
+  private var appendedFrameCount: Int64 = 0
+  private var droppedFrameCount: Int64 = 0
+  /// Shared flag flipped by whichever of {video, audio} arrives first —
+  /// that sample's real PTS becomes the writer's session start, so both
+  /// streams land on a single host-clock timeline.
   private var hasStartedSession = false
   private var durationTimer: Timer?
+  private var statsTimer: Timer?
+  /// Counted only on successful video appends. Read + reset from the stats
+  /// timer every 5 s for the `[Recording] fps window` log.
+  private var appendsInWindow: Int = 0
 
-  // Video config matching DAT SDK StreamingResolution.low at 24fps
-  private let videoWidth = 640
-  private let videoHeight = 480
-  private let videoFPS: Int32 = 24
+  // Video config matching DAT SDK StreamingResolution.high at 30fps
+  private let videoWidth = 720
+  private let videoHeight = 1280
 
   init(audioSessionManager: AudioSessionManager) {
     self.audioSessionManager = audioSessionManager
@@ -60,15 +65,6 @@ class ExpertRecordingManager: ObservableObject {
     vInput.expectsMediaDataInRealTime = true
     videoInput = vInput
 
-    pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-      assetWriterInput: vInput,
-      sourcePixelBufferAttributes: [
-        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        kCVPixelBufferWidthKey as String: videoWidth,
-        kCVPixelBufferHeightKey as String: videoHeight,
-      ]
-    )
-
     if writer.canAdd(vInput) {
       writer.add(vInput)
     }
@@ -89,14 +85,24 @@ class ExpertRecordingManager: ObservableObject {
       writer.add(aInput)
     }
 
-    // Start writing
-    writer.startWriting()
-    writer.startSession(atSourceTime: .zero)
-    hasStartedSession = true
+    // Start writing — bail if the writer refuses (status becomes .failed)
+    guard writer.startWriting() else {
+      print("[Recording] startWriting() returned false: \(writer.error?.localizedDescription ?? "unknown")")
+      try? FileManager.default.removeItem(at: outputURL)
+      assetWriter = nil
+      videoInput = nil
+      audioInput = nil
+      return
+    }
+    // startSession is intentionally deferred until the first real sample
+    // arrives (see appendVideoFrame / appendAudioBuffer). Both use host-
+    // clock PTS, so anchoring to the first one keeps audio/video aligned.
 
     // Reset state
-    frameCount = 0
-    audioStartTime = nil
+    appendedFrameCount = 0
+    droppedFrameCount = 0
+    appendsInWindow = 0
+    hasStartedSession = false
     recordingDuration = 0
     recordingURL = outputURL
 
@@ -116,6 +122,15 @@ class ExpertRecordingManager: ObservableObject {
       }
     }
 
+    // FPS window — sample the append counter every 5 s so we can see the
+    // real per-second frame rate the writer is absorbing.
+    statsTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+      guard let self else { return }
+      let fps = self.appendsInWindow / 5
+      self.appendsInWindow = 0
+      print("[Recording] fps window: \(fps) fps")
+    }
+
     print("[Recording] Started recording to \(outputURL.lastPathComponent)")
   }
 
@@ -125,6 +140,8 @@ class ExpertRecordingManager: ObservableObject {
     isRecording = false
     durationTimer?.invalidate()
     durationTimer = nil
+    statsTimer?.invalidate()
+    statsTimer = nil
 
     // Stop audio capture
     audioSessionManager.onAudioBuffer = nil
@@ -141,95 +158,94 @@ class ExpertRecordingManager: ObservableObject {
     }
 
     let url = recordingURL
-    print("[Recording] Stopped. File: \(url?.lastPathComponent ?? "nil"), status: \(writer.status.rawValue)")
+    let status = writer.status
+    let appended = appendedFrameCount
+    let dropped = droppedFrameCount
 
-    if writer.status == .failed {
-      print("[Recording] Writer error: \(writer.error?.localizedDescription ?? "unknown")")
-      return nil
-    }
-
-    // Clean up
+    // Clean up writer refs before any return path
     assetWriter = nil
     videoInput = nil
     audioInput = nil
-    pixelBufferAdaptor = nil
+
+    // A recording is only usable if the writer finished cleanly AND at least one video frame landed.
+    // If either is untrue the .mp4 will be missing its moov atom (or be empty) and fail upload.
+    let ok = (status == .completed) && appended > 0
+    if !ok {
+      print("[Recording] Failed. status=\(status.rawValue) appendedFrames=\(appended) error=\(writer.error?.localizedDescription ?? "none")")
+      if let url = url {
+        try? FileManager.default.removeItem(at: url)
+      }
+      recordingURL = nil
+      return nil
+    }
+
+    let fileSize: Int64 = {
+      guard let url = url,
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+            let size = attrs[.size] as? Int64
+      else { return 0 }
+      return size
+    }()
+    print("[Recording] Stopped. File: \(url?.lastPathComponent ?? "nil"), frames=\(appended), dropped=\(dropped), size=\(fileSize / 1024)KB")
 
     return url
   }
 
   // MARK: - Frame Appending
 
-  func appendVideoFrame(_ image: UIImage) {
+  /// Append a video frame straight from the DAT SDK.
+  /// The `CMSampleBuffer` already carries decoded pixels and the real
+  /// presentation timestamp — no image conversion, no pixel-buffer
+  /// allocation, no CGContext redraw. The writer's first real sample PTS
+  /// becomes the session start, so the file preserves true frame timing.
+  func appendVideoFrame(_ sampleBuffer: CMSampleBuffer) {
     guard isRecording else { return }
 
-    let currentFrame = frameCount
-    frameCount += 1
-
-    // Dispatch pixel buffer conversion + append to background queue
     recordingQueue.async { [weak self] in
-      guard let self else { return }
-      guard let videoInput = self.videoInput,
-            let adaptor = self.pixelBufferAdaptor,
-            videoInput.isReadyForMoreMediaData
+      guard let self,
+            let writer = self.assetWriter,
+            let videoInput = self.videoInput
       else { return }
 
-      guard let pixelBuffer = self.pixelBuffer(from: image) else { return }
+      if !self.hasStartedSession {
+        let firstPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        writer.startSession(atSourceTime: firstPTS)
+        self.hasStartedSession = true
+      }
 
-      let presentationTime = CMTimeMake(value: currentFrame, timescale: self.videoFPS)
-      adaptor.append(pixelBuffer, withPresentationTime: presentationTime)
+      guard videoInput.isReadyForMoreMediaData else {
+        self.droppedFrameCount += 1
+        return
+      }
+      if videoInput.append(sampleBuffer) {
+        self.appendedFrameCount += 1
+        self.appendsInWindow += 1
+      } else {
+        self.droppedFrameCount += 1
+      }
     }
   }
 
   private func appendAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
     recordingQueue.async { [weak self] in
-      guard let self else { return }
-      guard let audioInput = self.audioInput,
-            audioInput.isReadyForMoreMediaData
+      guard let self,
+            let writer = self.assetWriter,
+            let audioInput = self.audioInput
       else { return }
 
-      // Convert AVAudioPCMBuffer to CMSampleBuffer
       guard let sampleBuffer = self.cmSampleBuffer(from: buffer, time: time) else { return }
+
+      // If video hasn't started the session yet (audio arrived first),
+      // use this audio sample's PTS to anchor. Host-clock-based for both.
+      if !self.hasStartedSession {
+        let firstPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        writer.startSession(atSourceTime: firstPTS)
+        self.hasStartedSession = true
+      }
+
+      guard audioInput.isReadyForMoreMediaData else { return }
       audioInput.append(sampleBuffer)
     }
-  }
-
-  // MARK: - Pixel Buffer Conversion
-
-  private func pixelBuffer(from image: UIImage) -> CVPixelBuffer? {
-    guard let cgImage = image.cgImage else { return nil }
-
-    var pixelBuffer: CVPixelBuffer?
-    let attrs: [String: Any] = [
-      kCVPixelBufferCGImageCompatibilityKey as String: true,
-      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
-    ]
-
-    let status = CVPixelBufferCreate(
-      kCFAllocatorDefault,
-      videoWidth,
-      videoHeight,
-      kCVPixelFormatType_32BGRA,
-      attrs as CFDictionary,
-      &pixelBuffer
-    )
-
-    guard status == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
-
-    CVPixelBufferLockBaseAddress(buffer, [])
-    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-
-    guard let context = CGContext(
-      data: CVPixelBufferGetBaseAddress(buffer),
-      width: videoWidth,
-      height: videoHeight,
-      bitsPerComponent: 8,
-      bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
-      space: CGColorSpaceCreateDeviceRGB(),
-      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-    ) else { return nil }
-
-    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: videoWidth, height: videoHeight))
-    return buffer
   }
 
   // MARK: - Audio Buffer Conversion
@@ -251,19 +267,16 @@ class ExpertRecordingManager: ObservableObject {
     )
     guard fmtStatus == noErr, let desc = formatDesc else { return nil }
 
-    // Compute presentation time relative to first audio buffer
+    // Use host-clock PTS directly — the writer's session start (set by the
+    // first video or audio sample to arrive) is the single anchor, so both
+    // streams land on one timeline without a per-stream rebase.
     let hostTime = time.hostTime
     let cmTime = CMClockMakeHostTimeFromSystemUnits(hostTime)
-
-    if audioStartTime == nil {
-      audioStartTime = cmTime
-    }
-    let relativeTime = CMTimeSubtract(cmTime, audioStartTime!)
 
     let frameCount = pcmBuffer.frameLength
     var timing = CMSampleTimingInfo(
       duration: CMTimeMake(value: 1, timescale: Int32(asbd.mSampleRate)),
-      presentationTimeStamp: relativeTime,
+      presentationTimeStamp: cmTime,
       decodeTimeStamp: .invalid
     )
 

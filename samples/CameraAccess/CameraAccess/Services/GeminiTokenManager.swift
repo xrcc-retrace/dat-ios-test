@@ -35,15 +35,24 @@ actor GeminiTokenManager {
     return try await forceRefresh()
   }
 
-  /// Force-refresh: called after an auth error on the WebSocket.
-  /// Deduplicates concurrent calls — only one fetch runs at a time.
-  func forceRefresh() async throws -> EphemeralTokenResponse {
+  /// Force-refresh: called after an auth error on the WebSocket or when
+  /// starting a resumption-aware reconnect.
+  ///
+  /// Pass `handle` (a `sessionResumptionUpdate.newHandle` from Gemini) to have
+  /// the server bake it into `SessionResumptionConfig(handle=…)` — the next
+  /// WebSocket opened with this token continues the prior session with
+  /// compressed context preserved.
+  ///
+  /// Deduplicates concurrent calls — only one fetch runs at a time. Note:
+  /// the dedup ignores the handle argument, so callers must not interleave a
+  /// fresh-session refresh with a resumption refresh.
+  func forceRefresh(handle: String? = nil) async throws -> EphemeralTokenResponse {
     if let existing = refreshTask {
       return try await existing.value
     }
 
     let task = Task<EphemeralTokenResponse, Error> {
-      let token = try await fetchTokenFromServer()
+      let token = try await fetchTokenFromServer(handle: handle)
       return token
     }
     refreshTask = task
@@ -71,8 +80,14 @@ actor GeminiTokenManager {
     return expiry.timeIntervalSinceNow < refreshBuffer
   }
 
-  private func fetchTokenFromServer() async throws -> EphemeralTokenResponse {
-    guard let url = URL(string: "\(serverBaseURL)/api/learner/session/\(sessionId)/token") else {
+  private func fetchTokenFromServer(handle: String? = nil) async throws -> EphemeralTokenResponse {
+    var components = URLComponents(
+      string: "\(serverBaseURL)/api/learner/session/\(sessionId)/token"
+    )
+    if let handle, !handle.isEmpty {
+      components?.queryItems = [URLQueryItem(name: "handle", value: handle)]
+    }
+    guard let url = components?.url else {
       throw TokenError.invalidURL
     }
 

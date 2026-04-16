@@ -111,6 +111,22 @@ class ProcedureAPIService: ObservableObject {
     return try decoder.decode(LearnerSessionStartResponse.self, from: data)
   }
 
+  // MARK: - Context summary (for re-orienting the AI after session resumption)
+
+  func fetchContextSummary(sessionId: String) async throws -> String {
+    guard let url = URL(
+      string: "\(serverBaseURL)/api/learner/session/\(sessionId)/context-summary"
+    ) else {
+      throw APIError.invalidURL
+    }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    struct Payload: Decodable { let summary: String }
+    return try decoder.decode(Payload.self, from: data).summary
+  }
+
   // MARK: - Base URL accessor for clip URLs
 
   var baseURL: String { serverBaseURL }

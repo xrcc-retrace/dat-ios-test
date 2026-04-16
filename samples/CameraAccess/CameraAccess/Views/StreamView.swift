@@ -64,19 +64,6 @@ struct StreamView: View {
         )
       }
     }
-    // Show recording review after stopping recording
-    .sheet(isPresented: $viewModel.showRecordingReview) {
-      if let recordingURL = viewModel.recordingManager.recordingURL {
-        ExpertRecordingReviewView(
-          recordingURL: recordingURL,
-          duration: viewModel.recordingManager.recordingDuration,
-          uploadService: viewModel.uploadService,
-          onDismiss: {
-            viewModel.showRecordingReview = false
-          }
-        )
-      }
-    }
   }
 }
 
@@ -112,63 +99,43 @@ struct ControlsView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
 
   var body: some View {
-    HStack(spacing: 8) {
-      // Stop streaming — disabled while recording
-      CustomButton(
-        title: "Stop streaming",
-        style: .destructive,
-        isDisabled: viewModel.recordingManager.isRecording
-      ) {
-        Task {
-          await viewModel.stopSession()
-        }
-      }
+    let isRecording = viewModel.recordingManager.isRecording
 
-      // Record toggle button
-      RecordButton(isRecording: viewModel.recordingManager.isRecording) {
-        Task {
-          if viewModel.recordingManager.isRecording {
-            _ = await viewModel.recordingManager.stopRecording()
-            viewModel.showRecordingReview = true
-          } else {
+    HStack(alignment: .bottom, spacing: Spacing.md) {
+      VStack(spacing: Spacing.md) {
+        if !isRecording {
+          CustomButton(
+            title: "Start recording",
+            style: .primary,
+            isDisabled: false
+          ) {
             viewModel.recordingManager.startRecording()
+          }
+        }
+
+        CustomButton(
+          title: isRecording ? "Stop recording" : "Stop streaming",
+          style: .destructive,
+          isDisabled: false
+        ) {
+          Task {
+            if isRecording {
+              if await viewModel.recordingManager.stopRecording() != nil {
+                viewModel.showRecordingReview = true
+              } else {
+                viewModel.reportRecordingFailure()
+              }
+            }
+            await viewModel.stopSession()
           }
         }
       }
 
-      // Photo button — hidden during recording
-      if !viewModel.recordingManager.isRecording {
+      if !isRecording {
         CircleButton(icon: "camera.fill", text: nil) {
           viewModel.capturePhoto()
         }
         .accessibilityIdentifier("capture_photo_button")
-      }
-    }
-  }
-}
-
-// MARK: - Record Button
-
-struct RecordButton: View {
-  let isRecording: Bool
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      ZStack {
-        Circle()
-          .stroke(Color.white, lineWidth: 3)
-          .frame(width: 56, height: 56)
-
-        if isRecording {
-          RoundedRectangle(cornerRadius: 4)
-            .fill(Color.red)
-            .frame(width: 20, height: 20)
-        } else {
-          Circle()
-            .fill(Color.red)
-            .frame(width: 44, height: 44)
-        }
       }
     }
   }

@@ -9,7 +9,24 @@ struct ExpertTabView: View {
 
   var body: some View {
     TabView(selection: $selectedTab) {
-      // Tab 1: Workflows
+      // Tab 1: Record
+      NavigationStack {
+        RecordTabView(
+          wearables: wearables,
+          wearablesVM: wearablesVM,
+          onProcedureCreated: { procedureId in
+            navigateToProcedure = procedureId
+            selectedTab = 1
+          }
+        )
+      }
+      .tabItem {
+        Image(systemName: "video.badge.plus")
+        Text("Record")
+      }
+      .tag(0)
+
+      // Tab 2: Workflows
       NavigationStack {
         WorkflowListView(
           navigateToProcedure: $navigateToProcedure
@@ -18,23 +35,6 @@ struct ExpertTabView: View {
       .tabItem {
         Image(systemName: "list.bullet.rectangle.portrait")
         Text("Workflows")
-      }
-      .tag(0)
-
-      // Tab 2: Record
-      NavigationStack {
-        RecordTabView(
-          wearables: wearables,
-          wearablesVM: wearablesVM,
-          onProcedureCreated: { procedureId in
-            navigateToProcedure = procedureId
-            selectedTab = 0
-          }
-        )
-      }
-      .tabItem {
-        Image(systemName: "video.badge.plus")
-        Text("Record")
       }
       .tag(1)
     }

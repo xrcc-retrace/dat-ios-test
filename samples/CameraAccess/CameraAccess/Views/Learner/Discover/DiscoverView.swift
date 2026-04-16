@@ -50,9 +50,7 @@ struct DiscoverView: View {
         }
       }
     }
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
     .refreshable {
       await viewModel.fetchProcedures()
     }

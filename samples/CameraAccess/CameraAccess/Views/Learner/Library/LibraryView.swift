@@ -32,9 +32,7 @@ struct LibraryView: View {
     }
     .navigationTitle("My Library")
     .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
     .task {
       await loadSavedProcedures()
     }

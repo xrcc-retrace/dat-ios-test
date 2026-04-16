@@ -37,30 +37,32 @@ struct CoachingSessionView: View {
     ZStack {
       Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
 
-      cameraFeedBackground
-
-      // Top bar
-      VStack {
+      VStack(spacing: 0) {
         topBar
-        Spacer()
+
+        if viewModel.isCompleted {
+          Spacer()
+          completionPanel
+          Spacer()
+        } else {
+          activityFeed
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, Spacing.xl)
+            .padding(.top, Spacing.md)
+
+          if isGeminiError {
+            reconnectBanner
+          }
+
+          stepInstructionPanel
+          stepProgressSection
+          controlsBar
+        }
       }
 
       // PiP reference overlay
       if viewModel.showPiP, let clipURL = currentStepClipURL {
         PiPReferenceView(url: clipURL)
-      }
-
-      // Bottom section
-      VStack {
-        Spacer()
-
-        if viewModel.isCompleted {
-          completionPanel
-        } else {
-          stepInstructionPanel
-          stepProgressSection
-          controlsBar
-        }
       }
     }
     .preferredColorScheme(.dark)
@@ -76,31 +78,84 @@ struct CoachingSessionView: View {
     .onAppear {
       viewModel.startSession(progressStore: progressStore)
     }
+    .onDisappear {
+      viewModel.endSession(progressStore: progressStore)
+    }
   }
 
-  // MARK: - Camera Feed Background
+  private var isGeminiError: Bool {
+    if case .error = viewModel.geminiConnectionState { return true }
+    return false
+  }
 
-  @ViewBuilder
-  private var cameraFeedBackground: some View {
-    if let frame = viewModel.currentVideoFrame {
-      GeometryReader { geo in
-        Image(uiImage: frame)
-          .resizable()
-          .aspectRatio(contentMode: .fill)
-          .frame(width: geo.size.width, height: geo.size.height)
-          .clipped()
-      }
-      .edgesIgnoringSafeArea(.all)
-      .opacity(0.6)
-    } else {
-      VStack(spacing: Spacing.lg) {
-        Image(systemName: "eyeglasses")
-          .font(.system(size: 36))
-          .foregroundColor(.textTertiary)
-        Text("Connect glasses to see live view")
+  private var reconnectBanner: some View {
+    HStack(spacing: Spacing.md) {
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundColor(.appPrimary)
+      Text("Voice coaching disconnected")
+        .font(.retraceCallout)
+        .foregroundColor(.textPrimary)
+      Spacer()
+      Button {
+        viewModel.retryGemini()
+      } label: {
+        Text("Reconnect")
           .font(.retraceCallout)
-          .foregroundColor(.textTertiary)
+          .fontWeight(.semibold)
+          .foregroundColor(.appPrimary)
       }
+    }
+    .padding(Spacing.md)
+    .glassPanel(cornerRadius: Radius.md)
+    .padding(.horizontal, Spacing.xl)
+    .padding(.bottom, Spacing.sm)
+  }
+
+  // MARK: - Activity Feed (tool calls + live transcript)
+
+  private var activityFeed: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+          if viewModel.activity.isEmpty {
+            activityEmptyState
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, Spacing.xl)
+          } else {
+            ForEach(viewModel.activity) { entry in
+              ActivityRow(entry: entry)
+                .id(entry.id)
+            }
+          }
+          // Anchor so we can autoscroll to the bottom.
+          Color.clear
+            .frame(height: 1)
+            .id("activity-bottom")
+        }
+        .padding(.vertical, Spacing.md)
+      }
+      .onChange(of: viewModel.activity.count) { _ in
+        withAnimation(.easeOut(duration: 0.15)) {
+          proxy.scrollTo("activity-bottom", anchor: .bottom)
+        }
+      }
+    }
+    .glassPanel(cornerRadius: Radius.xl)
+  }
+
+  private var activityEmptyState: some View {
+    VStack(spacing: Spacing.sm) {
+      Image(systemName: "waveform")
+        .font(.system(size: 28))
+        .foregroundColor(.textTertiary)
+      Text("Waiting for the coach…")
+        .font(.retraceCallout)
+        .foregroundColor(.textTertiary)
+      Text("Talk to the AI — what it hears and does will show up here.")
+        .font(.retraceCaption1)
+        .foregroundColor(.textTertiary)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, Spacing.md)
     }
   }
 
@@ -121,7 +176,6 @@ struct CoachingSessionView: View {
       Spacer()
 
       HStack(spacing: Spacing.sm) {
-        // Gemini connection indicator
         Circle()
           .fill(geminiStatusColor)
           .frame(width: 8, height: 8)
@@ -144,7 +198,6 @@ struct CoachingSessionView: View {
   private var stepInstructionPanel: some View {
     VStack(alignment: .leading, spacing: Spacing.md) {
       if let step = viewModel.currentStep {
-        // Overline
         Text("STEP \(viewModel.currentStepIndex + 1) OF \(procedure.steps.count)")
           .font(.retraceOverline)
           .tracking(1)
@@ -158,7 +211,6 @@ struct CoachingSessionView: View {
           .font(.retraceCallout)
           .foregroundColor(.textSecondary)
 
-        // Tips
         if !step.tips.isEmpty {
           HStack(spacing: Spacing.sm) {
             ForEach(step.tips.prefix(2), id: \.self) { tip in
@@ -173,7 +225,6 @@ struct CoachingSessionView: View {
           }
         }
 
-        // Warnings
         if !step.warnings.isEmpty {
           HStack(spacing: Spacing.sm) {
             ForEach(step.warnings.prefix(2), id: \.self) { warning in
@@ -206,14 +257,13 @@ struct CoachingSessionView: View {
     .padding(.vertical, Spacing.md)
   }
 
-  // MARK: - Controls Bar
+  // MARK: - Controls Bar (mic + PiP only — step progression is AI-driven)
 
   private var controlsBar: some View {
     HStack(spacing: 0) {
-      // Mic toggle
       VStack(spacing: Spacing.xs) {
         Image(systemName: viewModel.isMuted ? "mic.slash.fill" : "mic.fill")
-          .font(.system(size: 18))
+          .font(.system(size: 20))
           .foregroundColor(viewModel.isMuted ? .textTertiary : .textPrimary)
 
         if !viewModel.isMuted {
@@ -233,24 +283,9 @@ struct CoachingSessionView: View {
         viewModel.toggleMute()
       }
 
-      // Next step — primary action, visually dominant
-      Button {
-        viewModel.advanceStep(progressStore: progressStore)
-      } label: {
-        Image(systemName: "forward.fill")
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundColor(Color("backgroundPrimary"))
-          .frame(width: 48, height: 48)
-          .background(Color.appPrimary)
-          .clipShape(Circle())
-      }
-      .buttonStyle(ScaleButtonStyle())
-      .frame(maxWidth: .infinity)
-
-      // PiP toggle
       VStack(spacing: Spacing.xs) {
         Image(systemName: viewModel.showPiP ? "pip.fill" : "pip")
-          .font(.system(size: 18))
+          .font(.system(size: 20))
           .foregroundColor(viewModel.showPiP ? .appPrimary : .textPrimary)
         Text("Reference")
           .font(.system(size: 10))
@@ -321,5 +356,62 @@ struct CoachingSessionView: View {
     guard let step = viewModel.currentStep,
           let clipUrl = step.clipUrl else { return nil }
     return URL(string: "\(serverBaseURL)\(clipUrl)")
+  }
+}
+
+// MARK: - Activity Row
+
+private struct ActivityRow: View {
+  let entry: ActivityEntry
+
+  var body: some View {
+    HStack(alignment: .top, spacing: Spacing.sm) {
+      icon
+        .frame(width: 22)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(label)
+          .font(.retraceOverline)
+          .tracking(1)
+          .foregroundColor(labelColor)
+        Text(entry.text)
+          .font(.retraceCallout)
+          .foregroundColor(.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, Spacing.md)
+    .padding(.vertical, Spacing.sm)
+  }
+
+  @ViewBuilder
+  private var icon: some View {
+    switch entry.kind {
+    case .toolCall:
+      Image(systemName: "wand.and.stars")
+        .foregroundColor(.appPrimary)
+    case .assistant:
+      Image(systemName: "sparkles")
+        .foregroundColor(.semanticInfo)
+    case .learner:
+      Image(systemName: "person.fill")
+        .foregroundColor(.textSecondary)
+    }
+  }
+
+  private var label: String {
+    switch entry.kind {
+    case .toolCall(let name): return "TOOL · \(name)".uppercased()
+    case .assistant: return "AI"
+    case .learner: return "YOU"
+    }
+  }
+
+  private var labelColor: Color {
+    switch entry.kind {
+    case .toolCall: return .appPrimary
+    case .assistant: return .semanticInfo
+    case .learner: return .textSecondary
+    }
   }
 }

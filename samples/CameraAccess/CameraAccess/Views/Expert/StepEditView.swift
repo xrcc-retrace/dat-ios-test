@@ -131,9 +131,7 @@ struct StepEditView: View {
     }
     .navigationTitle("Edit Step \(step.stepNumber)")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
         Button("Cancel") { dismiss() }

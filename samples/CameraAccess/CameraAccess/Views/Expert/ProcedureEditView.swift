@@ -132,9 +132,7 @@ struct ProcedureEditView: View {
     }
     .navigationTitle("Edit Workflow")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .toolbarColorScheme(.dark, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
         Button("Cancel") { dismiss() }

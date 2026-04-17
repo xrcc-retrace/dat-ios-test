@@ -8,11 +8,15 @@ struct LearnerProcedureDetailView: View {
   @ObservedObject var progressStore: LocalProgressStore
 
   @StateObject private var viewModel = ProcedureDetailViewModel()
-  @State private var showCoachingSession = false
+  // Single source of truth for "which transport is the coaching cover
+  // presenting with." Using `item:` rather than `isPresented + separate
+  // transport` avoids a SwiftUI state-race where the cover could evaluate
+  // its content against a stale transport value.
+  @State private var presentedCoaching: CaptureTransport?
+  @State private var showRegistrationSheet = false
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       if viewModel.isLoading && viewModel.procedure == nil {
         ProgressView()
@@ -35,20 +39,25 @@ struct LearnerProcedureDetailView: View {
     }
     .navigationBarTitleDisplayMode(.inline)
     .navigationTitle(viewModel.procedure?.title ?? "")
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .task {
       await viewModel.fetchProcedure(id: procedureId)
     }
-    .fullScreenCover(isPresented: $showCoachingSession) {
+    .fullScreenCover(item: $presentedCoaching) { transport in
       if let procedure = viewModel.procedure {
         CoachingSessionView(
           procedure: procedure,
           wearables: wearables,
           wearablesVM: wearablesVM,
           progressStore: progressStore,
-          serverBaseURL: viewModel.serverBaseURL
+          serverBaseURL: viewModel.serverBaseURL,
+          transport: transport
         )
+      }
+    }
+    .sheet(isPresented: $showRegistrationSheet) {
+      RegistrationPromptSheet(viewModel: wearablesVM) {
+        presentedCoaching = .glasses
       }
     }
   }
@@ -119,7 +128,8 @@ struct LearnerProcedureDetailView: View {
         .padding(Spacing.screenPadding)
       }
 
-      // Pinned CTA
+      // Pinned CTAs — transport picker inline so the glasses/iPhone choice
+      // is the last thing the learner makes before stepping into coaching.
       VStack(spacing: 0) {
         LinearGradient(
           colors: [Color.backgroundPrimary.opacity(0), Color.backgroundPrimary],
@@ -128,12 +138,28 @@ struct LearnerProcedureDetailView: View {
         )
         .frame(height: 20)
 
-        CustomButton(
-          title: "Start Procedure",
-          style: .primary,
-          isDisabled: false
-        ) {
-          showCoachingSession = true
+        VStack(spacing: Spacing.md) {
+          CustomButton(
+            title: "Coach with Glasses",
+            style: .primary,
+            isDisabled: false
+          ) {
+            if wearablesVM.registrationState == .registered {
+              presentedCoaching = .glasses
+            } else {
+              // Unpaired — present the registration sheet; it auto-dismisses
+              // and flips into coaching once the user completes pairing.
+              showRegistrationSheet = true
+            }
+          }
+
+          CustomButton(
+            title: "Coach with iPhone",
+            style: .secondary,
+            isDisabled: false
+          ) {
+            presentedCoaching = .iPhone
+          }
         }
         .padding(.horizontal, Spacing.screenPadding)
         .padding(.bottom, Spacing.xl)

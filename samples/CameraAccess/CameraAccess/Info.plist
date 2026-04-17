@@ -46,8 +46,10 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Needed to connect to Meta AI Glasses</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Retrace uses your iPhone camera to record procedures and to let the AI coach see your work when you choose the iPhone capture mode.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Retrace needs microphone access to record expert narration from your glasses.</string>
+	<string>Retrace needs microphone access to record narration during expert recordings and to hear you during AI coaching sessions.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app needs access to save photos captured from your glasses.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -5,14 +5,12 @@ struct LibraryView: View {
   @ObservedObject var progressStore: LocalProgressStore
   let wearables: WearablesInterface
   @ObservedObject var wearablesVM: WearablesViewModel
+  let onExit: () -> Void
   @State private var selectedSegment = 0
-  @StateObject private var api = ProcedureAPIService()
-  @State private var savedProcedures: [ProcedureResponse] = []
-  @State private var isLoading = false
+  @StateObject private var viewModel = LibraryViewModel()
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       VStack(spacing: 0) {
         Picker("", selection: $selectedSegment) {
@@ -29,16 +27,26 @@ struct LibraryView: View {
           historySection
         }
       }
+      .frame(maxHeight: .infinity, alignment: .top)
     }
     .navigationTitle("My Library")
-    .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
-    .task {
-      await loadSavedProcedures()
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        Button {
+          onExit()
+        } label: {
+          Image(systemName: "chevron.backward")
+            .foregroundColor(.textSecondary)
+        }
+      }
     }
-    .onChange(of: progressStore.savedProcedureIDs) { _, _ in
-      Task { await loadSavedProcedures() }
+    .retraceNavBar()
+    .task {
+      await viewModel.loadSaved(ids: progressStore.savedProcedureIDs)
+    }
+    .onChange(of: progressStore.savedProcedureIDs) { _, newIDs in
+      Task { await viewModel.loadSaved(ids: newIDs) }
     }
   }
 
@@ -46,28 +54,20 @@ struct LibraryView: View {
 
   @ViewBuilder
   private var savedSection: some View {
-    if isLoading {
+    if viewModel.isLoading {
       Spacer()
       ProgressView().tint(.appPrimary)
       Spacer()
-    } else if savedProcedures.isEmpty {
-      Spacer()
-      VStack(spacing: Spacing.lg) {
-        Image(systemName: "bookmark.slash")
-          .font(.system(size: 36))
-          .foregroundColor(.textTertiary)
-        Text("No saved procedures")
-          .font(.retraceHeadline)
-          .foregroundColor(.textPrimary)
-        Text("Discover procedures and save them here")
-          .font(.retraceSubheadline)
-          .foregroundColor(.textSecondary)
-      }
-      Spacer()
+    } else if viewModel.savedProcedures.isEmpty {
+      EmptyStateView(
+        icon: "bookmark.slash",
+        title: "No saved procedures",
+        message: "Discover procedures and save them here"
+      )
     } else {
       ScrollView {
         VStack(spacing: Spacing.lg) {
-          ForEach(savedProcedures) { procedure in
+          ForEach(viewModel.savedProcedures) { procedure in
             NavigationLink {
               LearnerProcedureDetailView(
                 procedureId: procedure.id,
@@ -98,19 +98,11 @@ struct LibraryView: View {
   @ViewBuilder
   private var historySection: some View {
     if progressStore.sessionHistory.isEmpty {
-      Spacer()
-      VStack(spacing: Spacing.lg) {
-        Image(systemName: "clock.arrow.circlepath")
-          .font(.system(size: 36))
-          .foregroundColor(.textTertiary)
-        Text("No learning history")
-          .font(.retraceHeadline)
-          .foregroundColor(.textPrimary)
-        Text("Start a procedure to begin tracking")
-          .font(.retraceSubheadline)
-          .foregroundColor(.textSecondary)
-      }
-      Spacer()
+      EmptyStateView(
+        icon: "clock.arrow.circlepath",
+        title: "No learning history",
+        message: "Start a procedure to begin tracking"
+      )
     } else {
       ScrollView {
         VStack(spacing: Spacing.md) {
@@ -160,18 +152,6 @@ struct LibraryView: View {
   }
 
   // MARK: - Helpers
-
-  private func loadSavedProcedures() async {
-    isLoading = true
-    var results: [ProcedureResponse] = []
-    for id in progressStore.savedProcedureIDs {
-      if let procedure = try? await api.fetchProcedure(id: id) {
-        results.append(procedure)
-      }
-    }
-    savedProcedures = results
-    isLoading = false
-  }
 
   private func statusColor(_ status: SessionStatus) -> Color {
     switch status {

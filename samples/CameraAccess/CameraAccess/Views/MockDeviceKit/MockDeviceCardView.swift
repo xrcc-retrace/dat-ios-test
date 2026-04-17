@@ -17,6 +17,7 @@
 
 #if DEBUG
 
+import MWDATMockDevice
 import SwiftUI
 
 struct MockDeviceCardView: View {
@@ -97,6 +98,26 @@ struct MockDeviceCardView: View {
               inactiveText: "No camera feed"
             )
 
+          }
+
+          // DAT SDK 0.6 — stream the iPhone camera into the mock glasses feed,
+          // so developers can iterate on the real StreamSession pipeline
+          // without wearing hardware.
+          HStack(spacing: 8) {
+            MockDeviceKitButton("Use Back Camera") {
+              viewModel.setCameraFeed(.back)
+            }
+            MockDeviceKitButton("Use Front Camera") {
+              viewModel.setCameraFeed(.front)
+            }
+          }
+
+          if let source = viewModel.cameraSource {
+            StatusText(
+              isActive: true,
+              activeText: "Streaming \(source == .back ? "back" : "front") camera",
+              inactiveText: ""
+            )
           }
 
           HStack(spacing: 8) {

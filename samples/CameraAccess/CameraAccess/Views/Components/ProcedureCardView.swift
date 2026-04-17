@@ -55,14 +55,6 @@ struct ProcedureCardView: View {
             .scaleEffect(0.7)
             .tint(.semanticInfo)
         )
-    } else if status == "failed" {
-      Circle()
-        .fill(Color.semanticError.opacity(0.2))
-        .overlay(
-          Image(systemName: "exclamationmark.triangle.fill")
-            .font(.retraceHeadline)
-            .foregroundColor(.semanticError)
-        )
     } else {
       Circle()
         .fill(Color.appPrimary)
@@ -70,17 +62,13 @@ struct ProcedureCardView: View {
           Text("\(stepCount)")
             .font(Font.retraceHeadline)
             .fontWeight(.bold)
-            .foregroundColor(Color("backgroundPrimary"))
+            .foregroundColor(.backgroundPrimary)
         )
     }
   }
 
   private var borderColor: Color {
-    switch status {
-    case "processing": return Color.semanticInfo.opacity(0.3)
-    case "failed": return Color.semanticError.opacity(0.3)
-    default: return Color.borderSubtle
-    }
+    status == "processing" ? Color.semanticInfo.opacity(0.3) : Color.borderSubtle
   }
 
   private var formattedDuration: String {

@@ -16,6 +16,7 @@
 
 #if DEBUG
 
+import AVFoundation
 import Foundation
 import MWDATMockDevice
 
@@ -25,6 +26,7 @@ extension MockDeviceCardView {
     let device: MockDevice
     @Published var hasCameraFeed: Bool = false
     @Published var hasCapturedImage: Bool = false
+    @Published var cameraSource: CameraFacing?
     @Published var isPoweredOn: Bool = false
     @Published var isDonned: Bool = false
     @Published var isUnfolded: Bool = false
@@ -81,23 +83,41 @@ extension MockDeviceCardView {
       }
     }
 
-    // Load mock video content
+    // Load mock video content from a file URL
     func selectVideo(from url: URL) {
-      if let cameraKit = (device as? MockDisplaylessGlasses)?.getCameraKit() {
-        Task {
-          await cameraKit.setCameraFeed(fileURL: url)
-          hasCameraFeed = true
+      if let cameraKit = (device as? MockDisplaylessGlasses)?.services.camera {
+        cameraKit.setCameraFeed(fileURL: url)
+        hasCameraFeed = true
+        cameraSource = nil
+      }
+    }
+
+    // Stream the iPhone's own camera into the mock device's camera feed.
+    // DAT SDK 0.6 feature — lets the developer exercise the real StreamSession
+    // → videoFramePublisher path without putting on glasses. Front or back.
+    func setCameraFeed(_ facing: CameraFacing) {
+      guard let cameraKit = (device as? MockDisplaylessGlasses)?.services.camera else {
+        return
+      }
+      Task {
+        let granted = await AVCaptureDevice.requestAccess(for: .video)
+        guard granted else {
+          print("[MockDevice] iPhone camera permission denied")
+          return
+        }
+        await cameraKit.setCameraFeed(cameraFacing: facing)
+        await MainActor.run {
+          self.cameraSource = facing
+          self.hasCameraFeed = false
         }
       }
     }
 
     // Load mock image content
     func selectImage(from url: URL) {
-      if let cameraKit = (device as? MockDisplaylessGlasses)?.getCameraKit() {
-        Task {
-          await cameraKit.setCapturedImage(fileURL: url)
-          hasCapturedImage = true
-        }
+      if let cameraKit = (device as? MockDisplaylessGlasses)?.services.camera {
+        cameraKit.setCapturedImage(fileURL: url)
+        hasCapturedImage = true
       }
     }
   }

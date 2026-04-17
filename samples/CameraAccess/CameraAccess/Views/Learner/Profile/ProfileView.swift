@@ -2,12 +2,12 @@ import SwiftUI
 
 struct ProfileView: View {
   @ObservedObject var wearablesVM: WearablesViewModel
+  let onExit: () -> Void
   @AppStorage("geminiVoice") private var geminiVoice = "Puck"
   @AppStorage("autoAdvanceEnabled") private var autoAdvanceEnabled = true
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(spacing: Spacing.screenPadding) {
@@ -29,8 +29,33 @@ struct ProfileView: View {
           }
           .padding(.vertical, Spacing.xl)
 
+          // Mode section (top — most prominent)
+          settingsSection(title: "MODE") {
+            Button {
+              onExit()
+            } label: {
+              HStack {
+                Image(systemName: "rectangle.3.group")
+                  .font(.system(size: 20))
+                  .foregroundColor(.appPrimary)
+                  .frame(width: 32)
+
+                Text("Switch Mode")
+                  .font(.retraceBody)
+                  .foregroundColor(.textPrimary)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                  .font(.retraceSubheadline)
+                  .foregroundColor(.textTertiary)
+              }
+            }
+          }
+
           // Device section
           settingsSection(title: "DEVICE") {
+            let isConnected = wearablesVM.hasActiveDevice
             HStack(spacing: Spacing.lg) {
               Image(systemName: "eyeglasses")
                 .font(.system(size: 20))
@@ -42,15 +67,15 @@ struct ProfileView: View {
                   .font(.retraceBody)
                   .fontWeight(.medium)
                   .foregroundColor(.textPrimary)
-                Text(wearablesVM.registrationState == .registered ? "Connected" : "Not connected")
+                Text(isConnected ? "Connected" : "Not connected")
                   .font(.retraceSubheadline)
-                  .foregroundColor(wearablesVM.registrationState == .registered ? .semanticSuccess : .textTertiary)
+                  .foregroundColor(isConnected ? .semanticSuccess : .textTertiary)
               }
 
               Spacer()
 
               Circle()
-                .fill(wearablesVM.registrationState == .registered ? Color.semanticSuccess : Color.textTertiary)
+                .fill(isConnected ? Color.semanticSuccess : Color.textTertiary)
                 .frame(width: 10, height: 10)
             }
           }
@@ -58,7 +83,7 @@ struct ProfileView: View {
           // Server section
           settingsSection(title: "SERVER") {
             NavigationLink {
-              ServerSettingsView()
+              ServerSettingsView(wearablesVM: wearablesVM)
             } label: {
               HStack {
                 Image(systemName: "server.rack")
@@ -149,9 +174,8 @@ struct ProfileView: View {
       }
     }
     .navigationTitle("Profile")
-    .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .navigationBarTitleDisplayMode(.inline)
+    .retraceNavBar()
   }
 
   @ViewBuilder

@@ -5,12 +5,12 @@ struct DiscoverView: View {
   let wearables: WearablesInterface
   @ObservedObject var wearablesVM: WearablesViewModel
   @ObservedObject var progressStore: LocalProgressStore
+  let onExit: () -> Void
   @StateObject private var viewModel = DiscoverViewModel()
   @State private var showSearch = false
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(alignment: .leading, spacing: Spacing.xxl) {
@@ -40,8 +40,16 @@ struct DiscoverView: View {
       }
     }
     .navigationTitle("Procedures")
-    .navigationBarTitleDisplayMode(.large)
+    .navigationBarTitleDisplayMode(.inline)
     .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        Button {
+          onExit()
+        } label: {
+          Image(systemName: "chevron.backward")
+            .foregroundColor(.textSecondary)
+        }
+      }
       ToolbarItem(placement: .topBarTrailing) {
         HStack(spacing: Spacing.lg) {
           Circle()
@@ -50,8 +58,7 @@ struct DiscoverView: View {
         }
       }
     }
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .refreshable {
       await viewModel.fetchProcedures()
     }
@@ -144,18 +151,11 @@ struct DiscoverView: View {
   // MARK: - Empty State
 
   private var emptyState: some View {
-    VStack(spacing: Spacing.lg) {
-      Image(systemName: "doc.text.magnifyingglass")
-        .font(.system(size: 36))
-        .foregroundColor(.textTertiary)
-      Text("No procedures found")
-        .font(.retraceHeadline)
-        .foregroundColor(.textPrimary)
-      Text("Try a different search or category")
-        .font(.retraceSubheadline)
-        .foregroundColor(.textSecondary)
-    }
-    .frame(maxWidth: .infinity)
+    EmptyStateView(
+      icon: "doc.text.magnifyingglass",
+      title: "No procedures found",
+      message: "Try a different search or category"
+    )
     .padding(.top, Spacing.jumbo)
   }
 

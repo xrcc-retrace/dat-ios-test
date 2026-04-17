@@ -20,14 +20,24 @@ struct NonStreamView: View {
   @ObservedObject var viewModel: StreamSessionViewModel
   @ObservedObject var wearablesVM: WearablesViewModel
   @State private var sheetHeight: CGFloat = 300
+  @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       VStack {
         HStack {
+          Button {
+            dismiss()
+          } label: {
+            Image(systemName: "chevron.backward")
+              .font(.system(size: 20, weight: .semibold))
+              .foregroundColor(.textSecondary)
+              .frame(width: 24, height: 24)
+          }
+
           Spacer()
+
           Menu {
             Button("Disconnect", role: .destructive) {
               wearablesVM.disconnectGlasses()

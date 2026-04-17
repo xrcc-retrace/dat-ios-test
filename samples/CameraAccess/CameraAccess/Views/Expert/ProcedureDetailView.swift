@@ -7,8 +7,7 @@ struct ProcedureDetailView: View {
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       if viewModel.isLoading && viewModel.procedure == nil {
         ProgressView()
@@ -31,8 +30,7 @@ struct ProcedureDetailView: View {
     }
     .navigationBarTitleDisplayMode(.inline)
     .navigationTitle(viewModel.procedure?.title ?? "")
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {

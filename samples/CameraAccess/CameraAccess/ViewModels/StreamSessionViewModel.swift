@@ -51,8 +51,13 @@ class StreamSessionViewModel: ObservableObject {
   /// writer for CPU — the writer needs every frame at full rate.
   private var lastPreviewUpdateAt: Date = .distantPast
 
-  // The core DAT SDK StreamSession - handles all streaming operations
-  private var streamSession: StreamSession
+  // The core DAT SDK StreamSession — handles all streaming operations.
+  // In 0.6 StreamSession is a Capability attached to a DeviceSession and has no
+  // public initializer. We create the session lazily in `startSession()` so a
+  // missing eligible device at construction time doesn't kill the VM — instead
+  // we can report it when the user actually taps "Start streaming".
+  private var deviceSession: DeviceSession?
+  private var streamSession: StreamSession?
   // Listener tokens are used to manage DAT SDK event subscriptions
   private var stateListenerToken: AnyListenerToken?
   private var videoFrameListenerToken: AnyListenerToken?
@@ -67,79 +72,25 @@ class StreamSessionViewModel: ObservableObject {
     self.uploadService = uploadService
     // Let the SDK auto-select from available devices
     self.deviceSelector = AutoDeviceSelector(wearables: wearables)
-    let config = StreamSessionConfig(
-      videoCodec: VideoCodec.raw,
-      resolution: StreamingResolution.high,
-      frameRate: 30)
-    streamSession = StreamSession(streamSessionConfig: config, deviceSelector: deviceSelector)
 
-    // Monitor device availability
-    deviceMonitorTask = Task { @MainActor in
-      for await device in deviceSelector.activeDeviceStream() {
-        self.hasActiveDevice = device != nil
-      }
-    }
-
-    // Subscribe to session state changes using the DAT SDK listener pattern
-    // State changes tell us when streaming starts, stops, or encounters issues
-    stateListenerToken = streamSession.statePublisher.listen { [weak self] state in
-      Task { @MainActor [weak self] in
-        self?.updateStatusFromState(state)
-      }
-    }
-
-    // Subscribe to video frames from the device camera.
-    // Every frame: pass the CMSampleBuffer straight to the writer (cheap —
-    // just an enqueue onto recordingQueue). Real presentation timestamps
-    // and the already-decoded pixel buffer flow through unchanged.
-    // Preview update (`makeUIImage` + SwiftUI rerender) is throttled to
-    // ~10 Hz so MainActor isn't burning CPU on display work that competes
-    // with the recording path.
-    videoFrameListenerToken = streamSession.videoFramePublisher.listen { [weak self] videoFrame in
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-
-        if self.recordingManager.isRecording {
-          self.recordingManager.appendVideoFrame(videoFrame.sampleBuffer)
-        }
-
-        let now = Date()
-        guard now.timeIntervalSince(self.lastPreviewUpdateAt) >= 0.1 else { return }
-        self.lastPreviewUpdateAt = now
-        if let image = videoFrame.makeUIImage() {
-          self.currentVideoFrame = image
-          if !self.hasReceivedFirstFrame {
-            self.hasReceivedFirstFrame = true
-          }
+    // Monitor device availability (independent of any session lifecycle).
+    // `[weak self]` breaks the retain cycle: without it, `self` is strongly
+    // captured by the long-running for-await loop, and the Task (owned by
+    // `deviceMonitorTask`) holds `self` alive past view dismissal — so the
+    // VM never deallocates between recordings.
+    let selector = deviceSelector
+    deviceMonitorTask = Task { [weak self] in
+      for await device in selector.activeDeviceStream() {
+        guard let self = self else { return }
+        await MainActor.run {
+          self.hasActiveDevice = device != nil
         }
       }
     }
+  }
 
-    // Subscribe to streaming errors
-    // Errors include device disconnection, streaming failures, etc.
-    errorListenerToken = streamSession.errorPublisher.listen { [weak self] error in
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        let newErrorMessage = formatStreamingError(error)
-        if newErrorMessage != self.errorMessage {
-          showError(newErrorMessage)
-        }
-      }
-    }
-
-    updateStatusFromState(streamSession.state)
-
-    // Subscribe to photo capture events
-    // PhotoData contains the captured image in the requested format (JPEG/HEIC)
-    photoDataListenerToken = streamSession.photoDataPublisher.listen { [weak self] photoData in
-      Task { @MainActor [weak self] in
-        guard let self else { return }
-        if let uiImage = UIImage(data: photoData.data) {
-          self.capturedPhoto = uiImage
-          self.showPhotoPreview = true
-        }
-      }
-    }
+  deinit {
+    deviceMonitorTask?.cancel()
   }
 
   func handleStartStreaming() async {
@@ -162,7 +113,93 @@ class StreamSessionViewModel: ObservableObject {
   }
 
   func startSession() async {
-    await streamSession.start()
+    // If a prior session was torn down or never created, build it now (0.6 API).
+    if streamSession == nil {
+      do {
+        let config = StreamSessionConfig(
+          videoCodec: .raw,
+          resolution: .high,
+          frameRate: 30)
+        let session = try wearables.createSession(deviceSelector: deviceSelector)
+        guard let stream = try session.addStream(config: config) else {
+          showError("Could not attach streaming capability to the device session.")
+          return
+        }
+        deviceSession = session
+        streamSession = stream
+        attachStreamListeners(stream)
+        updateStatusFromState(stream.state)
+        try session.start()
+      } catch let error as DeviceSessionError {
+        showError("Failed to start device session: \(error.localizedDescription)")
+        deviceSession = nil
+        streamSession = nil
+        return
+      } catch {
+        showError("Failed to start device session: \(error.localizedDescription)")
+        deviceSession = nil
+        streamSession = nil
+        return
+      }
+    }
+    await streamSession?.start()
+  }
+
+  /// Wire DAT SDK listeners to the freshly-created StreamSession.
+  private func attachStreamListeners(_ stream: StreamSession) {
+    // Session state changes tell us when streaming starts, stops, or encounters issues.
+    stateListenerToken = stream.statePublisher.listen { [weak self] state in
+      Task { @MainActor [weak self] in
+        self?.updateStatusFromState(state)
+      }
+    }
+
+    // Video frames from the device camera.
+    // Every frame: pass the CMSampleBuffer straight to the writer (cheap — just an
+    // enqueue onto recordingQueue). Preview (`makeUIImage` + SwiftUI rerender) is
+    // throttled to ~10 Hz so MainActor isn't burning CPU on display work that
+    // competes with the recording path.
+    videoFrameListenerToken = stream.videoFramePublisher.listen { [weak self] videoFrame in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+
+        if self.recordingManager.isRecording {
+          self.recordingManager.appendVideoFrame(videoFrame.sampleBuffer)
+        }
+
+        let now = Date()
+        guard now.timeIntervalSince(self.lastPreviewUpdateAt) >= 0.1 else { return }
+        self.lastPreviewUpdateAt = now
+        if let image = videoFrame.makeUIImage() {
+          self.currentVideoFrame = image
+          if !self.hasReceivedFirstFrame {
+            self.hasReceivedFirstFrame = true
+          }
+        }
+      }
+    }
+
+    // Streaming errors (device disconnection, streaming failures, etc).
+    errorListenerToken = stream.errorPublisher.listen { [weak self] error in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        let newErrorMessage = formatStreamingError(error)
+        if newErrorMessage != self.errorMessage {
+          showError(newErrorMessage)
+        }
+      }
+    }
+
+    // Photo capture events. PhotoData contains the image in the requested format.
+    photoDataListenerToken = stream.photoDataPublisher.listen { [weak self] photoData in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        if let uiImage = UIImage(data: photoData.data) {
+          self.capturedPhoto = uiImage
+          self.showPhotoPreview = true
+        }
+      }
+    }
   }
 
   private func showError(_ message: String) {
@@ -171,7 +208,25 @@ class StreamSessionViewModel: ObservableObject {
   }
 
   func stopSession() async {
-    await streamSession.stop()
+    // Drop listeners before stopping so trailing frame/state events can't
+    // push into a half-torn-down VM.
+    stateListenerToken = nil
+    videoFrameListenerToken = nil
+    errorListenerToken = nil
+    photoDataListenerToken = nil
+
+    await streamSession?.stop()
+    deviceSession?.stop()
+    streamSession = nil
+    deviceSession = nil
+
+    // Reset published UI state so re-entering the view starts from a
+    // clean slate instead of flashing the prior session's last frame.
+    currentVideoFrame = nil
+    hasReceivedFirstFrame = false
+    streamingStatus = .stopped
+    capturedPhoto = nil
+    showPhotoPreview = false
   }
 
   func dismissError() {
@@ -184,7 +239,7 @@ class StreamSessionViewModel: ObservableObject {
   }
 
   func capturePhoto() {
-    streamSession.capturePhoto(format: .jpeg)
+    streamSession?.capturePhoto(format: .jpeg)
   }
 
   func dismissPhotoPreview() {

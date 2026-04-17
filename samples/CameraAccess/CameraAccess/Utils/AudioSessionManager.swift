@@ -2,12 +2,21 @@ import AVFoundation
 import Foundation
 
 /// How the AudioSessionManager should configure its AVAudioSession.
-/// `.coaching` is full-duplex with AEC and speaker fallback — needed for Gemini Live voice chat.
-/// `.recording` is simplex capture — no playback, no AEC, no `.defaultToSpeaker` overrides.
-/// The latter avoids the route-change thrash that detaches the mic tap during expert recording.
+///
+/// - `.coaching`: full-duplex with AEC and speaker fallback — Gemini Live voice
+///   chat when glasses (BT HFP) are the preferred route if available.
+/// - `.coachingPhoneOnly`: full-duplex with AEC + forced built-in mic +
+///   loudspeaker. Used when the learner explicitly picked the iPhone transport
+///   and we must ignore any connected HFP glasses.
+/// - `.recording`: simplex capture — no playback, no AEC, no `.defaultToSpeaker`
+///   override. Expert recording via glasses (HFP) or iPhone mic fallback.
+/// - `.recordingPhoneOnly`: simplex capture, forced built-in mic. Used for
+///   iPhone-native expert recording — ignores HFP even if glasses are paired.
 enum AudioSessionMode {
   case coaching
+  case coachingPhoneOnly
   case recording
+  case recordingPhoneOnly
 }
 
 @MainActor
@@ -56,6 +65,10 @@ class AudioSessionManager: ObservableObject {
     interleaved: true
   )!
   private var audioConverter: AVAudioConverter?
+  /// Input format the current `audioConverter` was built against. Used to
+  /// short-circuit route-change rebinds when the live format hasn't changed
+  /// (see `rebindMicTapIfCapturing(reason:)`).
+  private var converterInputFormat: AVAudioFormat?
 
   /// Called on the audio capture queue with each PCM buffer.
   var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
@@ -73,10 +86,10 @@ class AudioSessionManager: ObservableObject {
   init(mode: AudioSessionMode = .coaching) {
     self.mode = mode
 
-    // Attach player node only in coaching mode. Recording has no playback
+    // Attach player node only for coaching modes. Recording has no playback
     // and attaching the node forces `.playAndRecord`, which pulls in output-port
     // negotiation and triggers the route-change cascade we're trying to avoid.
-    if mode == .coaching {
+    if mode == .coaching || mode == .coachingPhoneOnly {
       engine.attach(playerNode)
       engine.connect(playerNode, to: engine.mainMixerNode, format: playbackFormat)
     }
@@ -106,6 +119,14 @@ class AudioSessionManager: ObservableObject {
           mode: .voiceChat,
           options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
         )
+      case .coachingPhoneOnly:
+        // Full-duplex with AEC, forced to built-in mic + loudspeaker even when
+        // HFP glasses are paired. The learner explicitly chose the iPhone transport.
+        try session.setCategory(
+          .playAndRecord,
+          mode: .voiceChat,
+          options: [.defaultToSpeaker]  // no HFP / A2DP
+        )
       case .recording:
         // Simplex capture. No `.voiceChat` (no AEC processing), no `.defaultToSpeaker`
         // (nothing to play, and this option forces an override-to-speaker that
@@ -115,19 +136,58 @@ class AudioSessionManager: ObservableObject {
           mode: .default,
           options: [.allowBluetoothHFP, .allowBluetoothA2DP]
         )
+      case .recordingPhoneOnly:
+        // Simplex capture forced to the built-in mic. Ignores any paired HFP
+        // glasses — the expert explicitly chose the iPhone transport.
+        try session.setCategory(
+          .record,
+          mode: .default,
+          options: []  // no HFP / A2DP
+        )
       }
       try session.setActive(true)
+      if mode == .coachingPhoneOnly {
+        // Belt-and-suspenders: even with `.defaultToSpeaker`, an actively routed
+        // HFP output could sneak through if the user paired glasses mid-session.
+        // This override forces the loudspeaker for the life of this activation.
+        try session.overrideOutputAudioPort(.speaker)
+      }
+      if mode == .coachingPhoneOnly || mode == .recordingPhoneOnly {
+        forceBuiltInMicPreferred(session)
+      }
       checkBluetoothRoute()
       logAudioRoute()
-      let modeLabel = mode == .coaching
-        ? "coaching (AEC, speaker fallback)"
-        : "recording (simplex capture)"
+      let modeLabel: String
+      switch mode {
+      case .coaching: modeLabel = "coaching (AEC, speaker fallback)"
+      case .coachingPhoneOnly: modeLabel = "coaching (phone-only, AEC)"
+      case .recording: modeLabel = "recording (simplex capture)"
+      case .recordingPhoneOnly: modeLabel = "recording (phone-only, simplex)"
+      }
       print(
         "[AudioSession] Configured for \(modeLabel): category=\(session.category.rawValue), "
         + "mode=\(session.mode.rawValue), sampleRate=\(session.sampleRate)Hz"
       )
     } catch {
       print("[AudioSession] Failed to configure audio session: \(error)")
+    }
+  }
+
+  /// Pin the AVAudioSession input to the built-in iPhone mic. Called only from
+  /// the `*PhoneOnly` modes so HFP glasses (even if paired) don't steal the
+  /// input route.
+  private func forceBuiltInMicPreferred(_ session: AVAudioSession) {
+    guard
+      let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic })
+    else {
+      print("[AudioSession] ⚠ No built-in mic input available to pin")
+      return
+    }
+    do {
+      try session.setPreferredInput(builtIn)
+      print("[AudioSession] Preferred input pinned to built-in mic: \(builtIn.portName)")
+    } catch {
+      print("[AudioSession] Failed to pin built-in mic input: \(error)")
     }
   }
 
@@ -147,11 +207,29 @@ class AudioSessionManager: ObservableObject {
     guard !isCapturing else { return }
 
     configureAudioSession()
+
+    // For coaching modes, enable hardware voice processing on the input node —
+    // acoustic echo cancellation + noise suppression + automatic gain control.
+    // Required when the phone speaker plays Gemini's reply on loudspeaker while
+    // the mic is open; without this, the mic picks up the speaker output, the
+    // server-side VAD fires a barge-in, Gemini cuts its own reply, and the loop
+    // repeats. `.voiceChat` mode alone is tuned for earpiece and doesn't cancel
+    // loudspeaker well. `setVoiceProcessingEnabled(true)` must be called before
+    // `engine.start()` and reconfigures the input node's output format.
+    if mode == .coaching || mode == .coachingPhoneOnly {
+      do {
+        try inputNode.setVoiceProcessingEnabled(true)
+        print("[AudioSession] Voice processing (AEC/NS/AGC) enabled on input node")
+      } catch {
+        print("[AudioSession] ⚠ Failed to enable voice processing: \(error)")
+      }
+    }
+
     installMicTap()
 
     do {
       try engine.start()
-      if mode == .coaching {
+      if mode == .coaching || mode == .coachingPhoneOnly {
         playerNode.play()
       }
       isCapturing = true
@@ -172,7 +250,8 @@ class AudioSessionManager: ObservableObject {
 
       startStatsTimer()
       logInputRoute()
-      let suffix = mode == .coaching ? "with playback" : "(capture only)"
+      let hasPlayback = (mode == .coaching || mode == .coachingPhoneOnly)
+      let suffix = hasPlayback ? "with playback" : "(capture only)"
       print("[AudioSession] Audio engine started \(suffix)")
     } catch {
       print("[AudioSession] Audio engine start error: \(error)")
@@ -197,29 +276,47 @@ class AudioSessionManager: ObservableObject {
   func stopCapture() {
     guard isCapturing else { return }
     inputNode.removeTap(onBus: 0)
-    if mode == .coaching {
+    // Flush pending playback buffers FIRST so the player-node stop can't be
+    // racing with a scheduled buffer callback (only applies to coaching modes).
+    if mode == .coaching || mode == .coachingPhoneOnly {
       playerNode.stop()
+      scheduledBufferCount = 0
     }
     engine.stop()
     isCapturing = false
     isAISpeaking = false
     scheduledBufferCount = 0
+    onAudioBuffer = nil  // drop any capture handler so trailing taps can't fire
     stopStatsTimer()
+    audioConverter = nil
+    converterInputFormat = nil
     print("[AudioSession] Audio engine stopped")
 
-    // After recording the session is still in `.record` (input-only), which blocks
-    // AVPlayer audio in the review sheet (both the recording preview and any step
-    // clips). Flip to `.playback` here. A subsequent `startCapture()` resets the
-    // category via `configureAudioSession()`, so the record ↔ review ↔ record
-    // cycle stays intact.
-    if mode == .recording {
-      let session = AVAudioSession.sharedInstance()
+    // Leave AVAudioSession in a state that plays nicely with whatever comes
+    // next — review sheet's AVPlayer, another capture session, or idle.
+    //
+    // For recording modes: flip to `.playback` so AVPlayer in the review sheet
+    // can play the just-captured file.
+    // For coaching modes: also flip to `.playback`, then deactivate — otherwise
+    // the session stays in `.playAndRecord/.voiceChat` with `.defaultToSpeaker`
+    // and downstream audio gets stuck on the loudspeaker at phone-call volume.
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(.playback, mode: .default, options: [])
+      try session.setActive(true)
+      print("[AudioSession] Switched to .playback for review")
+    } catch {
+      print("[AudioSession] Failed to switch to .playback: \(error)")
+    }
+
+    if mode == .coaching || mode == .coachingPhoneOnly {
       do {
-        try session.setCategory(.playback, mode: .default, options: [])
-        try session.setActive(true)
-        print("[AudioSession] Switched to .playback for review")
+        // `.notifyOthersOnDeactivation` wakes any other audio app we bumped
+        // during `.voiceChat` so system routing snaps back cleanly.
+        try session.setActive(false, options: .notifyOthersOnDeactivation)
+        print("[AudioSession] Deactivated after coaching session")
       } catch {
-        print("[AudioSession] Failed to switch to .playback: \(error)")
+        print("[AudioSession] Failed to deactivate: \(error)")
       }
     }
   }
@@ -323,10 +420,10 @@ class AudioSessionManager: ObservableObject {
   // MARK: - Playback (PCM16LE 24kHz mono from Gemini)
 
   /// Play raw PCM16 Int16 audio data received from Gemini Live.
-  /// Thread-safe — can be called from any thread. No-op in `.recording` mode.
+  /// Thread-safe — can be called from any thread. No-op in recording modes.
   func playPcm16Audio(_ data: Data) {
-    guard mode == .coaching else {
-      print("[AudioSession] ⚠ playPcm16Audio called in .recording mode — ignoring")
+    guard mode == .coaching || mode == .coachingPhoneOnly else {
+      print("[AudioSession] ⚠ playPcm16Audio called in recording mode — ignoring")
       return
     }
     let bytesPerFrame = 2  // Int16
@@ -392,17 +489,22 @@ class AudioSessionManager: ObservableObject {
   /// Pass `reason` so logs make it clear WHY we dropped the queue
   /// (barge-in, tool-call handoff, or session teardown).
   func clearPlaybackBuffer(reason: String = "unspecified") {
-    guard mode == .coaching else {
-      print("[AudioSession] ⚠ clearPlaybackBuffer called in .recording mode — ignoring")
+    guard mode == .coaching || mode == .coachingPhoneOnly else {
+      print("[AudioSession] ⚠ clearPlaybackBuffer called in recording mode — ignoring")
       return
     }
     let discarded = scheduledBufferCount
     playerNode.stop()
     scheduledBufferCount = 0
-    Task { @MainActor in
-      self.isAISpeaking = false
+    isAISpeaking = false
+    // Only re-prime the player if the engine is still running. Barge-in can
+    // fire after stopCapture() has torn the engine down; calling
+    // playerNode.play() on a stopped engine is a no-op that logs an
+    // AVAudioEngine error (AVAudioPlayerNodeImpl.mm line-noise) without
+    // any meaningful signal for the caller.
+    if engine.isRunning {
+      playerNode.play()
     }
-    playerNode.play()
     print(
       "[AudioSession] Playback cleared (reason: \(reason)), "
       + "discarded \(discarded) queued chunks"
@@ -467,6 +569,7 @@ class AudioSessionManager: ObservableObject {
       return
     }
     audioConverter = AVAudioConverter(from: hwFormat, to: sendFormat)
+    converterInputFormat = hwFormat
     print("[AudioSession] Audio converter initialized: \(hwFormat.sampleRate)Hz → \(sendFormat.sampleRate)Hz")
   }
 
@@ -508,6 +611,14 @@ class AudioSessionManager: ObservableObject {
 
   /// Re-bind the mic tap to the current input-node format after a route change.
   /// Safe no-op when we aren't capturing or the engine isn't running.
+  ///
+  /// Short-circuits when the live input format matches the format the converter
+  /// was built against. This collapses the startup cascade where `setCategory`
+  /// + `setActive` + `overrideOutputAudioPort` + `setPreferredInput` + engine
+  /// start all queue route-change notifications that the run loop delivers
+  /// *after* `startCapture()` returns — each previously rebuilt tap + converter
+  /// against an unchanged format. Real route swaps (HFP ↔ built-in) change
+  /// rate or channel count and still fall through to the rebuild path.
   private func rebindMicTapIfCapturing(reason: String) {
     guard isCapturing else { return }
     guard engine.isRunning else {
@@ -515,15 +626,27 @@ class AudioSessionManager: ObservableObject {
       return
     }
 
-    let beforeFmt = inputNode.inputFormat(forBus: 0)
+    let liveFmt = inputNode.inputFormat(forBus: 0)
+
+    if let built = converterInputFormat,
+       built.sampleRate == liveFmt.sampleRate,
+       built.channelCount == liveFmt.channelCount,
+       built.commonFormat == liveFmt.commonFormat {
+      print(
+        "[AudioSession] Route change (\(reason)) — input format unchanged "
+        + "(\(liveFmt.sampleRate)Hz, \(liveFmt.channelCount)ch); keeping tap and converter"
+      )
+      return
+    }
 
     // Install at the new format. `installMicTap()` removes any existing tap first.
     installMicTap()
 
     let afterFmt = inputNode.inputFormat(forBus: 0)
 
-    // The hardware format may have changed (HFP ↔ built-in); rebuild the converter.
+    // The hardware format changed (HFP ↔ built-in); rebuild the converter.
     audioConverter = nil
+    converterInputFormat = nil
     initializeConverterIfNeeded()
 
     // Re-arm the silent-mic watchdog so it evaluates against the new route.
@@ -532,8 +655,8 @@ class AudioSessionManager: ObservableObject {
 
     print(
       "[AudioSession] Tap re-installed after \(reason): "
-      + "rate \(beforeFmt.sampleRate)Hz → \(afterFmt.sampleRate)Hz, "
-      + "channels \(beforeFmt.channelCount) → \(afterFmt.channelCount)"
+      + "rate \(liveFmt.sampleRate)Hz → \(afterFmt.sampleRate)Hz, "
+      + "channels \(liveFmt.channelCount) → \(afterFmt.channelCount)"
     )
   }
 

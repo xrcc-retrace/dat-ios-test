@@ -20,7 +20,7 @@ struct CustomButton: View {
 
     var foregroundColor: Color {
       switch self {
-      case .primary: return Color("backgroundPrimary")
+      case .primary: return .backgroundPrimary
       case .secondary: return .textPrimary
       case .ghost: return .appPrimary
       case .destructive: return .white

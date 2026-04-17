@@ -13,8 +13,7 @@ struct ExpertRecordingReviewView: View {
 
   var body: some View {
     NavigationStack {
-      ZStack {
-        Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+      RetraceScreen {
 
         ScrollView {
           VStack(spacing: Spacing.screenPadding) {
@@ -126,6 +125,7 @@ struct ExpertRecordingReviewView: View {
           .padding(Spacing.screenPadding)
         }
       }
+      .navigationTitle("Review")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
@@ -343,8 +343,7 @@ struct RecordingPreviewPlayer: View {
       if let player {
         VideoPlayer(player: player)
       } else {
-        RoundedRectangle(cornerRadius: Radius.lg)
-          .fill(Color.surfaceRaised)
+        VideoThumbnailView(url: url, cornerRadius: Radius.lg)
           .overlay {
             Button {
               let p = AVPlayer(url: url)
@@ -376,8 +375,7 @@ struct StepClipPlayer: View {
       if let player {
         VideoPlayer(player: player)
       } else {
-        RoundedRectangle(cornerRadius: Radius.sm)
-          .fill(Color.surfaceRaised)
+        VideoThumbnailView(url: url, cornerRadius: Radius.sm)
           .overlay {
             Button {
               let p = AVPlayer(url: url)

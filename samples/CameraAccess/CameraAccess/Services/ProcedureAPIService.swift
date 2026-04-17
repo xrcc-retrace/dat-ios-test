@@ -93,7 +93,11 @@ class ProcedureAPIService: ObservableObject {
 
   // MARK: - Learner session
 
-  func startLearnerSession(procedureId: String, voice: String) async throws -> LearnerSessionStartResponse {
+  func startLearnerSession(
+    procedureId: String,
+    voice: String,
+    autoAdvance: Bool
+  ) async throws -> LearnerSessionStartResponse {
     guard let url = URL(string: "\(serverBaseURL)/api/learner/session/start") else {
       throw APIError.invalidURL
     }
@@ -101,8 +105,14 @@ class ProcedureAPIService: ObservableObject {
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-    let body: [String: String] = ["procedure_id": procedureId, "voice": voice]
-    request.httpBody = try JSONEncoder().encode(body)
+    // Body contains mixed types (String + Bool) so use JSONSerialization
+    // rather than a homogeneous [String: String] dict.
+    let body: [String: Any] = [
+      "procedure_id": procedureId,
+      "voice": voice,
+      "auto_advance": autoAdvance,
+    ]
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
     let (data, response) = try await URLSession.shared.data(for: request)
     guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {

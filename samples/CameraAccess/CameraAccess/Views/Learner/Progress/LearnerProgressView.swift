@@ -2,10 +2,10 @@ import SwiftUI
 
 struct LearnerProgressView: View {
   @ObservedObject var progressStore: LocalProgressStore
+  let onExit: () -> Void
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(alignment: .leading, spacing: Spacing.screenPadding) {
@@ -33,9 +33,18 @@ struct LearnerProgressView: View {
       }
     }
     .navigationTitle("Training Log")
-    .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        Button {
+          onExit()
+        } label: {
+          Image(systemName: "chevron.backward")
+            .foregroundColor(.textSecondary)
+        }
+      }
+    }
+    .retraceNavBar()
   }
 
   // MARK: - Activity Overview

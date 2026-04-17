@@ -1,5 +1,6 @@
 import SwiftUI
 import Network
+import MWDATCore
 
 struct ServerSettingsView: View {
   @State private var serverAddress: String
@@ -7,12 +8,14 @@ struct ServerSettingsView: View {
   @State private var deviceIP: String?
   @State private var showSaved = false
   @ObservedObject private var discovery = BonjourDiscovery.shared
+  @ObservedObject private var wearablesVM: WearablesViewModel
   @Environment(\.dismiss) private var dismiss
 
   private static let serverURLKey = "serverBaseURL"
   private static let defaultServerURL = "http://192.168.1.100:8000"
 
-  init() {
+  init(wearablesVM: WearablesViewModel) {
+    self.wearablesVM = wearablesVM
     let saved = UserDefaults.standard.string(forKey: Self.serverURLKey) ?? Self.defaultServerURL
     let display = saved
       .replacingOccurrences(of: "http://", with: "")
@@ -21,11 +24,15 @@ struct ServerSettingsView: View {
   }
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(spacing: Spacing.screenPadding) {
+          // Glasses section — connect / disconnect / re-register. Rendered
+          // first because the root gate is gone: users who skip pairing can
+          // manage it from here at any time.
+          glassesSection
+
           // Header
           VStack(spacing: Spacing.md) {
             Image(systemName: "server.rack")
@@ -234,10 +241,86 @@ struct ServerSettingsView: View {
     }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .onAppear {
       fetchDeviceIP()
+    }
+  }
+
+  // MARK: - Glasses section
+
+  @ViewBuilder
+  private var glassesSection: some View {
+    VStack(alignment: .leading, spacing: Spacing.md) {
+      Text("Glasses")
+        .font(.retraceOverline)
+        .tracking(0.5)
+        .foregroundColor(.textSecondary)
+        .textCase(.uppercase)
+
+      // Status row
+      HStack(spacing: Spacing.md) {
+        Circle()
+          .fill(glassesStatusColor)
+          .frame(width: 10, height: 10)
+        Text(glassesStatusLabel)
+          .font(.retraceCallout)
+          .foregroundColor(.textPrimary)
+        Spacer()
+      }
+      .padding(14)
+      .background(Color.surfaceRaised)
+      .cornerRadius(Radius.md)
+      .overlay(
+        RoundedRectangle(cornerRadius: Radius.md)
+          .stroke(Color.borderSubtle, lineWidth: 1)
+      )
+
+      // Actions — Connect shown when unpaired, Disconnect + Re-register when paired.
+      switch wearablesVM.registrationState {
+      case .registered:
+        HStack(spacing: Spacing.md) {
+          CustomButton(
+            title: "Disconnect",
+            style: .destructive,
+            isDisabled: false
+          ) {
+            wearablesVM.disconnectGlasses()
+          }
+          CustomButton(
+            title: "Re-register",
+            style: .secondary,
+            isDisabled: false
+          ) {
+            wearablesVM.reRegisterGlasses()
+          }
+        }
+      default:
+        CustomButton(
+          title: wearablesVM.registrationState == .registering ? "Connecting…" : "Connect my glasses",
+          style: .primary,
+          isDisabled: wearablesVM.registrationState == .registering
+        ) {
+          wearablesVM.connectGlasses()
+        }
+      }
+    }
+    .padding(.top, Spacing.xl)
+  }
+
+  private var glassesStatusColor: Color {
+    switch wearablesVM.registrationState {
+    case .registered: return .green
+    case .registering: return .yellow
+    default: return .textTertiary
+    }
+  }
+
+  private var glassesStatusLabel: String {
+    switch wearablesVM.registrationState {
+    case .registered: return "Connected"
+    case .registering: return "Connecting…"
+    default: return "Not connected"
     }
   }
 

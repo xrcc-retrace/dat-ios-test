@@ -10,8 +10,7 @@ struct VoiceSelectionView: View {
   }
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(spacing: Spacing.lg) {
@@ -23,9 +22,8 @@ struct VoiceSelectionView: View {
       }
     }
     .navigationTitle("AI Voice")
-    .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .navigationBarTitleDisplayMode(.inline)
+    .retraceNavBar()
     .task { await fetchVoices() }
     .onDisappear { player.stop() }
   }

@@ -4,6 +4,7 @@ import SwiftUI
 struct LearnerTabView: View {
   let wearables: WearablesInterface
   @ObservedObject var wearablesVM: WearablesViewModel
+  let onExit: () -> Void
   @StateObject private var progressStore = LocalProgressStore()
 
   var body: some View {
@@ -13,7 +14,8 @@ struct LearnerTabView: View {
         DiscoverView(
           wearables: wearables,
           wearablesVM: wearablesVM,
-          progressStore: progressStore
+          progressStore: progressStore,
+          onExit: onExit
         )
       }
       .tabItem {
@@ -26,7 +28,8 @@ struct LearnerTabView: View {
         LibraryView(
           progressStore: progressStore,
           wearables: wearables,
-          wearablesVM: wearablesVM
+          wearablesVM: wearablesVM,
+          onExit: onExit
         )
       }
       .tabItem {
@@ -36,7 +39,7 @@ struct LearnerTabView: View {
 
       // Tab 3: Progress
       NavigationStack {
-        LearnerProgressView(progressStore: progressStore)
+        LearnerProgressView(progressStore: progressStore, onExit: onExit)
       }
       .tabItem {
         Image(systemName: "chart.bar")
@@ -45,7 +48,7 @@ struct LearnerTabView: View {
 
       // Tab 4: Profile
       NavigationStack {
-        ProfileView(wearablesVM: wearablesVM)
+        ProfileView(wearablesVM: wearablesVM, onExit: onExit)
       }
       .tabItem {
         Image(systemName: "person.circle")

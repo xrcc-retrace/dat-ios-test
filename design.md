@@ -1,6 +1,7 @@
 # Retrace iOS App — Design Specification
 
 > Reference document for all UI/UX implementation. Minimalistic, professional, polished.
+> Brand aesthetic: high-contrast monochrome with Hazard yellow as functional accent — a tool, not a toy.
 
 ---
 
@@ -26,13 +27,13 @@ These users work with their hands, often in loud/dirty environments, wearing glo
 2. **Tool, not toy** — No gamification gimmicks, no playful illustrations, no rounded-bubbly aesthetics. This is a professional tool that happens to be well-designed. Closer to Flir/Bosch professional apps than Duolingo
 3. **Glanceable in the field** — Key information (current step, progress, status) readable at arm's length. Bold type, strong hierarchy, minimal decoration
 4. **Trust through structure** — Clean data presentation, visible status indicators, explicit actions. Technicians need to trust the instructions — the UI should feel precise and reliable
-5. **Dark-first for environments** — Dark theme reduces glare in workshops, kitchens, server rooms. High-contrast text ensures readability under variable lighting
+5. **Dark-first for environments** — Deep OLED black reduces glare in workshops, kitchens, server rooms. High-contrast text ensures readability under variable lighting
 
 ### Visual Language
 
-- **Typography:** System SF with weight contrast (not decorative fonts). Bold for hierarchy, monospace for technical data (timestamps, durations, error codes)
-- **Color:** Restrained palette. Single accent color for interactive elements. Status colors (green/orange/red) used structurally, not decoratively
-- **Surfaces:** Subtle elevation via opacity differences on black. No gradients, no blur effects, no glassmorphism. Flat, functional surfaces
+- **Typography:** Golos Text mapped to iOS HIG type scale. Until font files ship, `Font.system(...)` renders the same sizes/weights as a faithful fallback. Bold for hierarchy, SF Mono for technical data (timestamps, durations, error codes)
+- **Color:** Monochrome Ink scale (ink950 → ink50) carries structure and hierarchy. **Hazard yellow** is the single functional accent, reserved for live/active indicators — never decoration. White is the CTA fill
+- **Surfaces:** Layered via Ink opacity on OLED black. No gradients, no blur effects, no glassmorphism. Flat, functional surfaces differentiated by Ink level
 - **Iconography:** SF Symbols only. Outline style for navigation, filled for active states. No custom illustrations
 - **Motion:** Functional transitions only (step advance, expand/collapse). No bouncy animations, no confetti, no celebration screens beyond a simple checkmark
 - **Density:** Moderate information density — technicians are literate users who can handle data-rich screens. Don't over-simplify. Show step counts, durations, timestamps, tips, and warnings without hiding them behind extra taps
@@ -50,34 +51,56 @@ These users work with their hands, often in loud/dirty environments, wearing glo
 
 ### 1.1 Color Palette
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `Color.appPrimary` | `#0064E0` | Accent, selected states, CTAs, active indicators |
-| `Color.destructiveBackground` | `#FFD8DB` | Destructive button backgrounds |
-| `Color.destructiveForeground` | `#FFD8DB` | Destructive button text |
-| Background | `Color.black` | All screen backgrounds |
-| Card fill | `Color(.systemGray6).opacity(0.15)` | Cards, inputs, elevated surfaces |
-| Card border | `Color.appPrimary.opacity(0.3)` | Active/enabled card outlines (1px) |
-| Text primary | `Color.white` | Headings, body text |
-| Text secondary | `Color.gray` | Subtitles, metadata, descriptions |
-| Text tertiary | `Color.gray.opacity(0.6)` | Disabled text, hints |
-| Success | `Color.green` | Completion indicators, connected status |
-| Warning | `Color.orange` | Warning tags |
-| Info | `Color.appPrimary` | Tip tags, processing states |
+The palette is two families — **Ink** for monochrome structure, **Hazard** for the single accent — plus a small semantic fallback set for system statuses. All colors resolve through named Asset Catalog entries so tokens can be retuned centrally.
+
+**Ink (monochrome foundation)**
+
+| Token | Hex | Asset name | Usage |
+|-------|-----|------------|-------|
+| `ink50` | `#F9FAFB` | `textPrimary` | Primary text, hero CTA fill, selected tab/chip |
+| `ink100` | `#F3F4F6` | `textSecondary` | Subtitles, supporting copy |
+| `ink200` | `#E5E7EB` | `textTertiary` | Tertiary text, subtle borders, overlines |
+| `ink400` | `#9CA3AF` | `borderSubtle` | Inactive icons, placeholders, disabled text |
+| `ink700` | `#374151` | `surfaceRaised` | Surface L2 (pressed/hover), step number badges |
+| `ink800` | `#1F2937` | `surfaceBase` | Surface L1 (default cards, inputs) |
+| `ink900` | `#111827` | `backgroundPrimary` | Deep section backgrounds |
+| `ink950` | `#030712` | (app bg) | App background — deep OLED black |
+
+**Hazard (functional accent)**
+
+| Token | Hex | Asset name | Usage |
+|-------|-----|------------|-------|
+| `hazard500` | `#EAB308` | `appPrimaryColor` | Live recording dot, "REC"/"LIVE" badges, active tracking, session-live logo stroke, voice-listening pulse, focus ring, active streak days |
+| `hazard600` | `#CA8A04` | `accentMuted` | Pressed/active state for hazard elements |
+
+**Semantic fallbacks** (kept for system statuses only — not for brand expression)
+
+| Token | Value | Asset | Usage |
+|-------|-------|-------|-------|
+| Success | `Color.green` | `semanticSuccess` | Glasses connected, successful completion |
+| Warning | `Color.orange` | (inline) | Warning tags on steps |
+| Error | red | `semanticError` | Failed recordings, destructive confirmations |
+| Destructive bg | `#3A1618` | `destructiveBackground` | Destructive button background |
+| Destructive fg | `#FFD8DB` | `destructiveForeground` | Destructive button text |
 
 ### 1.2 Typography
 
-| Style | Spec | Usage |
-|-------|------|-------|
-| Display | System 36pt bold | App title on ModeSelectionView |
-| Title 1 | System 22pt bold | Screen titles, procedure names |
-| Title 2 | System 18pt semibold | Card titles, section headers |
-| Title 3 | System 16pt semibold | List item titles |
-| Body | System 15-16pt regular | Descriptions, instructions |
-| Caption | System 13-14pt regular | Metadata, subtitles |
-| Overline | System 13pt semibold uppercase | Section labels ("STEPS", "ANALYTICS") |
-| Mono | System monospaced | Durations, timestamps, IP addresses, file sizes |
-| Button | System 15pt semibold | Button labels |
+Golos Text mapped to Apple Human Interface Guidelines. Until the font files are embedded, every style is rendered with `Font.system(...)` at the exact sizes/weights/tracking below — swap is a drop-in later.
+
+| Style | Size | Weight | Tracking | Usage |
+|-------|------|--------|----------|-------|
+| Large Title | 34pt | Bold (700) | -0.4pt | Screen titles ("Workflows", "Procedures", "My Library") |
+| Title 1 | 28pt | Bold (700) | -0.3pt | Procedure names, hero section headers |
+| Title 2 | 22pt | Bold (700) | -0.3pt | Card titles, sub-section headers |
+| Title 3 | 18pt | Semibold (600) | -0.3pt | List item titles |
+| Headline | 17pt | Semibold (600) | -0.4pt | Emphasized body, step titles |
+| Body | 17pt | Regular (400) | -0.4pt | Descriptions, instructions |
+| Callout | 16pt | Regular (400) | -0.3pt | Supporting body text, button labels |
+| Footnote | 13pt | Regular (400) | 0pt | Metadata, timestamps |
+| Caption 1 | 12pt | Medium (500) | 0pt | Pills, overlines, section labels |
+| Mono | — | Regular | — | SF Mono for durations, timestamps, IPs, error codes (Golos has no mono variant) |
+
+The **"RETRACE" wordmark** uses letter-spaced Title 1 Bold, all caps, `ink50` on `ink950`.
 
 ### 1.3 Spacing & Layout
 
@@ -92,46 +115,95 @@ These users work with their hands, often in loud/dirty environments, wearing glo
 
 ### 1.4 Corner Radii
 
-| Element | Radius |
-|---------|--------|
-| Buttons (CustomButton) | 30pt |
-| Cards (ModeCard, CardView) | 16pt |
-| Icon containers | 12pt |
-| Input fields | 12pt |
-| Clips / media | 8pt |
-| Tags / pills | 6pt |
+| Element | Radius | Rationale |
+|---------|--------|-----------|
+| `CustomButton` | 30pt (capsule) | Preserved — signature full-width pill across the app |
+| Cards (ModeCard, CardView) | 16pt | |
+| Icon containers | 12pt | |
+| Input fields | 12pt | |
+| Clips / media | 8pt | |
+| Tags / pills | 6pt | |
 
-### 1.5 Shadows & Elevation
+### 1.5 Elevation & Surface Hierarchy
 
-- Cards: `shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)`
-- Minimal use — the dark theme relies on surface opacity differences rather than shadows
+No shadows. Elevation is carried entirely by Ink-level contrast on OLED black:
+
+- **L0** — `ink950` app background
+- **L1** — `ink800` default card / input surface
+- **L2** — `ink700` pressed / hover / step number badge
+
+A 1pt stroke in `ink700` at low opacity may be added for extra definition where cards sit directly on `ink950`. Avoid shadow radii on OLED — they read as grey smudges, not depth.
 
 ### 1.6 Component Catalog
 
-#### Existing Components (reuse as-is)
+**Existing components (reuse as-is, retuned tokens)**
 
 | Component | File | Spec |
 |-----------|------|------|
-| `CustomButton` | `Views/Components/CustomButton.swift` | Full-width, 56pt height, 30pt radius. Styles: `.primary` (blue bg, white text), `.destructive` (pink bg/text) |
-| `CircleButton` | `Views/Components/CircleButton.swift` | 56x56 white circle with icon + optional label |
-| `CardView` | `Views/Components/CardView.swift` | Container with background, corner radius, shadow |
-| `ModeCard` | `Views/ModeSelectionView.swift` | Icon + title + subtitle row card. Blue border when enabled |
+| `CustomButton` | `Views/Components/CustomButton.swift` | Full-width, 56pt height, 30pt capsule. **Primary**: `ink50` fill, `ink950` text (the "Hero CTA" — mirrors the reference "Start Journey" button). **Destructive**: `destructiveBackground` fill, `destructiveForeground` text |
+| `CircleButton` | `Views/Components/CircleButton.swift` | 56x56 circle with icon + optional label |
+| `CardView` | `Views/Components/CardView.swift` | `ink800` fill, 16pt radius, no shadow |
+| `ModeCard` | `Views/ModeSelectionView.swift` | `ink800` fill, `ink700` stroke at rest, `hazard500` stroke when a live session is active. Icon + title + subtitle |
 | `StatusText` | `Views/Components/StatusText.swift` | Status message display |
 
-#### New Components (to build)
+**New / refactored components**
 
 | Component | Purpose | Spec |
 |-----------|---------|------|
-| `MetadataPill` | Compact info badge | Capsule shape, `systemGray6` at 15% fill, caption text. Shows duration, step count, date, etc. |
-| `StatCard` | Analytics number display | Vertical stack: large number (Title 1, white) + label (Caption, gray). Card fill background |
-| `ProcedureCard` | Procedure list item | HStack: left badge + center (title, description 2-line clamp, metadata pills) + chevron. ModeCard styling |
-| `CategoryChip` | Filter pill | Capsule, unselected = card fill + white text, selected = `appPrimary` fill + white text |
-| `EditableStringList` | Array editor for tips/warnings | List of text rows with delete (red minus), add button at bottom. Used in StepEditView |
-| `StepProgressBar` | Discrete step indicator | Segmented horizontal bar, `appPrimary` fill on completed segments, gray track |
+| `MetadataPill` | Compact info badge | Capsule, `ink800` fill, Caption 1 text in `ink100`. Shows duration, step count, date |
+| `StatCard` | Analytics number display | Vertical stack: large number (Title 1, `ink50`) + label (Caption 1, `ink200`). `ink800` fill |
+| `ProcedureCardView` | Procedure list item | HStack: step-count badge (`ink700` circle, `ink50` number) + center (title, description 2-line clamp, metadata pills) + chevron. Card styling |
+| `CategoryChip` | Filter pill | Capsule. Unselected = `ink800` fill + `ink100` text. **Selected = `ink50` fill + `ink950` text** (mirrors hero CTA — Hazard is *not* used for selection) |
+| `EditableStringList` | Array editor for tips/warnings | List of text rows with destructive minus, add button at bottom. Tips use `ink50` text on `ink800`; warnings use `Color.orange` tag |
+| `StepProgressBar` | Discrete step indicator | Segmented horizontal bar, **`ink50` fill on completed segments**, `ink700` track. Hazard yellow is reserved for the live-session indicator that sits next to it, not the bar itself |
 
 ---
 
-## 2. App Navigation Architecture
+## 2. Brand Identity
+
+### Logo
+
+Overlapping diamonds: one solid, one hollow. The hollow diamond represents the learner **retracing** the expert's solid path — the core product metaphor rendered in the mark.
+
+- **Idle:** both diamonds in `ink50` on `ink950`
+- **Live session:** the hollow diamond's stroke shifts to `hazard500`, signaling that a session is currently tracking. This is the single place in the UI where the accent appears prominently on a brand surface
+
+### Wordmark
+
+"RETRACE" in Golos Text Bold (Title 1 scale), all caps, letter-spaced (+0.8pt tracking). Used on the splash, onboarding hero, and about section.
+
+### Tagline
+
+"Record an expert once. Coach every learner forever."
+
+---
+
+## 3. Accent Usage Rules
+
+Hazard yellow is the most disciplined element of this system. The monochrome read only works if the accent stays rare. Use this table when in doubt:
+
+**Yellow is allowed on:**
+- Live recording dot and "REC" / "LIVE" badges
+- Active session indicator (top bar of `CoachingSessionView`)
+- Voice "Listening…" pulse, microphone-active ring
+- Logo stroke during a live session
+- Processing pulse on `ProcedureCardView` while a video is being segmented
+- Streak/activity-day fill on `LearnerProgressView` for active days
+- Focus ring on text fields and inputs
+
+**Yellow is NOT allowed on:**
+- Primary CTA fills → use `ink50` (white)
+- Selected tab icons/labels → use `ink50`
+- Selected category chips → white fill, black text
+- Step number badges → `ink700` circle, `ink50` number
+- Links, emphasized body text, section headers
+- Bookmark icons, chevrons, completed-step checkmarks
+
+The rule of thumb: if it means "this is happening right now," it can be yellow. If it means "this is important" or "this is selected," it is white.
+
+---
+
+## 4. App Navigation Architecture
 
 ```
 CameraAccessApp
@@ -150,27 +222,27 @@ CameraAccessApp
               └── Learner Mode → LearnerTabView
                     ├── Tab 1: "Procedures" → DiscoverView
                     │     ├── overlay: SearchView
-                    │     └── push: ProcedureDetailView (learner)
+                    │     └── push: LearnerProcedureDetailView
                     │           └── fullScreenCover: CoachingSessionView
                     ├── Tab 2: "Library" → LibraryView
-                    │     └── push: ProcedureDetailView (learner)
-                    ├── Tab 3: "Progress" → ProgressView
+                    │     └── push: LearnerProcedureDetailView
+                    ├── Tab 3: "Progress" → LearnerProgressView
                     └── Tab 4: "Profile" → ProfileView
 ```
 
 ### Tab Bar Styling
 
-- Background: black
-- Unselected: white icons
-- Selected: `Color.appPrimary` icon + label
+- Background: `ink950`
+- Unselected: `ink400` icons and labels
+- **Selected: `ink50` (white) icon + label — never Hazard yellow.** Yellow is reserved for live session states (per §3)
 - Expert tab icons: `list.bullet.rectangle.portrait` (Workflows), `video.badge.plus` (Record)
 - Learner tab icons: `wrench.and.screwdriver` (Procedures), `books.vertical` (Library), `chart.bar` (Progress), `person.circle` (Profile)
 
 ---
 
-## 3. Expert Flow
+## 5. Expert Flow
 
-### 3.1 ExpertTabView
+### 5.1 ExpertTabView
 
 **Purpose:** Container for the two-tab Expert experience.
 
@@ -181,408 +253,299 @@ CameraAccessApp
 
 ---
 
-### 3.2 WorkflowListView (Tab 1: Workflows)
+### 5.2 WorkflowListView (Tab 1: Workflows)
 
 **Purpose:** "My Workflows" — all procedures the expert has created.
 
 **Layout (top → bottom):**
 
 1. **Navigation bar**
-   - Large title: "Workflows"
+   - Large Title: "Workflows"
    - Trailing: gear icon → ServerSettingsView
 
 2. **Summary strip** — horizontal row of `MetadataPill` components
    - "X procedures" | "Y total steps"
 
 3. **Procedure list** — vertical scroll of `ProcedureCard` items
-   - Each card shows: step count badge (circle, `appPrimary` bg) | title + description (2-line) + metadata pills (duration, date) | chevron
-   - **Processing state:** pulsing `appPrimary` dot, subtitle "Processing with AI..." in accent color
-   - **Failed state:** red dot, error message in red
+   - Step count badge (`ink700` circle, `ink50` number) | title + description (2-line) + metadata pills (duration, date) | chevron
+   - **Processing state:** pulsing `hazard500` dot, subtitle "Processing with AI…" in `ink100`
+   - **Failed state:** red dot (`semanticError`), error message in red
 
 4. **Empty state** (no procedures)
-   - SF Symbol `video.badge.plus` at 48pt in `appPrimary`
+   - SF Symbol `video.badge.plus` at 48pt in `ink400`
    - "No workflows yet"
    - "Record your first procedure using your glasses or upload a video"
-   - `CustomButton` "Start Recording" → switches to Tab 2
+   - `CustomButton.primary` "Start Recording" → switches to Tab 2
 
 **Interactions:**
 - Tap card → push `ProcedureDetailView`
 - Swipe left → red "Delete" action
 - Pull to refresh → re-fetch from `GET /api/procedures`
 
-**Data:** `WorkflowListViewModel` fetches `GET /api/procedures`, returns list items with id, title, description, total_duration, created_at, status, step_count.
+**Data:** `WorkflowListViewModel` fetches `GET /api/procedures`.
 
 ---
 
-### 3.3 ProcedureDetailView
+### 5.3 ProcedureDetailView
 
 **Purpose:** Full read view of a single procedure. The expert's primary review surface.
 
 **Layout (ScrollView, top → bottom):**
 
-1. **Navigation bar**
-   - Back arrow
-   - Trailing: "Edit" text button + overflow menu (`...`) with "Share" and "Delete"
-
-2. **Header**
-   - Title (Title 1, white)
-   - Description (Body, gray)
-   - Metadata row: duration pill, step count pill, created date pill
-
-3. **Analytics card** (section label: "ANALYTICS")
+1. **Navigation bar** — Back arrow · "Edit" text button · overflow (`...`) with "Share" / "Delete"
+2. **Header** — Title 1 in `ink50`, Body description in `ink100`, metadata row (duration · step count · created date pills)
+3. **Analytics card** (section label: "ANALYTICS", Caption 1 in `ink200`, uppercase)
    - Grid of `StatCard` items: "Learners Trained", "Completion Rate", "Avg. Time"
    - For hackathon: show "0" / "—" with subtle "Coming with Learner Mode" label
-   - Card fill background, 16pt radius
-
-4. **Steps section** (section label: "STEPS")
-   - Vertical list of expandable step cards
-   - Collapsed: step number (`appPrimary`), title, timestamp range
-   - Expanded: + description, video clip player, tips (blue tags), warnings (orange tags)
+4. **Steps section** (label: "STEPS")
+   - Expandable step cards
+   - Collapsed: step number (`ink50` in `ink700` circle), title, timestamp range
+   - Expanded: description, video clip player, tip tags (`ink800` bg, `ink100` text), warning tags (`Color.orange` bg at 20%, `Color.orange` text)
    - Pencil icon on each step header → push `StepEditView`
+5. **Source video section** (label: "SOURCE RECORDING") — collapsible via disclosure group
 
-5. **Source video section** (section label: "SOURCE RECORDING")
-   - Full video player for original uploaded video
-   - Collapsible via disclosure group
-
-**Interactions:**
-- Tap step → expand/collapse
-- Tap "Edit" → push `ProcedureEditView`
-- Tap step pencil → push `StepEditView`
-- Tap "Delete" in overflow → confirmation alert → `DELETE /api/procedures/{id}` → pop to list
-
-**Data:** `ProcedureDetailViewModel` fetches `GET /api/procedures/{id}`, returns full `ProcedureResponse`.
+**Interactions:** Tap step → expand/collapse · Tap "Edit" → push `ProcedureEditView` · Tap pencil → push `StepEditView` · Tap "Delete" → confirmation → `DELETE /api/procedures/{id}` → pop to list.
 
 ---
 
-### 3.4 ProcedureEditView
+### 5.4 ProcedureEditView
 
 **Purpose:** Edit procedure-level fields. Pushed from ProcedureDetailView.
 
 **Layout:**
 
-1. **Navigation bar**
-   - Leading: "Cancel"
-   - Trailing: "Save" (in `appPrimary`, disabled until changes detected)
-   - Title: "Edit Workflow"
-
+1. **Navigation bar** — Leading "Cancel" · Trailing "Save" (`ink50`, disabled until changes detected) · Title "Edit Workflow"
 2. **Form fields** (ScrollView, not SwiftUI Form — to maintain dark theme)
-   - **Title** — label (Overline) + TextField, card fill background, `appPrimary` border on focus
+   - **Title** — Caption 1 overline + TextField, `ink800` fill, `hazard500` stroke on focus (focus ring is one of the sanctioned yellow surfaces per §3)
    - **Description** — label + TextEditor, minimum 3 lines
+3. **Step order section** (label: "STEP ORDER") — list of step titles with drag handles; `.onMove` modifier
+4. **Danger zone** — "Delete Procedure" `CustomButton.destructive`
 
-3. **Step order section** (section label: "STEP ORDER")
-   - List of step titles with drag handles
-   - Each row: drag icon + step number + title
-   - `.onMove` modifier for reordering
-
-4. **Danger zone**
-   - "Delete Procedure" `CustomButton` with `.destructive` style
-
-**Data:** Requires `PUT /api/procedures/{id}` endpoint (new). Sends updated title, description, step order array.
+**Data:** Requires new `PUT /api/procedures/{id}`.
 
 ---
 
-### 3.5 StepEditView
+### 5.5 StepEditView
 
 **Purpose:** Edit a single step. Pushed from ProcedureDetailView.
 
 **Layout:**
 
-1. **Navigation bar**
-   - Leading: "Cancel"
-   - Trailing: "Save" (`appPrimary`)
-   - Title: "Edit Step X"
-
+1. **Navigation bar** — Cancel · "Save" in `ink50` · Title "Edit Step X"
 2. **Fields**
    - **Title** — TextField
    - **Description** — TextEditor, 4+ lines
-   - **Tips** — `EditableStringList` with `appPrimary` accent. Each row: text + red minus to delete. "Add Tip" button at bottom
-   - **Warnings** — `EditableStringList` with orange accent. Same pattern
-   - **Timestamps** — Start/End in compact time format (less likely to need editing, shown for transparency)
+   - **Tips** — `EditableStringList` with `ink50` text. Each row: text + destructive minus. "Add Tip" button at bottom
+   - **Warnings** — `EditableStringList` with orange accent
+   - **Timestamps** — Start/End in compact time format
+3. **Clip preview** — small read-only video player
 
-3. **Clip preview** — small video player for the step's clip (read-only reference)
-
-**Data:** Requires `PUT /api/procedures/{id}/steps/{step_number}` endpoint (new).
+**Data:** Requires new `PUT /api/procedures/{id}/steps/{step_number}`.
 
 ---
 
-### 3.6 RecordTabView (Tab 2: Record)
+### 5.6 RecordTabView (Tab 2: Record)
 
 **Purpose:** Wrapper around the existing recording flow, adding an upload-from-library option.
 
 **Landing state** (no active stream):
-- SF Symbol `video.fill` in `appPrimary`
+- SF Symbol `video.fill` in `ink400`
 - "Record a New Procedure" (Title 2)
-- "Stream from your glasses and record, or upload an existing video" (Body, gray)
-- Two action cards (ModeCard style):
-  - "Record with Glasses" → existing StreamSessionView/NonStreamView flow
+- "Stream from your glasses and record, or upload an existing video" (Body, `ink100`)
+- Two `ModeCard` action cards:
+  - "Record with Glasses" → existing StreamSessionView / NonStreamView flow
   - "Upload Video" → MediaPickerView → ExpertRecordingReviewView
 
-**Active state:** existing StreamView with recording controls.
+**Active state:** existing StreamView with recording controls. **REC dot is `hazard500` (live indicator — sanctioned per §3).**
 
-**Completion:** After successful processing, show procedure title + step count, then "View Procedure" button switches to Tab 1 and pushes to ProcedureDetailView.
-
----
-
-## 4. Learner Flow
-
-### 4.1 LearnerTabView
-
-**Purpose:** Container for the four-tab Learner experience.
-
-Same dark tab bar styling. Each tab wraps its own `NavigationStack`.
+**Completion:** After successful processing, show procedure title + step count, then "View Procedure" `CustomButton.primary` switches to Tab 1 and pushes to ProcedureDetailView.
 
 ---
 
-### 4.2 DiscoverView (Tab 1: Procedures)
+## 6. Learner Flow
 
-**Purpose:** Browse and find procedures to learn. The primary content discovery surface. Framed as a professional procedure catalog, not a content feed.
+### 6.1 LearnerTabView
+
+Container for the four-tab Learner experience. Same dark tab bar styling (per §4). Each tab wraps its own `NavigationStack`.
+
+---
+
+### 6.2 DiscoverView (Tab 1: Procedures)
+
+**Purpose:** Browse and find procedures to learn. Framed as a professional procedure catalog, not a content feed.
 
 **Layout (ScrollView, top → bottom):**
 
-1. **Header bar**
-   - Large title: "Procedures"
-   - Trailing: glasses connection indicator (green/gray dot) + search icon
-
-2. **Search bar** — rounded rect with magnifying glass icon
-   - Tapping opens `SearchView` as a full-screen overlay
-   - Live filtering by title, description (client-side over fetched procedures)
-   - Placeholder text: "Search by device, task, or error code..."
-
+1. **Header bar** — Large Title "Procedures" · trailing: glasses connection indicator (green/`ink400` dot) + search icon
+2. **Search bar** — rounded rect, `ink800` fill, magnifying glass icon in `ink400`. Tapping opens `SearchView`. Placeholder: "Search by device, task, or error code…"
 3. **"Resume Session" card** (conditional — shown if in-progress session exists)
-   - Full-width card with `appPrimary` border
-   - Procedure title + progress indicator (steps completed / total, linear bar not ring)
-   - "Resume" button
+   - Full-width `ink800` card with `hazard500` stroke (active-session surface per §3)
+   - Procedure title + progress indicator (steps completed / total, linear bar, `ink50` fill)
+   - "Resume" `CustomButton.primary`
    - Most important CTA on screen — placed above all browsing content
-
 4. **Category chips** — horizontal scroll row
-   - "All", "Coffee Machines", "Electrical", "Assembly", "Maintenance", "Cleaning" (hardcoded for hackathon; maps to sponsor domains: WMF, Gira, Hettich, general)
-   - `CategoryChip` styling: capsule, selected = `appPrimary` fill
-   - Tapping filters the procedure list below
-
-5. **Procedure list** — vertical list of `ProcedureCard` items
-   - Each card: title, description (2-line), step count badge, duration badge
+   - "All", "Coffee Machines", "Electrical", "Assembly", "Maintenance", "Cleaning"
+   - `CategoryChip` styling: capsule, unselected = `ink800`/`ink100`, selected = `ink50` fill, `ink950` text
+5. **Procedure list** — vertical list of `ProcedureCardView` items
+   - Title, description (2-line), step count badge, duration badge
    - Metadata row: person icon + completion count, difficulty indicator (derived from step count / duration)
-   - When no completion data: show "New" badge
-   - Tap → push `ProcedureDetailView` (learner variant)
+   - When no completion data: show "New" badge (Caption 1, `ink700` bg, `ink50` text)
 
 **Data:** `DiscoverViewModel` fetches `GET /api/procedures`, filters by category client-side.
 
 ---
 
-### 4.3 SearchView
+### 6.3 SearchView
 
 **Purpose:** Full-screen search with live results.
 
 **Layout:**
 - Top: search text field with cancel button
-- Below: filtered list of `ProcedureCard` items matching query
+- Below: filtered list of `ProcedureCardView` items
 - Empty state: "No results for [query]"
-
-**Presentation:** overlay or NavigationLink push from DiscoverView.
 
 ---
 
-### 4.4 ProcedureDetailView (Learner Variant)
+### 6.4 LearnerProcedureDetailView
 
-**Purpose:** Full detail page for a procedure. The briefing screen before starting a guided session — like reviewing a work order before starting.
+**Purpose:** Full detail page for a procedure. The briefing screen before starting a guided session — like reviewing a work order.
 
 **Layout (ScrollView, top → bottom):**
 
-1. **Header area**
-   - Procedure title (Title 1, white)
-   - Description (Body, gray)
-   - Metadata row in `MetadataPill` components: `clock` + duration | `list.number` + step count | `person.2` + completions
-
-2. **Completion stats bar**
-   - Completions count + average completion time
-   - Placeholder values for hackathon ("No data yet")
-
+1. **Header area** — Procedure title (Title 1, `ink50`), description (Body, `ink100`), metadata row of `MetadataPill` components: `clock` + duration · `list.number` + step count · `person.2` + completions
+2. **Completion stats bar** — Completions count + average completion time. Placeholder values for hackathon ("No data yet")
 3. **Action buttons**
-   - "Start Procedure" — `CustomButton` `.primary`, full width. Presents `CoachingSessionView` as `.fullScreenCover`
-   - "Save to Library" — outline/secondary style. Toggles bookmark (bookmark icon fills with `appPrimary`)
+   - "Start Procedure" — `CustomButton.primary` (white fill, black text), full width. Presents `CoachingSessionView` as `.fullScreenCover`
+   - "Save to Library" — outline style, `ink100` text. Toggles bookmark (bookmark icon fills with `ink50`)
+4. **Steps overview** — reuse existing step detail component; expandable list. Step numbers prominent (Title 3, `ink50` in `ink700` circles)
+5. **Warnings summary** (if any warnings exist across steps) — aggregated orange tags at the bottom, separate from tips
+6. **Tips section** — aggregated tips, `ink800` bg tags, collapsible
 
-4. **Steps overview** — reuse existing `StepDetailView` component
-   - Expandable step list showing title, description, timestamps, tips, warnings, clip player
-   - Gives the learner a preview of what they'll be walked through
-   - Step numbers displayed prominently — technicians reference steps by number
-
-5. **Warnings summary** (if any warnings exist across steps)
-   - Aggregated warnings section at the bottom with orange tags
-   - Safety-critical information surfaced prominently
-   - Separate from tips — warnings deserve their own visibility in industrial contexts
-
-6. **Tips section**
-   - Aggregated tips across all steps, blue tags
-   - Collapsible — less critical than warnings
-
-**Data:** `GET /api/procedures/{id}`. Bookmark state stored in `UserDefaults` (Set of procedure IDs).
+**Data:** `GET /api/procedures/{id}`. Bookmark state in `UserDefaults`.
 
 ---
 
-### 4.5 CoachingSessionView
+### 6.5 CoachingSessionView
 
-**Purpose:** The core real-time coaching experience. Full-screen, hands-free optimized.
+**Purpose:** The core real-time coaching experience. Full-screen, hands-free optimized. This is where Hazard yellow earns the most screen time — the whole session is a "live" state.
 
-**Presentation:** `.fullScreenCover` from SkillDetailView.
+**Presentation:** `.fullScreenCover` from LearnerProcedureDetailView.
 
-**Initialization flow:**
-1. Start `StreamSession` (reuse same DAT SDK pattern as expert mode)
+**Initialization:**
+1. Start `StreamSession` (reuse DAT SDK pattern from expert mode)
 2. Open Gemini Live WebSocket for voice (audio-only, 15-min session)
-3. Begin streaming glasses mic audio to Gemini Live
+3. Begin streaming glasses mic audio
 4. Load procedure steps from server
 
 **Screen layout:**
 
 ```
 +----------------------------------------+
-|  [X Close]              [Step 2 of 6]  |   Top bar
+|  [X]  ● LIVE          [Step 2 of 6]    |   Top bar — hazard500 dot
 +----------------------------------------+
-|                                        |
 |   +----------+                         |
-|   |  PiP     |   (reference clip)      |   Draggable overlay
+|   |  PiP     |                         |   Draggable reference clip
 |   +----------+                         |
 |                                        |
 |      Live camera feed from glasses     |   Full-screen background
-|      (reuse StreamView frame render)   |
 |                                        |
 +----------------------------------------+
-|  Step 2: Attach the foamer             |   Current step panel
-|  Slide it onto the nozzle until        |   (semi-transparent black)
+|  Step 2: Attach the foamer             |
+|  Slide it onto the nozzle until        |   Semi-transparent ink950 panel
 |  it clicks.                            |
-|  [tip] Hold at 45 degrees             |
+|  [tip] Hold at 45 degrees              |
 +----------------------------------------+
-|  [===████████==========] 2/6           |   StepProgressBar
+|  [████████████░░░░░░░░] 2/6            |   ink50 fill, ink700 track
 +----------------------------------------+
-|  Voice: Listening...                   |   Voice status
-|  [Mic]     [Next Step]     [Help]      |   Bottom controls
+|  ● Listening…                          |   hazard500 mic pulse
+|  [Mic]     [Next Step]     [Help]      |
 +----------------------------------------+
 ```
 
 **Component details:**
 
-- **Top bar:** Close (X) on left with confirmation alert. "Step N of M" on right
-- **Live camera feed:** Reuses `StreamSession` + `VideoFrame` rendering from expert `StreamView`. If no glasses connected: dark placeholder with "Connect glasses to see live view"
-- **PiP reference overlay:** 120x90pt draggable thumbnail (top-right default). Shows expert's reference clip for current step from `GET /api/clips/{id}/step_{n}.mp4`. Drag via `DragGesture`, dismiss by swiping off-screen
-- **Step instruction panel:** Semi-transparent black card over bottom third. Title (Title 3, white) + description (Body, gray) + tip tags. Animated transition on step advance: current slides left, next slides in from right (`.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading))`)
-- **Step progress bar:** `StepProgressBar` component. `appPrimary` fill, gray track, discrete segments
+- **Top bar:** Close (X) left · **"● LIVE" badge in `hazard500`** · "Step N of M" right
+- **Live camera feed:** Reuses `StreamSession` + `VideoFrame` rendering from expert `StreamView`. If no glasses connected: `ink900` placeholder with "Connect glasses to see live view"
+- **PiP reference overlay:** 120x90pt draggable thumbnail (top-right default). Expert's reference clip for current step from `GET /api/clips/{id}/step_{n}.mp4`. 8pt corners
+- **Step instruction panel:** Semi-transparent `ink950` card over bottom third. Headline (17pt semibold, `ink50`) + Body description in `ink100` + tip tags. Slide transition on step advance
+- **Step progress bar:** `ink50` fill on completed segments, `ink700` track. **Deliberately white — not yellow — so the bar reads as progress, not as alarm**
 - **Voice status indicator:**
-  - "Listening..." + pulsing mic icon (receiving audio)
-  - "Speaking..." + animated waveform (Gemini responding)
-  - "Connecting..." + spinner
+  - "● Listening…" + `hazard500` pulsing mic icon (receiving audio)
+  - "Speaking…" + animated waveform (Gemini responding, `ink50`)
+  - "Connecting…" + spinner
   - "Disconnected" + retry button
-- **Bottom controls:** three `CircleButton` items
-  - Mic toggle (mute/unmute)
-  - "Next Step" (manual advance via server)
-  - "Help" (triggers "Can you explain this step again?" to Gemini)
+- **Bottom controls:** three `CircleButton` items — Mic toggle · "Next Step" · "Help"
 
 **Completion state:** Bottom panel transforms into completion card:
-- Checkmark icon (simple, no animation beyond a fade-in)
+- Checkmark icon in `ink50` (simple fade-in, no bounce)
 - "Procedure Complete" (no exclamation — keep it professional)
-- Total time taken + steps completed
-- "Done" button dismisses the session
-- No confetti, no celebratory animations — this is a work tool
+- Total time + steps completed
+- "Done" `CustomButton.primary` dismisses
 
-**Data:** `CoachingSessionViewModel` manages StreamSession, Gemini Live WebSocket, step state polling, tool call forwarding.
+No confetti, no celebratory animations — this is a work tool.
 
 ---
 
-### 4.6 LibraryView (Tab 2: Library)
+### 6.6 LibraryView (Tab 2: Library)
 
 **Purpose:** Personal collection of saved and attempted procedures.
 
 **Layout:**
-
-1. **Header:** Large title "My Library"
-
+1. **Header:** Large Title "My Library"
 2. **Segmented control:** "Saved" | "History"
+3. **Saved segment:** list of `ProcedureCardView` items for bookmarked IDs. Empty state: `bookmark.slash` in `ink400` + "No saved procedures yet"
+4. **History segment:** list of session records — title · date · status badge (Completed = green, In Progress = `hazard500`, Abandoned = `ink400`) · steps completed / total. Tap → push LearnerProcedureDetailView
 
-3. **Saved segment:**
-   - List of `ProcedureCard` items for bookmarked procedure IDs
-   - Fetches full data from `GET /api/procedures/{id}` per saved ID
-   - Empty state: bookmark.slash icon + "No saved procedures yet. Discover skills and save them here."
-
-4. **History segment:**
-   - List of session records:
-     - Procedure title
-     - Date (formatted)
-     - Status badge: "Completed" (green) / "In Progress" (accent) / "Abandoned" (gray)
-     - Steps completed / total
-   - Tap → push SkillDetailView
-   - Empty state: clock.arrow.circlepath icon + "No learning history yet"
-
-**Data:** UserDefaults-backed `LocalProgressStore`. Saved = `Set<String>` of procedure IDs. History = `[SessionRecord]` (Codable).
+**Data:** `LocalProgressStore` (UserDefaults-backed). Saved = `Set<String>`. History = `[SessionRecord]`.
 
 ---
 
-### 4.7 ProgressView (Tab 3: Progress)
+### 6.7 LearnerProgressView (Tab 3: Progress)
 
-**Purpose:** Training log and statistics. Framed as a professional competency record — useful for technicians tracking certifications or managers auditing training completion.
+**Purpose:** Training log and statistics. A professional competency record — useful for technicians tracking certifications or managers auditing training completion.
 
 **Layout (ScrollView, top → bottom):**
 
-1. **Header:** Large title "Training Log"
-
-2. **Stats cards** — horizontal scroll of 3 `StatCard` items:
-   - "Procedures Completed" — count
-   - "Total Steps" — sum of steps across completed procedures
-   - "Time Trained" — sum of session durations (formatted as Xh Ym)
-
+1. **Header:** Large Title "Training Log"
+2. **Stats cards** — horizontal scroll of 3 `StatCard` items: "Procedures Completed" · "Total Steps" · "Time Trained"
 3. **Activity overview** — row of last 7 days
-   - Circle per day: `appPrimary` fill = active, gray outline = inactive
-   - Day labels (Mon, Tue, etc.)
-   - Functional tracking, not gamification — no "streak" language
+   - Circle per day: **`hazard500` fill = active, `ink700` outline = inactive** (sanctioned yellow per §3 — active days are a live status)
+   - Day labels (Mon, Tue, etc.) in Caption 1
+   - No "streak" language — functional tracking, not gamification
+4. **Session history** — chronological list; tap → push LearnerProcedureDetailView
 
-4. **Session history** — chronological list
-   - "Completed: [title] (N steps, M:SS)" with date
-   - "Started: [title]" with date
-   - Tap → push ProcedureDetailView (learner variant)
-
-**Data:** All from `LocalProgressStore`. Computed from session history records.
+**Data:** Computed from `LocalProgressStore`.
 
 ---
 
-### 4.8 ProfileView (Tab 4: Profile)
+### 6.8 ProfileView (Tab 4: Profile)
 
 **Purpose:** Identity, glasses connection, app settings.
 
 **Layout (ScrollView, sections):**
 
-1. **Profile header**
-   - Avatar placeholder: `person.circle.fill` large, `appPrimary`
-   - Display name (from UserDefaults or hardcoded for hackathon)
-
-2. **Glasses section** (section label: "DEVICE")
-   - Connection status card: glasses model + status (Connected/Disconnected)
-   - "Reconnect" / "Disconnect" button
-   - Links to existing registration flow
-
-3. **Server section** (section label: "SERVER")
-   - Link to existing `ServerSettingsView`
-
-4. **Preferences section** (section label: "PREFERENCES")
-   - Voice selection: picker for Gemini voice ("Puck", "Charon", etc.)
-   - Auto-advance toggle: whether steps auto-advance on visual verification
-
-5. **About section**
-   - "Retrace v1.0"
-   - "Record an expert once. Coach every learner forever."
+1. **Profile header** — `person.circle.fill` large in `ink50` + display name
+2. **Glasses section** (label: "DEVICE") — connection status card (green/`ink400` dot) + "Reconnect" / "Disconnect" button
+3. **Server section** (label: "SERVER") — link to existing `ServerSettingsView`
+4. **Preferences section** (label: "PREFERENCES") — Gemini voice picker · auto-advance toggle
+5. **About section** — "Retrace v1.0" · "Record an expert once. Coach every learner forever."
 
 ---
 
-## 5. Data Architecture
+## 7. Data Architecture
 
-### 5.1 Existing API Endpoints (no changes needed)
+### 7.1 Existing API Endpoints (no changes needed)
 
 | Endpoint | Used by |
 |----------|---------|
 | `GET /api/procedures` | WorkflowListView, DiscoverView |
-| `GET /api/procedures/{id}` | ProcedureDetailView, SkillDetailView |
+| `GET /api/procedures/{id}` | ProcedureDetailView, LearnerProcedureDetailView |
 | `DELETE /api/procedures/{id}` | WorkflowListView, ProcedureDetailView |
-| `POST /api/expert/upload` | RecordTabView (existing) |
+| `POST /api/expert/upload` | RecordTabView |
 | `GET /api/clips/{id}/step_{n}.mp4` | Step clips, PiP reference |
 | `GET /api/uploads/{filename}` | Source video playback |
 
-### 5.2 New API Endpoints Needed
+### 7.2 New API Endpoints Needed
 
 | Endpoint | Purpose | Used by |
 |----------|---------|---------|
@@ -590,7 +553,7 @@ Same dark tab bar styling. Each tab wraps its own `NavigationStack`.
 | `PUT /api/procedures/{id}/steps/{n}` | Update step fields | StepEditView |
 | `GET /api/procedures/{id}/stats` | Learner analytics (stub) | ProcedureDetailView |
 
-### 5.3 Local Storage (UserDefaults)
+### 7.3 Local Storage (UserDefaults)
 
 | Key | Type | Purpose |
 |-----|------|---------|
@@ -600,10 +563,9 @@ Same dark tab bar styling. Each tab wraps its own `NavigationStack`.
 | `geminiVoice` | `String` | Preferred Gemini voice |
 | `autoAdvanceEnabled` | `Bool` | Auto-advance on visual verification |
 
-### 5.4 New iOS Models
+### 7.4 iOS Models
 
 ```swift
-// List item (lighter than ProcedureResponse)
 struct ProcedureListItem: Codable, Identifiable {
     let id: String
     let title: String
@@ -614,7 +576,6 @@ struct ProcedureListItem: Codable, Identifiable {
     let stepCount: Int
 }
 
-// Edit requests
 struct ProcedureUpdateRequest: Codable {
     var title: String?
     var description: String?
@@ -630,9 +591,8 @@ struct StepUpdateRequest: Codable {
     var timestampEnd: Double?
 }
 
-// Local session tracking
 struct SessionRecord: Codable, Identifiable {
-    let id: String  // UUID
+    let id: String
     let procedureId: String
     let procedureTitle: String
     let startedAt: Date
@@ -645,7 +605,7 @@ struct SessionRecord: Codable, Identifiable {
 
 ---
 
-## 6. New ViewModels
+## 8. ViewModels
 
 | ViewModel | Responsibility |
 |-----------|---------------|
@@ -662,74 +622,17 @@ All: `@MainActor`, `ObservableObject`, async/await networking.
 
 ---
 
-## 7. File Structure (new files)
-
-```
-Views/
-  Expert/
-    ExpertTabView.swift
-    WorkflowListView.swift
-    ProcedureDetailView.swift
-    ProcedureEditView.swift
-    StepEditView.swift
-    RecordTabView.swift
-  Learner/
-    LearnerTabView.swift
-    Discover/
-      DiscoverView.swift
-      SearchView.swift
-      CategoryChipView.swift
-    SkillDetailView.swift
-    Coaching/
-      CoachingSessionView.swift
-      StepInstructionPanel.swift
-      PiPReferenceView.swift
-      VoiceStatusView.swift
-      SessionCompleteView.swift
-    Library/
-      LibraryView.swift
-    Progress/
-      ProgressView.swift
-    Profile/
-      ProfileView.swift
-  Components/
-    MetadataPill.swift
-    StatCard.swift
-    ProcedureCardView.swift
-    EditableStringList.swift
-    StepProgressBar.swift
-
-ViewModels/
-  WorkflowListViewModel.swift
-  ProcedureDetailViewModel.swift
-  ProcedureEditViewModel.swift
-  StepEditViewModel.swift
-  DiscoverViewModel.swift
-  CoachingSessionViewModel.swift
-  LibraryViewModel.swift
-
-Services/
-  LearnerAPIService.swift
-  GeminiLiveService.swift
-  LocalProgressStore.swift
-
-Models/
-  SessionModels.swift
-```
-
----
-
-## 8. Interaction Patterns
+## 9. Interaction Patterns
 
 | Interaction | Pattern |
 |-------------|---------|
 | Card tap | Push onto NavigationStack |
 | Swipe left on list item | Destructive action (delete) |
 | Pull down on list | Refresh data |
-| Step expand/collapse | Disclosure with chevron rotation animation |
+| Step expand/collapse | Disclosure with chevron rotation |
 | Bookmark toggle | Icon fills with spring animation |
 | Step advance (coaching) | Slide left/right transition |
-| PiP reference | Draggable via DragGesture, dismiss by swiping off-screen |
+| PiP reference drag | `DragGesture`, dismiss by swiping off-screen |
 | Session start | `.fullScreenCover` presentation |
 | Edit screens | Push navigation with Cancel/Save in nav bar |
 | Tab switch on completion | Programmatic tab selection via binding |
@@ -737,37 +640,6 @@ Models/
 
 ---
 
-## 9. Implementation Priority
+## 10. Implementation
 
-### Phase 1: Expert Management (foundation)
-1. `ExpertTabView` + `WorkflowListView` — procedure list browsing
-2. `ProcedureDetailView` — full procedure view with expandable steps
-3. `RecordTabView` — wrap existing recording flow + add upload option
-4. Wire completion from recording → procedure detail
-
-### Phase 2: Expert Editing
-5. Backend: `PUT` endpoints for procedure and step editing
-6. `ProcedureEditView` with step reordering
-7. `StepEditView` with tip/warning editing
-
-### Phase 3: Learner Browse
-8. `LearnerTabView` + `DiscoverView` — procedure browsing
-9. `SkillDetailView` — procedure detail for learners
-10. `LibraryView` + `LocalProgressStore` — bookmarks and history
-11. `ProgressView` — stats dashboard
-12. `ProfileView` — settings and device management
-
-### Phase 4: Learner Coaching Session
-13. `CoachingSessionView` — live camera feed + step panel + controls
-14. `GeminiLiveService` — voice WebSocket integration
-15. PiP reference overlay
-16. Visual verification integration
-17. Session completion flow
-
-### Phase 5: Polish
-18. Analytics section on ProcedureDetailView (stub data)
-19. Social proof placeholders on DiscoverView / SkillDetailView
-20. Activity streak on ProgressView
-21. Animations and transitions
-22. Empty states throughout
-23. Error states and retry patterns
+This document is the spec. To bring the running app in line with it — Asset Catalog color swaps, `CustomButton` primary style flip, `RetraceTypography.swift` scale updates — see `rebrand-migration.md` at the repo root.

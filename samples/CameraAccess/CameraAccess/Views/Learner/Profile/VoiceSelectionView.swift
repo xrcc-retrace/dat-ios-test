@@ -45,8 +45,7 @@ struct VoiceSelectionView: View {
         // Voice info
         VStack(alignment: .leading, spacing: Spacing.xxs) {
           Text(voice.name)
-            .font(.retraceBody)
-            .fontWeight(.medium)
+            .font(.retraceFace(.medium, size: 17))
             .foregroundColor(.textPrimary)
           Text(voice.description)
             .font(.retraceCaption1)

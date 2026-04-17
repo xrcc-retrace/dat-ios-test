@@ -11,19 +11,19 @@ struct CustomButton: View {
 
     var backgroundColor: Color {
       switch self {
-      case .primary: return .appPrimary
+      case .primary: return .textPrimary
       case .secondary: return .surfaceRaised
       case .ghost: return .clear
-      case .destructive: return .semanticError
+      case .destructive: return .destructiveBackground
       }
     }
 
     var foregroundColor: Color {
       switch self {
-      case .primary: return Color("backgroundPrimary")
+      case .primary: return .backgroundPrimary
       case .secondary: return .textPrimary
       case .ghost: return .appPrimary
-      case .destructive: return .white
+      case .destructive: return .destructiveForeground
       }
     }
 
@@ -37,8 +37,7 @@ struct CustomButton: View {
   var body: some View {
     Button(action: action) {
       Text(title)
-        .font(.retraceBody)
-        .fontWeight(.semibold)
+        .font(.retraceFace(.semibold, size: 17))
         .foregroundColor(style.foregroundColor)
         .frame(maxWidth: .infinity)
         .frame(height: 52)

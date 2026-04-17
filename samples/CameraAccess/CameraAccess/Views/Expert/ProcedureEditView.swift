@@ -87,8 +87,7 @@ struct ProcedureEditView: View {
                   .font(.retraceCallout)
 
                 Text("\(step.stepNumber).")
-                  .font(.retraceCallout)
-                  .fontWeight(.semibold)
+                  .font(.retraceFace(.semibold, size: 16))
                   .foregroundColor(.appPrimary)
 
                 Text(step.title)

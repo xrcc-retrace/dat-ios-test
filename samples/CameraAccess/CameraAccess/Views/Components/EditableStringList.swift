@@ -48,8 +48,7 @@ struct EditableStringList: View {
           Image(systemName: "plus.circle.fill")
             .font(.system(size: 18))
           Text("Add \(title.lowercased().hasSuffix("s") ? String(title.dropLast()) : title)")
-            .font(.retraceCallout)
-            .fontWeight(.medium)
+            .font(.retraceFace(.medium, size: 16))
         }
         .foregroundColor(accentColor)
       }

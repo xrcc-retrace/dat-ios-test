@@ -195,8 +195,7 @@ struct ProcedureSummaryView: View {
       }
 
       Text(procedure.title)
-        .font(.retraceTitle3)
-        .fontWeight(.bold)
+        .font(.retraceFace(.bold, size: 18))
         .foregroundColor(.textPrimary)
 
       Text(procedure.description)
@@ -206,8 +205,7 @@ struct ProcedureSummaryView: View {
       Divider().background(Color.borderSubtle)
 
       Text("\(procedure.steps.count) Steps")
-        .font(.retraceCallout)
-        .fontWeight(.semibold)
+        .font(.retraceFace(.semibold, size: 16))
         .foregroundColor(.textSecondary)
 
       ForEach(procedure.steps, id: \.stepNumber) { step in
@@ -249,15 +247,13 @@ struct StepDetailView: View {
       Button(action: onTap) {
         HStack(alignment: .top, spacing: Spacing.md) {
           Text("\(step.stepNumber).")
-            .font(.retraceCallout)
-            .fontWeight(.semibold)
+            .font(.retraceFace(.semibold, size: 16))
             .foregroundColor(.appPrimary)
             .frame(width: 24, alignment: .trailing)
 
           VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(step.title)
-              .font(.retraceCallout)
-              .fontWeight(.medium)
+              .font(.retraceFace(.medium, size: 16))
               .foregroundColor(.textPrimary)
               .multilineTextAlignment(.leading)
 
@@ -319,8 +315,7 @@ struct AcknowledgeResultButton: View {
         Image(systemName: "checkmark.circle.fill")
           .font(.retraceHeadline)
         Text("Everything is processed")
-          .font(.retraceBody)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 17))
       }
       .foregroundColor(.white)
       .frame(maxWidth: .infinity)

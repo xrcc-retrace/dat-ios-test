@@ -38,8 +38,8 @@ struct ExpertTabView: View {
       }
       .tag(1)
     }
-    .tint(.appPrimary)
-    .toolbarBackground(Color.backgroundSecondary, for: .tabBar)
+    .tint(.textPrimary)
+    .toolbarBackground(Color.backgroundPrimary, for: .tabBar)
     .toolbarBackground(.visible, for: .tabBar)
   }
 }

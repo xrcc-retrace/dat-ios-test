@@ -62,7 +62,6 @@ struct LearnerProcedureDetailView: View {
           VStack(alignment: .leading, spacing: Spacing.md) {
             Text(procedure.title)
               .font(.retraceTitle2)
-              .fontWeight(.bold)
               .foregroundColor(.textPrimary)
 
             Text(procedure.description)
@@ -90,8 +89,7 @@ struct LearnerProcedureDetailView: View {
               Image(systemName: progressStore.isSaved(procedure.id) ? "bookmark.fill" : "bookmark")
                 .foregroundColor(.appPrimary)
               Text(progressStore.isSaved(procedure.id) ? "Saved to Library" : "Save to Library")
-                .font(.retraceBody)
-                .fontWeight(.medium)
+                .font(.retraceFace(.medium, size: 17))
                 .foregroundColor(.textPrimary)
             }
             .frame(maxWidth: .infinity)

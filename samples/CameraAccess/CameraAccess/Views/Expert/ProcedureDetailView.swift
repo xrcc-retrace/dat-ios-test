@@ -83,7 +83,6 @@ struct ProcedureDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
           Text(procedure.title)
             .font(.retraceTitle2)
-            .fontWeight(.bold)
             .foregroundColor(.textPrimary)
 
           Text(procedure.description)

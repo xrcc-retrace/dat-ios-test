@@ -23,8 +23,7 @@ struct ProfileView: View {
               )
 
             Text("Technician")
-              .font(.retraceTitle2)
-              .fontWeight(.semibold)
+              .font(.retraceFace(.semibold, size: 22))
               .foregroundColor(.textPrimary)
           }
           .padding(.vertical, Spacing.xl)
@@ -39,8 +38,7 @@ struct ProfileView: View {
 
               VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text("Smart Glasses")
-                  .font(.retraceBody)
-                  .fontWeight(.medium)
+                  .font(.retraceFace(.medium, size: 17))
                   .foregroundColor(.textPrimary)
                 Text(wearablesVM.registrationState == .registered ? "Connected" : "Not connected")
                   .font(.retraceSubheadline)

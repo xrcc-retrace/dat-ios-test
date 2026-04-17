@@ -52,8 +52,8 @@ struct LearnerTabView: View {
         Text("Profile")
       }
     }
-    .tint(.appPrimary)
-    .toolbarBackground(Color.backgroundSecondary, for: .tabBar)
+    .tint(.textPrimary)
+    .toolbarBackground(Color.backgroundPrimary, for: .tabBar)
     .toolbarBackground(.visible, for: .tabBar)
   }
 }

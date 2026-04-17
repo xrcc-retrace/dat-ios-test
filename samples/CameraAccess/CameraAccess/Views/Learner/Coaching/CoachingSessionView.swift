@@ -100,8 +100,7 @@ struct CoachingSessionView: View {
         viewModel.retryGemini()
       } label: {
         Text("Reconnect")
-          .font(.retraceCallout)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 16))
           .foregroundColor(.appPrimary)
       }
     }
@@ -181,8 +180,7 @@ struct CoachingSessionView: View {
           .frame(width: 8, height: 8)
 
         Text("Step \(viewModel.currentStepIndex + 1) of \(procedure.steps.count)")
-          .font(.retraceCaption1)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 12))
           .foregroundColor(.textPrimary)
       }
       .padding(.horizontal, Spacing.lg)
@@ -314,7 +312,6 @@ struct CoachingSessionView: View {
 
       Text("Procedure Complete")
         .font(.retraceTitle2)
-        .fontWeight(.bold)
         .foregroundColor(.textPrimary)
 
       HStack(spacing: Spacing.xl) {

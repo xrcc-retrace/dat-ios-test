@@ -33,7 +33,6 @@ struct ServerSettingsView: View {
               .foregroundColor(.appPrimary)
             Text("Server Connection")
               .font(.retraceTitle2)
-              .fontWeight(.bold)
               .foregroundColor(.textPrimary)
             Text("Enter your Mac's local IP address and port")
               .font(.retraceCallout)
@@ -187,8 +186,7 @@ struct ServerSettingsView: View {
                 Image(systemName: "questionmark.circle")
                   .foregroundColor(.appPrimary)
                 Text("How to find your Mac's IP address")
-                  .font(.retraceCallout)
-                  .fontWeight(.medium)
+                  .font(.retraceFace(.medium, size: 16))
                   .foregroundColor(.appPrimary)
                 Spacer()
                 Image(systemName: showHelpTip ? "chevron.up" : "chevron.down")
@@ -285,8 +283,7 @@ private struct HelpStep: View {
 
       VStack(alignment: .leading, spacing: Spacing.xs) {
         Text(title)
-          .font(.retraceCallout)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 16))
           .foregroundColor(.textPrimary)
         Text(detail)
           .font(.retraceSubheadline)

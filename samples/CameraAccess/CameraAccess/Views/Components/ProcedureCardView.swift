@@ -49,11 +49,11 @@ struct ProcedureCardView: View {
   private var statusBadge: some View {
     if status == "processing" {
       Circle()
-        .fill(Color.semanticInfo.opacity(0.2))
+        .fill(Color.appPrimary.opacity(0.2))
         .overlay(
           ProgressView()
             .scaleEffect(0.7)
-            .tint(.semanticInfo)
+            .tint(.appPrimary)
         )
     } else if status == "failed" {
       Circle()
@@ -65,19 +65,18 @@ struct ProcedureCardView: View {
         )
     } else {
       Circle()
-        .fill(Color.appPrimary)
+        .fill(Color.surfaceRaised)
         .overlay(
           Text("\(stepCount)")
-            .font(Font.retraceHeadline)
-            .fontWeight(.bold)
-            .foregroundColor(Color("backgroundPrimary"))
+            .font(.retraceFace(.bold, size: 17))
+            .foregroundColor(.textPrimary)
         )
     }
   }
 
   private var borderColor: Color {
     switch status {
-    case "processing": return Color.semanticInfo.opacity(0.3)
+    case "processing": return Color.appPrimary.opacity(0.3)
     case "failed": return Color.semanticError.opacity(0.3)
     default: return Color.borderSubtle
     }

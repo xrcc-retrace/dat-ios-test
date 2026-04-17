@@ -70,8 +70,7 @@ struct RecordTabView: View {
 
       VStack(spacing: Spacing.md) {
         Text("Record a New Procedure")
-          .font(.retraceTitle2)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 22))
           .foregroundColor(.textPrimary)
 
         Text("Stream from your glasses and record,\nor upload an existing video")

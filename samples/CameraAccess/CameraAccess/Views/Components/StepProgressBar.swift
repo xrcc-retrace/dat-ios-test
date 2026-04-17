@@ -17,7 +17,7 @@ struct StepProgressBar: View {
           .frame(height: 4)
 
         RoundedRectangle(cornerRadius: Radius.full)
-          .fill(Color.appPrimary)
+          .fill(Color.textPrimary)
           .frame(width: geo.size.width * progress, height: 4)
           .animation(.easeInOut(duration: 0.3), value: currentStep)
       }

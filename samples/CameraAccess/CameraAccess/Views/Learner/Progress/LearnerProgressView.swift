@@ -96,8 +96,7 @@ struct LearnerProgressView: View {
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
               Text(session.procedureTitle)
-                .font(.retraceCallout)
-                .fontWeight(.medium)
+                .font(.retraceFace(.medium, size: 16))
                 .foregroundColor(.textPrimary)
                 .lineLimit(1)
 

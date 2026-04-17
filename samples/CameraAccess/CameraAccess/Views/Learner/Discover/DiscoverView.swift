@@ -86,8 +86,7 @@ struct DiscoverView: View {
     VStack(alignment: .leading, spacing: Spacing.lg) {
       HStack {
         Text("Resume Session")
-          .font(.retraceSubheadline)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 13))
           .foregroundColor(.appPrimary)
         Spacer()
       }

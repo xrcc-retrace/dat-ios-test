@@ -122,8 +122,7 @@ struct LibraryView: View {
 
               VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(session.procedureTitle)
-                  .font(.retraceCallout)
-                  .fontWeight(.medium)
+                  .font(.retraceFace(.medium, size: 16))
                   .foregroundColor(.textPrimary)
                   .lineLimit(1)
 

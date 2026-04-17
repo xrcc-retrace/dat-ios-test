@@ -53,8 +53,7 @@ struct NonStreamView: View {
             .frame(width: 120)
 
           Text("Stream Your Glasses Camera")
-            .font(.retraceTitle2)
-            .fontWeight(.semibold)
+            .font(.retraceFace(.semibold, size: 22))
             .foregroundColor(.textPrimary)
 
           Text("Tap the Start streaming button to stream video from your glasses or use the camera button to take a photo from your glasses.")

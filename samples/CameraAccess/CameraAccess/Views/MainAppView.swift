@@ -42,7 +42,7 @@ struct MainAppView: View {
             .foregroundColor(.green)
           Text("Server Connected")
             .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundColor(.primary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

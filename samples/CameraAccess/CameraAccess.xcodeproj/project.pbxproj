@@ -50,6 +50,7 @@
 		8FD96BC42E6F9A9900F56AB1 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD96BC52E6F9A9900F56AB1 /* EmptyStateView.swift */; };
 		8FD96BC62E6F9A9900F56AB1 /* ModeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD96BC72E6F9A9900F56AB1 /* ModeCard.swift */; };
 		8FD96BC82E6F9A9900F56AB1 /* LibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD96BC92E6F9A9900F56AB1 /* LibraryViewModel.swift */; };
+		8FD96BCA2E6F9A9A00F56AB1 /* GlassesInactiveSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD96BCB2E6F9A9A00F56AB1 /* GlassesInactiveSheet.swift */; };
 		8FFD5FF52E8422580035E446 /* CircleButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FFD5FF22E8422580035E446 /* CircleButton.swift */; };
 		8FFD5FF62E8422580035E446 /* CustomButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FFD5FF32E8422580035E446 /* CustomButton.swift */; };
 		8FFD602C2E8433E20035E446 /* MockDeviceKitViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FFD60292E8433E20035E446 /* MockDeviceKitViewModel.swift */; };
@@ -171,6 +172,7 @@
 		8FD96BC52E6F9A9900F56AB1 /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EmptyStateView.swift; path = CameraAccess/Views/Components/EmptyStateView.swift; sourceTree = SOURCE_ROOT; };
 		8FD96BC72E6F9A9900F56AB1 /* ModeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ModeCard.swift; path = CameraAccess/Views/Components/ModeCard.swift; sourceTree = SOURCE_ROOT; };
 		8FD96BC92E6F9A9900F56AB1 /* LibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryViewModel.swift; path = CameraAccess/ViewModels/LibraryViewModel.swift; sourceTree = SOURCE_ROOT; };
+		8FD96BCB2E6F9A9A00F56AB1 /* GlassesInactiveSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GlassesInactiveSheet.swift; path = CameraAccess/Views/Components/GlassesInactiveSheet.swift; sourceTree = SOURCE_ROOT; };
 		8FFD5FF22E8422580035E446 /* CircleButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleButton.swift; sourceTree = "<group>"; };
 		8FFD5FF32E8422580035E446 /* CustomButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomButton.swift; sourceTree = "<group>"; };
 		8FFD60292E8433E20035E446 /* MockDeviceKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockDeviceKitViewModel.swift; sourceTree = "<group>"; };
@@ -613,6 +615,7 @@
 				8FD96BC42E6F9A9900F56AB1 /* EmptyStateView.swift in Sources */,
 				8FD96BC62E6F9A9900F56AB1 /* ModeCard.swift in Sources */,
 				8FD96BC82E6F9A9900F56AB1 /* LibraryViewModel.swift in Sources */,
+				8FD96BCA2E6F9A9A00F56AB1 /* GlassesInactiveSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

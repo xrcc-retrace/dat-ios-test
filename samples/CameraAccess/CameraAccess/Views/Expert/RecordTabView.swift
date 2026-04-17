@@ -11,6 +11,7 @@ struct RecordTabView: View {
   @State private var showStreaming = false
   @State private var showIPhoneRecording = false
   @State private var showRegistrationSheet = false
+  @State private var showGlassesInactiveSheet = false
   @State private var showMediaPicker = false
   @State private var selectedVideoURL: URL?
   @State private var selectedVideoDuration: TimeInterval = 0
@@ -52,6 +53,11 @@ struct RecordTabView: View {
       RegistrationPromptSheet(viewModel: wearablesVM) {
         // Auto-proceed to streaming once the user finishes registration.
         showStreaming = true
+      }
+    }
+    .sheet(isPresented: $showGlassesInactiveSheet) {
+      GlassesInactiveSheet(iPhoneAlternativeTitle: "Record with iPhone instead") {
+        showIPhoneRecording = true
       }
     }
     .sheet(isPresented: $showMediaPicker) {
@@ -118,13 +124,16 @@ struct RecordTabView: View {
           subtitle: "Stream and record live",
           isEnabled: true
         ) {
-          // Gate on registration at the tap — not at render — so unpaired
-          // users still see the option. Show the registration sheet when
-          // not yet connected; it auto-proceeds to streaming on success.
-          if wearablesVM.registrationState == .registered {
-            showStreaming = true
-          } else {
+          // Three-way gate at the tap:
+          //   - Not registered  → Meta AI pairing sheet
+          //   - Registered but glasses not awake / in range → inactive prompt
+          //   - Registered + active → straight into streaming
+          if wearablesVM.registrationState != .registered {
             showRegistrationSheet = true
+          } else if !wearablesVM.hasActiveDevice {
+            showGlassesInactiveSheet = true
+          } else {
+            showStreaming = true
           }
         }
 

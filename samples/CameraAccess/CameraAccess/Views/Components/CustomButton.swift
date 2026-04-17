@@ -2,9 +2,24 @@ import SwiftUI
 
 struct CustomButton: View {
   let title: String
+  let icon: String?
   let style: ButtonVariant
   let isDisabled: Bool
   let action: () -> Void
+
+  init(
+    title: String,
+    icon: String? = nil,
+    style: ButtonVariant,
+    isDisabled: Bool,
+    action: @escaping () -> Void
+  ) {
+    self.title = title
+    self.icon = icon
+    self.style = style
+    self.isDisabled = isDisabled
+    self.action = action
+  }
 
   enum ButtonVariant {
     case primary, secondary, ghost, destructive
@@ -36,22 +51,29 @@ struct CustomButton: View {
 
   var body: some View {
     Button(action: action) {
-      Text(title)
-        .font(.retraceBody)
-        .fontWeight(.semibold)
-        .foregroundColor(style.foregroundColor)
-        .frame(maxWidth: .infinity)
-        .frame(height: 52)
-        .background(style.backgroundColor)
-        .cornerRadius(Radius.full)
-        .overlay(
-          Group {
-            if style.hasBorder {
-              RoundedRectangle(cornerRadius: Radius.full)
-                .stroke(Color.borderSubtle, lineWidth: 1)
-            }
+      HStack(spacing: Spacing.md) {
+        if let icon {
+          Image(systemName: icon)
+            .font(.retraceBody)
+            .fontWeight(.semibold)
+        }
+        Text(title)
+          .font(.retraceBody)
+          .fontWeight(.semibold)
+      }
+      .foregroundColor(style.foregroundColor)
+      .frame(maxWidth: .infinity)
+      .frame(height: 52)
+      .background(style.backgroundColor)
+      .cornerRadius(Radius.full)
+      .overlay(
+        Group {
+          if style.hasBorder {
+            RoundedRectangle(cornerRadius: Radius.full)
+              .stroke(Color.borderSubtle, lineWidth: 1)
           }
-        )
+        }
+      )
     }
     .buttonStyle(ScaleButtonStyle())
     .disabled(isDisabled)

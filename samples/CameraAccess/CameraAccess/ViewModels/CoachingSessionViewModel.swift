@@ -87,9 +87,19 @@ class CoachingSessionViewModel: ObservableObject {
     return procedure.steps.sorted { $0.stepNumber < $1.stepNumber }[currentStepIndex]
   }
 
+  /// Frozen total duration, captured the moment the session completes so the
+  /// "Procedure Complete" panel doesn't keep ticking.
+  private var frozenSessionDuration: TimeInterval?
+
   var formattedSessionDuration: String {
-    guard let start = sessionStartTime else { return "0:00" }
-    let elapsed = Date().timeIntervalSince(start)
+    let elapsed: TimeInterval
+    if let frozen = frozenSessionDuration {
+      elapsed = frozen
+    } else if let start = sessionStartTime {
+      elapsed = Date().timeIntervalSince(start)
+    } else {
+      elapsed = 0
+    }
     let mins = Int(elapsed) / 60
     let secs = Int(elapsed) % 60
     return String(format: "%d:%02d", mins, secs)
@@ -115,6 +125,7 @@ class CoachingSessionViewModel: ObservableObject {
     // or any in-flight closures from a prior run racing the new setup.
     currentStepIndex = 0
     isCompleted = false
+    frozenSessionDuration = nil
     isMuted = false
     showPiP = false
     voiceStatus = "Connecting..."
@@ -237,13 +248,19 @@ class CoachingSessionViewModel: ObservableObject {
     let autoAdvance = UserDefaults.standard.object(forKey: "autoAdvanceEnabled") as? Bool ?? true
     print("[Coaching] auto_advance = \(autoAdvance) (from UserDefaults)")
 
+    // Voice comes from @AppStorage("geminiVoice") written by
+    // VoiceSelectionView / ProfileView. Reading UserDefaults directly keeps
+    // the VM signature stable and mirrors how autoAdvance is consumed above.
+    let selectedVoice = UserDefaults.standard.string(forKey: "geminiVoice") ?? "Puck"
+    print("[Coaching] voice = \(selectedVoice) (from UserDefaults)")
+
     voiceStatus = "Starting session..."
     let apiService = ProcedureAPIService()
     let sessionResponse: LearnerSessionStartResponse
     do {
       sessionResponse = try await apiService.startLearnerSession(
         procedureId: procedure.id,
-        voice: "Puck",  // Default voice
+        voice: selectedVoice,
         autoAdvance: autoAdvance
       )
     } catch {
@@ -556,6 +573,9 @@ class CoachingSessionViewModel: ObservableObject {
     switch name {
     case "advance_step":
       if let status = result["status"] as? String, status == "completed" {
+        if let start = sessionStartTime {
+          frozenSessionDuration = Date().timeIntervalSince(start)
+        }
         isCompleted = true
         currentStepIndex = procedure.steps.count - 1
         if let rid = sessionRecordId {

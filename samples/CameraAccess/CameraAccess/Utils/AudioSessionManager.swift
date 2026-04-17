@@ -69,6 +69,10 @@ class AudioSessionManager: ObservableObject {
   /// short-circuit route-change rebinds when the live format hasn't changed
   /// (see `rebindMicTapIfCapturing(reason:)`).
   private var converterInputFormat: AVAudioFormat?
+  /// Last route we printed, so we can skip re-logging identical routes. iOS
+  /// fires 2–3 route-change notifications on startup (category/config/override
+  /// side effects of `startCapture()`) that don't actually change the route.
+  private var lastLoggedRouteDescriptor: String?
 
   /// Called on the audio capture queue with each PCM buffer.
   var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
@@ -290,6 +294,7 @@ class AudioSessionManager: ObservableObject {
     stopStatsTimer()
     audioConverter = nil
     converterInputFormat = nil
+    lastLoggedRouteDescriptor = nil
     print("[AudioSession] Audio engine stopped")
 
     // Leave AVAudioSession in a state that plays nicely with whatever comes
@@ -582,7 +587,6 @@ class AudioSessionManager: ObservableObject {
     else { return }
 
     let reasonLabel = routeChangeReasonLabel(reason)
-    print("[AudioSession] Route change: \(reasonLabel)")
 
     // NOTE: Do NOT call configureAudioSession() from inside a route-change handler.
     // Reconfiguring the session here triggers another categoryChange notification,
@@ -685,7 +689,24 @@ class AudioSessionManager: ObservableObject {
     isBluetoothConnected = hasBluetoothInput || hasBluetoothOutput
   }
 
+  /// Compact one-line descriptor of the current route, used to deduplicate
+  /// log output when iOS fires cascaded route-change notifications that don't
+  /// actually change the route.
+  private func currentRouteDescriptor() -> String {
+    let route = AVAudioSession.sharedInstance().currentRoute
+    let inputs = route.inputs
+      .map { "\($0.portName)(\($0.portType.rawValue))" }
+      .joined(separator: ",")
+    let outputs = route.outputs
+      .map { "\($0.portName)(\($0.portType.rawValue))" }
+      .joined(separator: ",")
+    return "in=[\(inputs)] out=[\(outputs)]"
+  }
+
   private func logAudioRoute() {
+    let descriptor = currentRouteDescriptor()
+    guard descriptor != lastLoggedRouteDescriptor else { return }
+    lastLoggedRouteDescriptor = descriptor
     let route = AVAudioSession.sharedInstance().currentRoute
     for input in route.inputs {
       print("[AudioSession] Input: \(input.portName) (\(input.portType.rawValue))")

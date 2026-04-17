@@ -14,6 +14,7 @@ struct LearnerProcedureDetailView: View {
   // its content against a stale transport value.
   @State private var presentedCoaching: CaptureTransport?
   @State private var showRegistrationSheet = false
+  @State private var showGlassesInactiveSheet = false
 
   var body: some View {
     RetraceScreen {
@@ -58,6 +59,11 @@ struct LearnerProcedureDetailView: View {
     .sheet(isPresented: $showRegistrationSheet) {
       RegistrationPromptSheet(viewModel: wearablesVM) {
         presentedCoaching = .glasses
+      }
+    }
+    .sheet(isPresented: $showGlassesInactiveSheet) {
+      GlassesInactiveSheet(iPhoneAlternativeTitle: "Coach with iPhone instead") {
+        presentedCoaching = .iPhone
       }
     }
   }
@@ -141,20 +147,26 @@ struct LearnerProcedureDetailView: View {
         VStack(spacing: Spacing.md) {
           CustomButton(
             title: "Coach with Glasses",
+            icon: "eyeglasses",
             style: .primary,
             isDisabled: false
           ) {
-            if wearablesVM.registrationState == .registered {
-              presentedCoaching = .glasses
-            } else {
-              // Unpaired — present the registration sheet; it auto-dismisses
-              // and flips into coaching once the user completes pairing.
+            // Three-way gate:
+            //   - Not registered  → Meta AI pairing sheet
+            //   - Registered but glasses not awake / in range → inactive prompt
+            //   - Registered + active → start coaching
+            if wearablesVM.registrationState != .registered {
               showRegistrationSheet = true
+            } else if !wearablesVM.hasActiveDevice {
+              showGlassesInactiveSheet = true
+            } else {
+              presentedCoaching = .glasses
             }
           }
 
           CustomButton(
             title: "Coach with iPhone",
+            icon: "iphone",
             style: .secondary,
             isDisabled: false
           ) {

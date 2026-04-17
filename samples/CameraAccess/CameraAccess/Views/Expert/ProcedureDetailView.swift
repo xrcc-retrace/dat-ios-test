@@ -31,7 +31,8 @@ struct ProcedureDetailView: View {
     }
     .navigationBarTitleDisplayMode(.inline)
     .navigationTitle(viewModel.procedure?.title ?? "")
-    .toolbarBackground(.hidden, for: .navigationBar)
+    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {

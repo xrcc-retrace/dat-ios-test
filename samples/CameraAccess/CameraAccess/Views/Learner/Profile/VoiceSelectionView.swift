@@ -24,7 +24,8 @@ struct VoiceSelectionView: View {
     }
     .navigationTitle("AI Voice")
     .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(.hidden, for: .navigationBar)
+    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
     .task { await fetchVoices() }
     .onDisappear { player.stop() }
   }

@@ -150,7 +150,8 @@ struct ProfileView: View {
     }
     .navigationTitle("Profile")
     .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(.hidden, for: .navigationBar)
+    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
   }
 
   @ViewBuilder

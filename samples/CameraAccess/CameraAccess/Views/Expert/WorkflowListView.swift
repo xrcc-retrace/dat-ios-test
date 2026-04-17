@@ -30,7 +30,8 @@ struct WorkflowListView: View {
         }
       }
     }
-    .toolbarBackground(.hidden, for: .navigationBar)
+    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
     .refreshable {
       await viewModel.fetchProcedures()
     }

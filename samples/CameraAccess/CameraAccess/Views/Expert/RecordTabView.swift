@@ -29,7 +29,8 @@ struct RecordTabView: View {
     }
     .navigationTitle("Record")
     .navigationBarTitleDisplayMode(.large)
-    .toolbarBackground(.hidden, for: .navigationBar)
+    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
     .sheet(isPresented: $showMediaPicker) {
       MediaPickerView(mode: .video) { url, _ in
         selectedVideoURL = url

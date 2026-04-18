@@ -96,13 +96,18 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
 
   /// Start the mp4 writer + audio tap. Video frames are already arriving from
   /// the capture session; `ExpertRecordingManager` only forwards them once
-  /// `isRecording` is true.
+  /// `isRecording` is true. The manager's `startRecording()` is `async` so
+  /// that the AVAssetWriter + audio session setup can run off the main
+  /// thread; we fire-and-forget the Task here — the manager flips
+  /// `isStarting` / `isRecording` published flags as it progresses.
   func startRecording() {
     guard isPreviewLive else {
       surfaceError("Camera isn't ready yet.")
       return
     }
-    recordingManager.startRecording()
+    Task { [weak self] in
+      await self?.recordingManager.startRecording()
+    }
   }
 
   /// Finalize the mp4, then trigger the review sheet. Mirrors the glasses path.

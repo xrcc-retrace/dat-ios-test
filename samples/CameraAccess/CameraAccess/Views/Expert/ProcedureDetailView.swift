@@ -196,7 +196,11 @@ struct ProcedureDetailView: View {
         .tracking(0.5)
         .foregroundColor(.textSecondary)
 
-      if let videoURL = URL(string: "\(viewModel.serverBaseURL)/api/uploads/\(procedure.id).mp4") {
+      // Server returns the upload's real filename (preserves original .mp4 / .mov
+      // extension). Fall back to the legacy `{id}.mp4` URL only for older servers
+      // that don't include `source_video` in the response.
+      let filename = procedure.sourceVideo ?? "\(procedure.id).mp4"
+      if let videoURL = URL(string: "\(viewModel.serverBaseURL)/api/uploads/\(filename)") {
         StepClipPlayer(url: videoURL)
       }
     }

@@ -207,6 +207,149 @@ class AudioSessionManager: ObservableObject {
 
   // MARK: - Capture
 
+  /// Off-main variant of `startCapture()` used by the recording path. Moves
+  /// the ~200 ms of `AVAudioSession` + `AVAudioEngine` setup onto a user-
+  /// initiated background task so the UI thread doesn't freeze while the
+  /// user waits for "Start recording" to flip. The sync `startCapture()`
+  /// above is kept for the coaching-path call sites that already run inside
+  /// larger async flows.
+  func startCaptureAsync() async {
+    guard !isCapturing else { return }
+
+    let capturedMode = mode
+    let capturedEngine = engine
+    let capturedInputNode = inputNode
+
+    // Phase 1 — heavy AVAudioSession setup off main.
+    await Task.detached(priority: .userInitiated) {
+      Self.configureSessionOffMain(mode: capturedMode)
+      if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
+        do {
+          try capturedInputNode.setVoiceProcessingEnabled(true)
+          print("[AudioSession] Voice processing (AEC/NS/AGC) enabled on input node")
+        } catch {
+          print("[AudioSession] ⚠ Failed to enable voice processing: \(error)")
+        }
+      }
+    }.value
+
+    // Phase 2 — install the mic tap on main. The closure captures `self`
+    // (MainActor) to reach `recordCapturedBuffer` / `onAudioBuffer`; doing
+    // this hop on main matches the existing `installMicTap()` pattern and
+    // avoids the @Sendable-vs-@MainActor closure friction that a detached
+    // install would hit. The call itself is non-blocking (tap installation
+    // is a few-µs operation on AVAudioInputNode), so it adds no visible lag.
+    installMicTap()
+
+    // Phase 3 — engine.start() is the other ~50–100 ms blocker; keep it
+    // off main.
+    let engineStarted: Bool = await Task.detached(priority: .userInitiated) {
+      do {
+        try capturedEngine.start()
+        return true
+      } catch {
+        print("[AudioSession] Audio engine start error: \(error)")
+        return false
+      }
+    }.value
+
+    guard engineStarted else {
+      inputNode.removeTap(onBus: 0)
+      return
+    }
+
+    if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
+      playerNode.play()
+    }
+    isCapturing = true
+
+    initializeConverterIfNeeded()
+
+    let inFmt = inputNode.inputFormat(forBus: 0)
+    if inFmt.sampleRate == 0 || inFmt.channelCount == 0, !invalidFormatWarned {
+      invalidFormatWarned = true
+      print(
+        "[AudioSession] ⚠ Invalid input format after engine start "
+        + "(rate=\(inFmt.sampleRate), channels=\(inFmt.channelCount)) — "
+        + "capture will be silent"
+      )
+    }
+
+    checkBluetoothRoute()
+    logAudioRoute()
+    startStatsTimer()
+    logInputRoute()
+    let hasPlayback = (capturedMode == .coaching || capturedMode == .coachingPhoneOnly)
+    let suffix = hasPlayback ? "with playback" : "(capture only)"
+    print("[AudioSession] Audio engine started \(suffix) (async)")
+  }
+
+  /// Background-safe session setup called from `startCaptureAsync()`'s
+  /// detached task. Mirrors the category/active/preferred-input work of
+  /// `configureAudioSession()` without touching any `@Published` state, so
+  /// it's safe to run off the main actor. `AVAudioSession` APIs are
+  /// documented thread-safe.
+  nonisolated private static func configureSessionOffMain(mode: AudioSessionMode) {
+    let session = AVAudioSession.sharedInstance()
+    do {
+      switch mode {
+      case .coaching:
+        try session.setCategory(
+          .playAndRecord,
+          mode: .voiceChat,
+          options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]
+        )
+      case .coachingPhoneOnly:
+        try session.setCategory(
+          .playAndRecord,
+          mode: .voiceChat,
+          options: [.defaultToSpeaker]
+        )
+      case .recording:
+        try session.setCategory(
+          .record,
+          mode: .default,
+          options: [.allowBluetoothHFP, .allowBluetoothA2DP]
+        )
+      case .recordingPhoneOnly:
+        try session.setCategory(
+          .record,
+          mode: .default,
+          options: []
+        )
+      }
+      try session.setActive(true)
+      if mode == .coachingPhoneOnly {
+        try session.overrideOutputAudioPort(.speaker)
+      }
+      if mode == .coachingPhoneOnly || mode == .recordingPhoneOnly {
+        if let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+          do {
+            try session.setPreferredInput(builtIn)
+            print("[AudioSession] Preferred input pinned to built-in mic: \(builtIn.portName)")
+          } catch {
+            print("[AudioSession] Failed to pin built-in mic input: \(error)")
+          }
+        } else {
+          print("[AudioSession] ⚠ No built-in mic input available to pin")
+        }
+      }
+      let modeLabel: String
+      switch mode {
+      case .coaching: modeLabel = "coaching (AEC, speaker fallback)"
+      case .coachingPhoneOnly: modeLabel = "coaching (phone-only, AEC)"
+      case .recording: modeLabel = "recording (simplex capture)"
+      case .recordingPhoneOnly: modeLabel = "recording (phone-only, simplex)"
+      }
+      print(
+        "[AudioSession] Configured for \(modeLabel): category=\(session.category.rawValue), "
+        + "mode=\(session.mode.rawValue), sampleRate=\(session.sampleRate)Hz (off-main)"
+      )
+    } catch {
+      print("[AudioSession] Failed to configure audio session: \(error)")
+    }
+  }
+
   func startCapture() {
     guard !isCapturing else { return }
 

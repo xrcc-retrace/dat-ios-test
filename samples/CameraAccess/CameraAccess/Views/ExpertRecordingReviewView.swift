@@ -332,18 +332,27 @@ struct AcknowledgeResultButton: View {
   }
 }
 
-// MARK: - Recording Preview Player
+// MARK: - Adaptive Video Player
 
-struct RecordingPreviewPlayer: View {
+// Reads the asset's real display aspect ratio (applying preferredTransform) and
+// applies it to the view's aspect modifier. Prevents layout ballooning when a
+// landscape or square source is rendered in a view previously hardcoded to 9:16.
+struct AdaptiveVideoPlayer: View {
   let url: URL
+  let fallbackRatio: CGFloat
+  let cornerRadius: CGFloat
+  let playIconSize: CGFloat
+  let playIconOpacity: Double
+
   @State private var player: AVPlayer?
+  @State private var aspectRatio: CGFloat?
 
   var body: some View {
     Group {
       if let player {
         VideoPlayer(player: player)
       } else {
-        VideoThumbnailView(url: url, cornerRadius: Radius.lg)
+        VideoThumbnailView(url: url, cornerRadius: cornerRadius)
           .overlay {
             Button {
               let p = AVPlayer(url: url)
@@ -351,16 +360,45 @@ struct RecordingPreviewPlayer: View {
               p.play()
             } label: {
               Image(systemName: "play.circle.fill")
-                .font(.system(size: 56))
-                .foregroundColor(.textPrimary.opacity(0.85))
+                .font(.system(size: playIconSize))
+                .foregroundColor(.textPrimary.opacity(playIconOpacity))
             }
           }
       }
     }
-    .aspectRatio(9.0 / 16.0, contentMode: .fit)
+    .aspectRatio(aspectRatio ?? fallbackRatio, contentMode: .fit)
     .frame(maxHeight: 400)
-    .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     .frame(maxWidth: .infinity)
+    .task(id: url) { await loadAspect() }
+  }
+
+  private func loadAspect() async {
+    let asset = AVURLAsset(url: url)
+    guard let track = try? await asset.loadTracks(withMediaType: .video).first else { return }
+    guard let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) else { return }
+    let t = size.applying(transform)
+    let w = abs(t.width)
+    let h = abs(t.height)
+    guard w > 0, h > 0 else { return }
+    let ratio = w / h
+    await MainActor.run { self.aspectRatio = ratio }
+  }
+}
+
+// MARK: - Recording Preview Player
+
+struct RecordingPreviewPlayer: View {
+  let url: URL
+
+  var body: some View {
+    AdaptiveVideoPlayer(
+      url: url,
+      fallbackRatio: 9.0 / 16.0,
+      cornerRadius: Radius.lg,
+      playIconSize: 56,
+      playIconOpacity: 0.85
+    )
   }
 }
 
@@ -368,33 +406,15 @@ struct RecordingPreviewPlayer: View {
 
 struct StepClipPlayer: View {
   let url: URL
-  @State private var player: AVPlayer?
 
   var body: some View {
-    Group {
-      if let player {
-        VideoPlayer(player: player)
-      } else {
-        VideoThumbnailView(url: url, cornerRadius: Radius.sm)
-          .overlay {
-            Button {
-              let p = AVPlayer(url: url)
-              player = p
-              p.play()
-            } label: {
-              Image(systemName: "play.circle.fill")
-                .font(.system(size: 36))
-                .foregroundColor(.textPrimary.opacity(0.8))
-            }
-          }
-      }
-    }
-    // Clips are 9:16 portrait. Without an aspect constraint, VideoPlayer's
-    // intrinsic height is near zero and the view collapses.
-    .aspectRatio(9.0 / 16.0, contentMode: .fit)
-    .frame(maxHeight: 400)
-    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
-    .frame(maxWidth: .infinity)
+    AdaptiveVideoPlayer(
+      url: url,
+      fallbackRatio: 9.0 / 16.0,
+      cornerRadius: Radius.sm,
+      playIconSize: 36,
+      playIconOpacity: 0.8
+    )
   }
 }
 

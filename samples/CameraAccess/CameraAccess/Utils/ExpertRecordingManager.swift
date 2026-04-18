@@ -7,6 +7,12 @@ class ExpertRecordingManager: ObservableObject {
   @Published var isRecording = false
   @Published var recordingDuration: TimeInterval = 0
   @Published var recordingURL: URL?
+  /// True between the moment the user taps "Start recording" and the moment
+  /// the writer is actually armed. Drives the button's disabled state so a
+  /// second tap during the ~300 ms startup window can't land on the just-
+  /// flipped "Stop recording" button and kill the session before any frames
+  /// were captured.
+  @Published var isStarting = false
 
   private var assetWriter: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
@@ -37,68 +43,76 @@ class ExpertRecordingManager: ObservableObject {
 
   // MARK: - Recording Control
 
-  func startRecording() {
-    guard !isRecording else { return }
+  func startRecording() async {
+    guard !isRecording, !isStarting else { return }
+    isStarting = true
+    defer { isStarting = false }
 
     let fileName = "expert_\(Int(Date().timeIntervalSince1970)).mp4"
     let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
 
-    // Clean up any existing file at this path
-    try? FileManager.default.removeItem(at: outputURL)
+    // Heavy, blocking setup off the main actor: file removal, AVAssetWriter
+    // init, writer input creation, and startWriting(). These are all
+    // documented thread-safe and collectively account for ~100 ms of the
+    // old freeze.
+    let writerVideoWidth = videoWidth
+    let writerVideoHeight = videoHeight
 
-    do {
-      assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
-    } catch {
-      print("[Recording] Failed to create AVAssetWriter: \(error)")
-      return
-    }
+    let built: (writer: AVAssetWriter, video: AVAssetWriterInput, audio: AVAssetWriterInput)? =
+      await Task.detached(priority: .userInitiated) {
+        try? FileManager.default.removeItem(at: outputURL)
 
-    guard let writer = assetWriter else { return }
+        let writer: AVAssetWriter
+        do {
+          writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        } catch {
+          print("[Recording] Failed to create AVAssetWriter: \(error)")
+          return nil
+        }
 
-    // Video input
-    let videoSettings: [String: Any] = [
-      AVVideoCodecKey: AVVideoCodecType.h264,
-      AVVideoWidthKey: videoWidth,
-      AVVideoHeightKey: videoHeight,
-    ]
-    let vInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-    vInput.expectsMediaDataInRealTime = true
-    videoInput = vInput
+        let videoSettings: [String: Any] = [
+          AVVideoCodecKey: AVVideoCodecType.h264,
+          AVVideoWidthKey: writerVideoWidth,
+          AVVideoHeightKey: writerVideoHeight,
+        ]
+        let vInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        vInput.expectsMediaDataInRealTime = true
+        if writer.canAdd(vInput) {
+          writer.add(vInput)
+        }
 
-    if writer.canAdd(vInput) {
-      writer.add(vInput)
-    }
+        // Audio sample rate — prefer the hardware rate, fall back to 16 kHz
+        // if the session isn't ready yet. Reading this from a nonisolated
+        // context is safe; `AVAudioSession.sharedInstance()` is thread-safe.
+        let hwRate = AVAudioSession.sharedInstance().sampleRate
+        let audioSettings: [String: Any] = [
+          AVFormatIDKey: kAudioFormatMPEG4AAC,
+          AVSampleRateKey: hwRate > 0 ? hwRate : 16000.0,
+          AVNumberOfChannelsKey: 1,
+          AVEncoderBitRateKey: 64000,
+        ]
+        let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        aInput.expectsMediaDataInRealTime = true
+        if writer.canAdd(aInput) {
+          writer.add(aInput)
+        }
 
-    // Audio input — read actual hardware format after audio session is configured
-    let sampleRate = audioSessionManager.hardwareSampleRate
-    let audioSettings: [String: Any] = [
-      AVFormatIDKey: kAudioFormatMPEG4AAC,
-      AVSampleRateKey: sampleRate > 0 ? sampleRate : 16000.0,
-      AVNumberOfChannelsKey: 1,
-      AVEncoderBitRateKey: 64000,
-    ]
-    let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-    aInput.expectsMediaDataInRealTime = true
-    audioInput = aInput
+        guard writer.startWriting() else {
+          print("[Recording] startWriting() returned false: \(writer.error?.localizedDescription ?? "unknown")")
+          try? FileManager.default.removeItem(at: outputURL)
+          return nil
+        }
+        // startSession is intentionally deferred until the first real sample
+        // arrives (see appendVideoFrame / appendAudioBuffer).
+        return (writer, vInput, aInput)
+      }.value
 
-    if writer.canAdd(aInput) {
-      writer.add(aInput)
-    }
+    guard let built = built else { return }
 
-    // Start writing — bail if the writer refuses (status becomes .failed)
-    guard writer.startWriting() else {
-      print("[Recording] startWriting() returned false: \(writer.error?.localizedDescription ?? "unknown")")
-      try? FileManager.default.removeItem(at: outputURL)
-      assetWriter = nil
-      videoInput = nil
-      audioInput = nil
-      return
-    }
-    // startSession is intentionally deferred until the first real sample
-    // arrives (see appendVideoFrame / appendAudioBuffer). Both use host-
-    // clock PTS, so anchoring to the first one keeps audio/video aligned.
-
-    // Reset state
+    // Back on the main actor: publish the writer + clear stats.
+    assetWriter = built.writer
+    videoInput = built.video
+    audioInput = built.audio
     appendedFrameCount = 0
     droppedFrameCount = 0
     appendsInWindow = 0
@@ -106,15 +120,18 @@ class ExpertRecordingManager: ObservableObject {
     recordingDuration = 0
     recordingURL = outputURL
 
-    // Wire up audio capture
+    // Bring up audio capture off-main too (~200 ms on its own).
+    await audioSessionManager.startCaptureAsync()
+
+    // Wire the audio buffer callback AFTER the engine is running — that
+    // way we can't get a leftover buffer from a previous session racing
+    // into the new writer.
     audioSessionManager.onAudioBuffer = { [weak self] buffer, time in
       self?.appendAudioBuffer(buffer, time: time)
     }
-    audioSessionManager.startCapture()
 
     isRecording = true
 
-    // Duration timer
     durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, self.isRecording else { return }
@@ -122,8 +139,6 @@ class ExpertRecordingManager: ObservableObject {
       }
     }
 
-    // FPS window — sample the append counter every 5 s so we can see the
-    // real per-second frame rate the writer is absorbing.
     statsTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
       guard let self else { return }
       let fps = self.appendsInWindow / 5

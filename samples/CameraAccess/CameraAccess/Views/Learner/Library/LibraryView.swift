@@ -68,7 +68,7 @@ struct LibraryView: View {
               isEditing = false
               selectedIDs.removeAll()
             }
-            .foregroundColor(.appPrimary)
+            .foregroundColor(.textPrimary)
           } else {
             Menu {
               Button {
@@ -155,7 +155,7 @@ struct LibraryView: View {
   private var savedSection: some View {
     if viewModel.isLoading {
       Spacer()
-      ProgressView().tint(.appPrimary)
+      ProgressView().tint(.textPrimary)
       Spacer()
     } else if viewModel.savedProcedures.isEmpty {
       EmptyStateView(
@@ -209,7 +209,7 @@ struct LibraryView: View {
             HStack(spacing: Spacing.lg) {
               if isEditing {
                 Image(systemName: selectedIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
-                  .foregroundColor(selectedIDs.contains(session.id) ? .appPrimary : .textTertiary)
+                  .foregroundColor(selectedIDs.contains(session.id) ? .textPrimary : .textTertiary)
                   .font(.system(size: 20))
               }
 
@@ -219,8 +219,7 @@ struct LibraryView: View {
 
               VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(session.procedureTitle)
-                  .font(.retraceCallout)
-                  .fontWeight(.medium)
+                  .font(.retraceFace(.medium, size: 16))
                   .foregroundColor(.textPrimary)
                   .lineLimit(1)
 
@@ -244,10 +243,6 @@ struct LibraryView: View {
             .padding(Spacing.lg)
             .background(Color.surfaceBase)
             .cornerRadius(Radius.md)
-            .overlay(
-              RoundedRectangle(cornerRadius: Radius.md)
-                .stroke(Color.borderSubtle, lineWidth: 1)
-            )
             .contentShape(Rectangle())
             .onTapGesture {
               guard isEditing else { return }

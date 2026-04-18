@@ -15,16 +15,15 @@ struct ProfileView: View {
           VStack(spacing: Spacing.lg) {
             Image(systemName: "person.circle.fill")
               .font(.system(size: 64))
-              .foregroundColor(.appPrimary)
+              .foregroundColor(.iconForeground)
               .background(
                 Circle()
-                  .fill(Color.accentMuted)
+                  .fill(Color.iconSurface)
                   .frame(width: 72, height: 72)
               )
 
             Text("Technician")
-              .font(.retraceTitle2)
-              .fontWeight(.semibold)
+              .font(.retraceFace(.semibold, size: 22))
               .foregroundColor(.textPrimary)
           }
           .padding(.vertical, Spacing.xl)
@@ -37,7 +36,7 @@ struct ProfileView: View {
               HStack {
                 Image(systemName: "rectangle.3.group")
                   .font(.system(size: 20))
-                  .foregroundColor(.appPrimary)
+                  .foregroundColor(.textPrimary)
                   .frame(width: 32)
 
                 Text("Switch Mode")
@@ -59,13 +58,12 @@ struct ProfileView: View {
             HStack(spacing: Spacing.lg) {
               Image(systemName: "eyeglasses")
                 .font(.system(size: 20))
-                .foregroundColor(.appPrimary)
+                .foregroundColor(.textPrimary)
                 .frame(width: 32)
 
               VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text("Smart Glasses")
-                  .font(.retraceBody)
-                  .fontWeight(.medium)
+                  .font(.retraceFace(.medium, size: 17))
                   .foregroundColor(.textPrimary)
                 Text(isConnected ? "Connected" : "Not connected")
                   .font(.retraceSubheadline)
@@ -88,7 +86,7 @@ struct ProfileView: View {
               HStack {
                 Image(systemName: "server.rack")
                   .font(.system(size: 20))
-                  .foregroundColor(.appPrimary)
+                  .foregroundColor(.textPrimary)
                   .frame(width: 32)
 
                 Text("Server Settings")
@@ -113,7 +111,7 @@ struct ProfileView: View {
                 HStack {
                   Image(systemName: "waveform")
                     .font(.system(size: 20))
-                    .foregroundColor(.appPrimary)
+                    .foregroundColor(.textPrimary)
                     .frame(width: 32)
 
                   Text("AI Voice")
@@ -137,7 +135,7 @@ struct ProfileView: View {
               HStack {
                 Image(systemName: "forward.fill")
                   .font(.system(size: 20))
-                  .foregroundColor(.appPrimary)
+                  .foregroundColor(.textPrimary)
                   .frame(width: 32)
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -152,7 +150,7 @@ struct ProfileView: View {
                 Spacer()
 
                 Toggle("", isOn: $autoAdvanceEnabled)
-                  .tint(.appPrimary)
+                  .tint(.textPrimary)
               }
             }
           }
@@ -190,10 +188,6 @@ struct ProfileView: View {
         .padding(Spacing.xl)
         .background(Color.surfaceBase)
         .cornerRadius(Radius.md)
-        .overlay(
-          RoundedRectangle(cornerRadius: Radius.md)
-            .stroke(Color.borderSubtle, lineWidth: 1)
-        )
     }
   }
 }

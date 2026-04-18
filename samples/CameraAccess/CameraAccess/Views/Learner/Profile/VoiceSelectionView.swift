@@ -43,8 +43,7 @@ struct VoiceSelectionView: View {
         // Voice info
         VStack(alignment: .leading, spacing: Spacing.xxs) {
           Text(voice.name)
-            .font(.retraceBody)
-            .fontWeight(.medium)
+            .font(.retraceFace(.medium, size: 17))
             .foregroundColor(.textPrimary)
           Text(voice.description)
             .font(.retraceCaption1)
@@ -62,11 +61,11 @@ struct VoiceSelectionView: View {
           Group {
             if isLoading {
               ProgressView()
-                .tint(.appPrimary)
+                .tint(.textPrimary)
             } else {
               Image(systemName: isPlaying ? "stop.circle.fill" : "play.circle.fill")
                 .font(.system(size: 28))
-                .foregroundColor(.appPrimary)
+                .foregroundColor(.textPrimary)
             }
           }
           .frame(width: 32, height: 32)
@@ -76,15 +75,11 @@ struct VoiceSelectionView: View {
         // Selection indicator
         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
           .font(.system(size: 22))
-          .foregroundColor(isSelected ? .appPrimary : .textTertiary)
+          .foregroundColor(isSelected ? .textPrimary : .textTertiary)
       }
       .padding(Spacing.xl)
-      .background(isSelected ? Color.appPrimary.opacity(0.08) : Color.surfaceBase)
+      .background(isSelected ? Color.surfaceRaised : Color.surfaceBase)
       .cornerRadius(Radius.md)
-      .overlay(
-        RoundedRectangle(cornerRadius: Radius.md)
-          .stroke(isSelected ? Color.appPrimary.opacity(0.3) : Color.borderSubtle, lineWidth: 1)
-      )
     }
     .buttonStyle(.plain)
   }

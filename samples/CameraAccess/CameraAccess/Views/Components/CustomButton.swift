@@ -26,10 +26,10 @@ struct CustomButton: View {
 
     var backgroundColor: Color {
       switch self {
-      case .primary: return .appPrimary
+      case .primary: return .textPrimary
       case .secondary: return .surfaceRaised
       case .ghost: return .clear
-      case .destructive: return .semanticError
+      case .destructive: return .destructiveBackground
       }
     }
 
@@ -37,14 +37,11 @@ struct CustomButton: View {
       switch self {
       case .primary: return .backgroundPrimary
       case .secondary: return .textPrimary
-      case .ghost: return .appPrimary
-      case .destructive: return .white
+      case .ghost: return .textPrimary
+      case .destructive: return .destructiveForeground
       }
     }
 
-    var hasBorder: Bool {
-      self == .secondary
-    }
   }
 
   @State private var isPressed = false
@@ -66,14 +63,6 @@ struct CustomButton: View {
       .frame(height: 52)
       .background(style.backgroundColor)
       .cornerRadius(Radius.full)
-      .overlay(
-        Group {
-          if style.hasBorder {
-            RoundedRectangle(cornerRadius: Radius.full)
-              .stroke(Color.borderSubtle, lineWidth: 1)
-          }
-        }
-      )
     }
     .buttonStyle(ScaleButtonStyle())
     .disabled(isDisabled)

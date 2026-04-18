@@ -97,7 +97,7 @@ struct CoachingSessionView: View {
   private var reconnectBanner: some View {
     HStack(spacing: Spacing.md) {
       Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundColor(.appPrimary)
+        .foregroundColor(.textPrimary)
       Text("Voice coaching disconnected")
         .font(.retraceCallout)
         .foregroundColor(.textPrimary)
@@ -106,9 +106,8 @@ struct CoachingSessionView: View {
         viewModel.retryGemini()
       } label: {
         Text("Reconnect")
-          .font(.retraceCallout)
-          .fontWeight(.semibold)
-          .foregroundColor(.appPrimary)
+          .font(.retraceFace(.semibold, size: 16))
+          .foregroundColor(.textPrimary)
       }
     }
     .padding(Spacing.md)
@@ -187,8 +186,7 @@ struct CoachingSessionView: View {
           .frame(width: 8, height: 8)
 
         Text("Step \(viewModel.currentStepIndex + 1) of \(procedure.steps.count)")
-          .font(.retraceCaption1)
-          .fontWeight(.semibold)
+          .font(.retraceFace(.semibold, size: 12))
           .foregroundColor(.textPrimary)
       }
       .padding(.horizontal, Spacing.lg)
@@ -275,7 +273,7 @@ struct CoachingSessionView: View {
         if !viewModel.isMuted {
           SoundWaveView(
             isActive: viewModel.isAISpeaking,
-            color: .appPrimary
+            color: .textPrimary
           )
         } else {
           Text("Muted")
@@ -292,7 +290,7 @@ struct CoachingSessionView: View {
       VStack(spacing: Spacing.xs) {
         Image(systemName: viewModel.showPiP ? "pip.fill" : "pip")
           .font(.system(size: 20))
-          .foregroundColor(viewModel.showPiP ? .appPrimary : .textPrimary)
+          .foregroundColor(viewModel.showPiP ? .semanticInfo : .textPrimary)
         Text("Reference")
           .font(.system(size: 10))
           .foregroundColor(.textSecondary)
@@ -320,7 +318,6 @@ struct CoachingSessionView: View {
 
       Text("Procedure Complete")
         .font(.retraceTitle2)
-        .fontWeight(.bold)
         .foregroundColor(.textPrimary)
 
       HStack(spacing: Spacing.xl) {
@@ -395,7 +392,7 @@ private struct ActivityRow: View {
     switch entry.kind {
     case .toolCall:
       Image(systemName: "wand.and.stars")
-        .foregroundColor(.appPrimary)
+        .foregroundColor(.textPrimary)
     case .assistant:
       Image(systemName: "sparkles")
         .foregroundColor(.semanticInfo)
@@ -415,7 +412,7 @@ private struct ActivityRow: View {
 
   private var labelColor: Color {
     switch entry.kind {
-    case .toolCall: return .appPrimary
+    case .toolCall: return .textPrimary
     case .assistant: return .semanticInfo
     case .learner: return .textSecondary
     }

@@ -12,14 +12,14 @@ struct ProcedureDetailView: View {
       if viewModel.isLoading && viewModel.procedure == nil {
         ProgressView()
           .scaleEffect(1.5)
-          .tint(.appPrimary)
+          .tint(.textPrimary)
       } else if let procedure = viewModel.procedure {
         procedureContent(procedure)
       } else if let error = viewModel.errorMessage {
         VStack(spacing: Spacing.lg) {
           Image(systemName: "exclamationmark.triangle")
             .font(.system(size: 36))
-            .foregroundColor(.appPrimary)
+            .foregroundColor(.textPrimary)
           Text(error)
             .font(.retraceCallout)
             .foregroundColor(.textSecondary)
@@ -84,7 +84,6 @@ struct ProcedureDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
           Text(procedure.title)
             .font(.retraceTitle2)
-            .fontWeight(.bold)
             .foregroundColor(.textPrimary)
 
           Text(procedure.description)
@@ -179,7 +178,7 @@ struct ProcedureDetailView: View {
               } label: {
                 Label("Edit step", systemImage: "pencil")
                   .font(.retraceSubheadline)
-                  .foregroundColor(.appPrimary)
+                  .foregroundColor(.textPrimary)
                   .padding(.horizontal, Spacing.md)
                   .padding(.vertical, Spacing.sm)
               }
@@ -195,10 +194,6 @@ struct ProcedureDetailView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.md)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.md)
-        .stroke(Color.borderSubtle, lineWidth: 1)
-    )
   }
 
   // MARK: - Source Video

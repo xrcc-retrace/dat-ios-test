@@ -8,7 +8,6 @@ struct StatCard: View {
     VStack(spacing: Spacing.xs) {
       Text(value)
         .font(.retraceTitle2)
-        .fontWeight(.bold)
         .foregroundColor(.textPrimary)
         .lineLimit(1)
         .minimumScaleFactor(0.7)
@@ -22,9 +21,5 @@ struct StatCard: View {
     .padding(Spacing.xl)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.md)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.md)
-        .stroke(Color.borderSubtle, lineWidth: 1)
-    )
   }
 }

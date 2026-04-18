@@ -11,7 +11,7 @@ struct WorkflowListView: View {
       if viewModel.isLoading && viewModel.procedures.isEmpty {
         ProgressView()
           .scaleEffect(1.5)
-          .tint(.appPrimary)
+          .tint(.textPrimary)
       } else if viewModel.procedures.isEmpty {
         emptyState
       } else {

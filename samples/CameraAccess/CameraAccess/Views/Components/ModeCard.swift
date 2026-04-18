@@ -12,9 +12,9 @@ struct ModeCard: View {
       HStack(spacing: Spacing.xl) {
         Image(systemName: icon)
           .font(.system(size: 24))
-          .foregroundColor(isEnabled ? .appPrimary : .textTertiary)
+          .foregroundColor(isEnabled ? .iconForeground : .textTertiary)
           .frame(width: 48, height: 48)
-          .background(isEnabled ? Color.accentMuted : Color.surfaceRaised)
+          .background(isEnabled ? Color.iconSurface : Color.surfaceRaised)
           .cornerRadius(Radius.md)
 
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -37,10 +37,6 @@ struct ModeCard: View {
       .padding(Spacing.xxl)
       .background(Color.surfaceBase)
       .cornerRadius(Radius.lg)
-      .overlay(
-        RoundedRectangle(cornerRadius: Radius.lg)
-          .stroke(Color.borderSubtle, lineWidth: 1)
-      )
     }
     .buttonStyle(ScaleButtonStyle())
     .disabled(!isEnabled)

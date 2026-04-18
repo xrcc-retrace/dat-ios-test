@@ -28,7 +28,7 @@ struct DiscoverView: View {
             HStack {
               Spacer()
               ProgressView()
-                .tint(.appPrimary)
+                .tint(.textPrimary)
               Spacer()
             }
             .padding(.top, Spacing.jumbo)
@@ -155,9 +155,8 @@ struct DiscoverView: View {
     VStack(alignment: .leading, spacing: Spacing.lg) {
       HStack {
         Text("Resume Session")
-          .font(.retraceSubheadline)
-          .fontWeight(.semibold)
-          .foregroundColor(.appPrimary)
+          .font(.retraceFace(.semibold, size: 13))
+          .foregroundColor(.textPrimary)
         Spacer()
       }
 
@@ -179,14 +178,11 @@ struct DiscoverView: View {
         // Left accent edge
         HStack {
           RoundedRectangle(cornerRadius: 2)
-            .fill(Color.appPrimary)
+            .fill(Color.textPrimary)
             .frame(width: 3)
             .padding(.vertical, Spacing.md)
           Spacer()
         }
-        // Border
-        RoundedRectangle(cornerRadius: Radius.lg)
-          .stroke(Color.appPrimary.opacity(0.2), lineWidth: 1)
       }
     )
     .padding(.horizontal, Spacing.screenPadding)

@@ -225,18 +225,22 @@ class GeminiLiveService: ObservableObject {
     }
   }
 
-  /// Send a synthetic user text turn. Used after session resumption to inject
-  /// a context-summary message so the model re-orients on the current step.
+  /// Send a synthetic user text turn. Used at session start to seed an opener
+  /// (so Gemini speaks first without the learner needing to prompt) and after
+  /// session resumption to inject a context-summary message.
+  ///
+  /// Wire format is `realtimeInput.text` — NOT `clientContent.turns`.
+  /// On `gemini-3.1-flash-live-preview`, `clientContent` is silently dropped
+  /// for live user input; it's reserved for pre-seeding conversation history.
+  /// Sending the intro via `clientContent` left the model in a wedged state
+  /// that 1008'd ("Operation is not implemented") the moment it tried to
+  /// generate its first audio reply. Verified 2026-04-17:
+  ///   • `realtimeInput.text` → 24 audio modelTurn frames received ✅
+  ///   • `clientContent` → silent → 1008 on first response attempt ❌
   func sendClientTextTurn(_ text: String) async throws {
     let json: [String: Any] = [
-      "clientContent": [
-        "turns": [
-          [
-            "role": "user",
-            "parts": [["text": text]],
-          ]
-        ],
-        "turnComplete": true,
+      "realtimeInput": [
+        "text": text,
       ]
     ]
     let data = try JSONSerialization.data(withJSONObject: json)
@@ -535,9 +539,16 @@ class GeminiLiveService: ObservableObject {
     // Session resumption handle — Gemini issues these periodically so the
     // client can reopen a session (with compressed context intact) after a
     // drop or goAway. We store the most recent handle verbatim.
+    //
+    // Gemini on `BidiGenerateContentConstrained` (v1alpha) emits these very
+    // aggressively — ~1-2/sec sustained. Dedup on the handle value so we
+    // only log+propagate when it actually changes; the prefix in the log
+    // lets us confirm distinctness at a glance without leaking the full token.
     if let update = json["sessionResumptionUpdate"] as? [String: Any],
-       let handle = update["newHandle"] as? String, !handle.isEmpty {
-      print("[GeminiLive] resumption handle updated (len=\(handle.count))")
+       let handle = update["newHandle"] as? String, !handle.isEmpty,
+       handle != resumptionHandle {
+      let prefix = String(handle.prefix(8))
+      print("[GeminiLive] resumption handle updated: \(prefix)… (len=\(handle.count))")
       resumptionHandle = handle
       onResumptionUpdate?(handle)
     }

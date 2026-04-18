@@ -39,10 +39,6 @@ struct ProcedureCardView: View {
     .padding(Spacing.xxl)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.lg)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.lg)
-        .stroke(borderColor, lineWidth: 1)
-    )
   }
 
   @ViewBuilder
@@ -65,10 +61,6 @@ struct ProcedureCardView: View {
             .foregroundColor(.backgroundPrimary)
         )
     }
-  }
-
-  private var borderColor: Color {
-    status == "processing" ? Color.semanticInfo.opacity(0.3) : Color.borderSubtle
   }
 
   private var formattedDuration: String {

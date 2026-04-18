@@ -14,13 +14,6 @@ struct CategoryChip: View {
         .padding(.vertical, Spacing.md)
         .background(isSelected ? Color.textPrimary : Color.surfaceBase)
         .cornerRadius(Radius.full)
-        .overlay(
-          RoundedRectangle(cornerRadius: Radius.full)
-            .stroke(
-              isSelected ? Color.clear : Color.borderSubtle,
-              lineWidth: 1
-            )
-        )
     }
   }
 }

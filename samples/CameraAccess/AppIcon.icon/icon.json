@@ -1,5 +1,20 @@
 {
-  "fill" : "system-dark",
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.00000,0.00000,0.00000,1.00000",
+      "display-p3:0.70196,0.71807,0.73709,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.5,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.5,
+        "y" : 0.7
+      }
+    }
+  },
   "groups" : [
     {
       "layers" : [
@@ -26,6 +41,7 @@
           }
         },
         {
+          "fill" : "none",
           "image-name" : "icon-background.png",
           "name" : "icon-background",
           "opacity" : 1,
@@ -38,6 +54,7 @@
           }
         }
       ],
+      "lighting" : "individual",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5

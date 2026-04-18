@@ -77,6 +77,9 @@ struct ProcedureDetailView: View {
   private func procedureContent(_ procedure: ProcedureResponse) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Spacing.screenPadding) {
+        // (See trailing modifiers below — `.frame(maxWidth: .infinity)` and
+        // `.scrollBounceBehavior(.basedOnSize, axes: .horizontal)` together
+        // forbid horizontal pan/bounce regardless of any inner intrinsic.)
         // Header
         VStack(alignment: .leading, spacing: Spacing.md) {
           Text(procedure.title)
@@ -104,7 +107,9 @@ struct ProcedureDetailView: View {
         sourceVideoSection(procedure)
       }
       .padding(Spacing.screenPadding)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
   }
 
   // MARK: - Analytics
@@ -145,19 +150,24 @@ struct ProcedureDetailView: View {
       }
 
       ForEach(procedure.steps) { step in
-        VStack(alignment: .leading, spacing: 0) {
-          HStack {
-            StepDetailView(
-              step: step,
-              isExpanded: viewModel.expandedStep == step.stepNumber,
-              serverBaseURL: viewModel.serverBaseURL
-            ) {
-              withAnimation(.easeInOut(duration: 0.25)) {
-                viewModel.toggleStep(step.stepNumber)
-              }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+          StepDetailView(
+            step: step,
+            isExpanded: viewModel.expandedStep == step.stepNumber,
+            serverBaseURL: viewModel.serverBaseURL
+          ) {
+            withAnimation(.easeInOut(duration: 0.25)) {
+              viewModel.toggleStep(step.stepNumber)
             }
+          }
 
-            if viewModel.expandedStep == step.stepNumber {
+          if viewModel.expandedStep == step.stepNumber {
+            // Pencil lives in its own row, not inside an HStack with the
+            // Button-backed StepDetailView. Sharing a Button + NavigationLink
+            // in the same HStack made hit-testing fight and let intrinsic
+            // widths sum past the viewport.
+            HStack {
+              Spacer()
               NavigationLink {
                 StepEditView(
                   procedureId: procedureId,
@@ -166,17 +176,22 @@ struct ProcedureDetailView: View {
                   Task { await viewModel.fetchProcedure(id: procedureId) }
                 }
               } label: {
-                Image(systemName: "pencil")
+                Label("Edit step", systemImage: "pencil")
                   .font(.retraceSubheadline)
                   .foregroundColor(.textPrimary)
-                  .padding(Spacing.md)
+                  .padding(.horizontal, Spacing.md)
+                  .padding(.vertical, Spacing.sm)
               }
             }
+            .frame(maxWidth: .infinity)
+            .transition(.opacity)
           }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
     .padding(Spacing.xl)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.md)
   }

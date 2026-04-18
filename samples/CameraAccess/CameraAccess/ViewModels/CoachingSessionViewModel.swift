@@ -52,6 +52,12 @@ class CoachingSessionViewModel: ObservableObject {
   private var resumptionHandle: String?
   private var isResuming = false
 
+  // Intro seed — fires one synthetic user turn the first time the socket
+  // flips to .connected so Gemini produces its greeting immediately instead
+  // of waiting for the learner to speak. Must NOT fire on resumption reconnects
+  // (those already get re-oriented via context-summary inject).
+  private var hasSeededIntro = false
+
   // Audio send gate state — for edge-triggered logging (only log OPEN/CLOSED transitions).
   private var audioGateWasOpen = false
 
@@ -117,13 +123,16 @@ class CoachingSessionViewModel: ObservableObject {
     self.transport = transport
   }
 
-  func startSession(progressStore: LocalProgressStore) {
-    print("[Coaching] ── session STARTED (transport=\(transport), procedure=\(procedure.id))")
+  func startSession(progressStore: LocalProgressStore, startingStep: Int? = nil) {
+    print("[Coaching] ── session STARTED (transport=\(transport), procedure=\(procedure.id), startingStep=\(startingStep.map(String.init) ?? "nil"))")
     // Defensive reset of everything that could leak from a prior session.
     // Today the VM is re-created on each fullScreenCover present, so these
     // are normally already defaults — but this guards against SwiftUI caching
     // or any in-flight closures from a prior run racing the new setup.
-    currentStepIndex = 0
+    // Server is 1-indexed, VM is 0-indexed. `startingStep == nil` means fresh
+    // session at step 1 → index 0.
+    let seededIndex = max(0, (startingStep ?? 1) - 1)
+    currentStepIndex = seededIndex
     isCompleted = false
     frozenSessionDuration = nil
     isMuted = false
@@ -142,6 +151,7 @@ class CoachingSessionViewModel: ObservableObject {
     assistantTurnOpen = false
     resumptionHandle = nil
     isResuming = false
+    hasSeededIntro = false
     cancellables.removeAll()
 
     self.progressStore = progressStore
@@ -149,7 +159,8 @@ class CoachingSessionViewModel: ObservableObject {
     let record = progressStore.startSession(
       procedureId: procedure.id,
       procedureTitle: procedure.title,
-      totalSteps: procedure.steps.count
+      totalSteps: procedure.steps.count,
+      stepsCompleted: seededIndex
     )
     sessionRecordId = record.id
 
@@ -163,7 +174,7 @@ class CoachingSessionViewModel: ObservableObject {
 
     // Start Gemini Live audio session
     Task {
-      await startGeminiLiveSession()
+      await startGeminiLiveSession(startingStep: startingStep)
     }
   }
 
@@ -224,7 +235,7 @@ class CoachingSessionViewModel: ObservableObject {
 
   // MARK: - Gemini Live Session
 
-  private func startGeminiLiveSession() async {
+  private func startGeminiLiveSession(startingStep: Int? = nil) async {
     // 1. Set up audio manager — pin to built-in mic + loudspeaker when the
     // learner picked the iPhone transport, otherwise allow HFP glasses route.
     let audioMode: AudioSessionMode = (transport == .iPhone) ? .coachingPhoneOnly : .coaching
@@ -261,7 +272,8 @@ class CoachingSessionViewModel: ObservableObject {
       sessionResponse = try await apiService.startLearnerSession(
         procedureId: procedure.id,
         voice: selectedVoice,
-        autoAdvance: autoAdvance
+        autoAdvance: autoAdvance,
+        startingStep: startingStep
       )
     } catch {
       voiceStatus = "Session error"
@@ -397,6 +409,28 @@ class CoachingSessionViewModel: ObservableObject {
           self.isGeminiReady = true
           self.voiceStatus = self.isMuted ? "Muted" : "Listening"
           print("[Coaching] Gemini Live connected")
+          // Seed the conversation once per session so the coach greets the
+          // learner immediately instead of waiting for them to speak. Only
+          // on the FIRST .connected — subsequent transitions are reconnects
+          // / resumptions where the context-summary inject handles
+          // re-orientation and a second "hello" would be a jarring replay.
+          if !self.hasSeededIntro {
+            self.hasSeededIntro = true
+            Task { [weak self] in
+              guard let self = self, let gemini = self.geminiService else { return }
+              do {
+                // Phrased first-person, learner-style; sent as a text turn
+                // via sendClientTextTurn which does NOT trigger
+                // inputTranscription, so this line stays invisible in the
+                // activity feed while still eliciting the greeting.
+                try await gemini.sendClientTextTurn("Hi, I'm ready to begin.")
+                print("[Coaching] Seeded intro turn on first .connected")
+              } catch {
+                print("[Coaching] Failed to seed intro turn: \(error)")
+                // Not fatal — learner can still speak first to start the flow.
+              }
+            }
+          }
         case .connecting:
           self.isGeminiReady = false
           self.voiceStatus = "Connecting..."
@@ -526,6 +560,7 @@ class CoachingSessionViewModel: ObservableObject {
     assistantTurnOpen = false
     resumptionHandle = nil
     isResuming = false
+    hasSeededIntro = false
     voiceStatus = "Ended"
     geminiConnectionState = .disconnected
   }

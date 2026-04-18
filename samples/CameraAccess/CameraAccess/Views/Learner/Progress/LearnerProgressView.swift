@@ -4,47 +4,141 @@ struct LearnerProgressView: View {
   @ObservedObject var progressStore: LocalProgressStore
   let onExit: () -> Void
 
+  @State private var isEditing = false
+  @State private var selectedIDs: Set<String> = []
+  @State private var showDeleteSelectedConfirm = false
+  @State private var showDeleteAllConfirm = false
+
   var body: some View {
-    RetraceScreen {
+    ZStack(alignment: .bottom) {
+      RetraceScreen {
 
-      ScrollView {
-        VStack(alignment: .leading, spacing: Spacing.screenPadding) {
-          // Stats cards
-          HStack(spacing: Spacing.lg) {
-            StatCard(
-              value: "\(progressStore.completedCount)",
-              label: "Completed"
-            )
-            StatCard(
-              value: "\(progressStore.totalStepsMastered)",
-              label: "Total Steps"
-            )
-            StatCard(
-              value: formatTime(progressStore.totalTimeTraining),
-              label: "Time Trained"
-            )
+        ScrollView {
+          VStack(alignment: .leading, spacing: Spacing.screenPadding) {
+            // Stats cards
+            HStack(spacing: Spacing.lg) {
+              StatCard(
+                value: "\(progressStore.completedCount)",
+                label: "Completed"
+              )
+              StatCard(
+                value: "\(progressStore.totalStepsMastered)",
+                label: "Total Steps"
+              )
+              StatCard(
+                value: formatTime(progressStore.totalTimeTraining),
+                label: "Time Spent"
+              )
+            }
+
+            activityOverview
+
+            sessionHistory
           }
-
-          activityOverview
-
-          sessionHistory
+          .padding(Spacing.screenPadding)
+          .padding(.bottom, isEditing ? 80 : 0)
         }
-        .padding(Spacing.screenPadding)
+      }
+
+      if isEditing {
+        deleteBottomBar
+          .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
+    .animation(.easeInOut(duration: 0.2), value: isEditing)
     .navigationTitle("Training Log")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
-        Button {
-          onExit()
-        } label: {
-          Image(systemName: "chevron.backward")
-            .foregroundColor(.textSecondary)
+        if isEditing {
+          Button("Cancel") {
+            isEditing = false
+            selectedIDs.removeAll()
+          }
+          .foregroundColor(.textSecondary)
+        } else {
+          Button {
+            onExit()
+          } label: {
+            Image(systemName: "chevron.backward")
+              .foregroundColor(.textSecondary)
+          }
+        }
+      }
+      ToolbarItem(placement: .topBarTrailing) {
+        if isEditing {
+          Button("Done") {
+            isEditing = false
+            selectedIDs.removeAll()
+          }
+          .foregroundColor(.appPrimary)
+        } else {
+          Menu {
+            Button {
+              isEditing = true
+            } label: {
+              Label("Select", systemImage: "checkmark.circle")
+            }
+            .disabled(progressStore.sessionHistory.isEmpty)
+
+            Button(role: .destructive) {
+              showDeleteAllConfirm = true
+            } label: {
+              Label("Delete All", systemImage: "trash")
+            }
+            .disabled(progressStore.sessionHistory.isEmpty)
+          } label: {
+            Image(systemName: "ellipsis.circle")
+              .foregroundColor(.textSecondary)
+          }
         }
       }
     }
     .retraceNavBar()
+    .alert("Delete \(selectedIDs.count) entr\(selectedIDs.count == 1 ? "y" : "ies")?",
+           isPresented: $showDeleteSelectedConfirm) {
+      Button("Cancel", role: .cancel) {}
+      Button("Delete", role: .destructive) {
+        progressStore.deleteSessions(ids: selectedIDs)
+        selectedIDs.removeAll()
+        isEditing = false
+      }
+    } message: {
+      Text("This removes the selected training log entries from this device.")
+    }
+    .alert("Delete all training log entries?", isPresented: $showDeleteAllConfirm) {
+      Button("Cancel", role: .cancel) {}
+      Button("Delete All", role: .destructive) {
+        progressStore.clearAllHistory()
+        selectedIDs.removeAll()
+        isEditing = false
+      }
+    } message: {
+      Text("This permanently clears your full training log on this device. Your saved procedures stay intact.")
+    }
+  }
+
+  // MARK: - Delete bottom bar
+
+  private var deleteBottomBar: some View {
+    HStack {
+      Spacer()
+      Button {
+        showDeleteSelectedConfirm = true
+      } label: {
+        Text(selectedIDs.isEmpty ? "Delete" : "Delete (\(selectedIDs.count))")
+          .font(.retraceCallout)
+          .fontWeight(.semibold)
+          .foregroundColor(.white)
+          .padding(.horizontal, Spacing.xxl)
+          .padding(.vertical, Spacing.lg)
+          .background(selectedIDs.isEmpty ? Color.textTertiary : Color.semanticError)
+          .cornerRadius(Radius.full)
+      }
+      .disabled(selectedIDs.isEmpty)
+      Spacer()
+    }
+    .padding(.bottom, Spacing.xl)
   }
 
   // MARK: - Activity Overview
@@ -99,6 +193,12 @@ struct LearnerProgressView: View {
       } else {
         ForEach(progressStore.sessionHistory.prefix(20)) { session in
           HStack(spacing: Spacing.lg) {
+            if isEditing {
+              Image(systemName: selectedIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(selectedIDs.contains(session.id) ? .appPrimary : .textTertiary)
+                .font(.system(size: 20))
+            }
+
             Image(systemName: session.status == .completed ? "checkmark.circle.fill" : "arrow.right.circle")
               .foregroundColor(session.status == .completed ? .semanticSuccess : .appPrimary)
               .font(.system(size: 20))
@@ -130,6 +230,15 @@ struct LearnerProgressView: View {
             RoundedRectangle(cornerRadius: Radius.sm)
               .stroke(Color.borderSubtle, lineWidth: 1)
             )
+          .contentShape(Rectangle())
+          .onTapGesture {
+            guard isEditing else { return }
+            if selectedIDs.contains(session.id) {
+              selectedIDs.remove(session.id)
+            } else {
+              selectedIDs.insert(session.id)
+            }
+          }
         }
       }
     }

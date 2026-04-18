@@ -245,6 +245,9 @@ struct StepDetailView: View {
   let onTap: () -> Void
 
   var body: some View {
+    // maxWidth pin keeps the expanded description from reporting its single-line
+    // ideal width up the layout chain, which would push the parent ScrollView's
+    // content wider than the screen and unlock horizontal pan/bounce.
     VStack(alignment: .leading, spacing: 0) {
       Button(action: onTap) {
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -295,10 +298,19 @@ struct StepDetailView: View {
           }
         }
         .padding(.leading, 32)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Cross-fade in place (matches native DisclosureGroup). The previous
+        // .move(edge: .top) made the content visibly slide in from above the
+        // row — without clipping the moving frame, that reads as "appearing
+        // from the top of the screen" rather than from below the step header.
+        .transition(.opacity)
       }
     }
     .padding(.vertical, Spacing.md)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    // Defensive: any inner content that briefly mis-measures during the
+    // expand/collapse animation cannot leak past the row's horizontal bounds.
+    .clipped()
   }
 
   private func formatTimestamp(_ seconds: Double) -> String {
@@ -468,12 +480,17 @@ struct FlowLayout: Layout {
   }
 
   private func arrangeSubviews(proposal: ProposedViewSize, subviews: Subviews) -> (positions: [CGPoint], size: CGSize) {
+    // nil proposal → unconstrained ideal pass. Use .infinity for the wrap test
+    // so all items land on a single row, but never report .infinity back as the
+    // measured size — that would push the enclosing ScrollView wider than the
+    // screen and unlock horizontal scroll/bounce.
     let maxWidth = proposal.width ?? .infinity
     var positions: [CGPoint] = []
     var x: CGFloat = 0
     var y: CGFloat = 0
     var rowHeight: CGFloat = 0
     var totalHeight: CGFloat = 0
+    var maxRowExtent: CGFloat = 0
 
     for subview in subviews {
       let size = subview.sizeThatFits(.unspecified)
@@ -485,9 +502,11 @@ struct FlowLayout: Layout {
       positions.append(CGPoint(x: x, y: y))
       rowHeight = max(rowHeight, size.height)
       x += size.width + spacing
+      maxRowExtent = max(maxRowExtent, x - spacing)
       totalHeight = y + rowHeight
     }
 
-    return (positions, CGSize(width: maxWidth, height: totalHeight))
+    let reportedWidth = proposal.width ?? maxRowExtent
+    return (positions, CGSize(width: reportedWidth, height: totalHeight))
   }
 }

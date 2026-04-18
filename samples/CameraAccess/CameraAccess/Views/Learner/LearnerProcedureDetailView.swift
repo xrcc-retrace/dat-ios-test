@@ -15,6 +15,13 @@ struct LearnerProcedureDetailView: View {
   @State private var presentedCoaching: CaptureTransport?
   @State private var showRegistrationSheet = false
   @State private var showGlassesInactiveSheet = false
+  // When the learner taps "Continue" on a resumable session this is set to
+  // (stepsCompleted + 1); nil means "fresh session from step 1."
+  @State private var coachingStartingStep: Int?
+  // Transport selection for the resume flow's pill toggle. Only consulted
+  // when a resumable session is present; otherwise the old two-button CTAs
+  // set `presentedCoaching` directly.
+  @State private var resumeTransport: CaptureTransport = .iPhone
 
   var body: some View {
     RetraceScreen {
@@ -52,9 +59,15 @@ struct LearnerProcedureDetailView: View {
           wearablesVM: wearablesVM,
           progressStore: progressStore,
           serverBaseURL: viewModel.serverBaseURL,
-          transport: transport
+          transport: transport,
+          startingStep: coachingStartingStep
         )
       }
+    }
+    .onChange(of: presentedCoaching) { _, new in
+      // Once the cover dismisses, drop the resume anchor so the next launch
+      // from the fresh-flow CTAs starts at step 1 unless explicitly resumed.
+      if new == nil { coachingStartingStep = nil }
     }
     .sheet(isPresented: $showRegistrationSheet) {
       RegistrationPromptSheet(viewModel: wearablesVM) {
@@ -70,6 +83,8 @@ struct LearnerProcedureDetailView: View {
 
   @ViewBuilder
   private func procedureContent(_ procedure: ProcedureResponse) -> some View {
+    let resumable = progressStore.inProgressSession(for: procedure.id)
+
     ZStack(alignment: .bottom) {
       ScrollView {
         VStack(alignment: .leading, spacing: Spacing.screenPadding) {
@@ -89,6 +104,10 @@ struct LearnerProcedureDetailView: View {
               MetadataPill(icon: "list.number", text: "\(procedure.steps.count) steps")
               MetadataPill(icon: "person.2", text: "0 completions")
             }
+          }
+
+          if let resumable {
+            resumeProgressSection(resumable)
           }
 
           // Completion stats placeholder
@@ -134,8 +153,9 @@ struct LearnerProcedureDetailView: View {
         .padding(Spacing.screenPadding)
       }
 
-      // Pinned CTAs — transport picker inline so the glasses/iPhone choice
-      // is the last thing the learner makes before stepping into coaching.
+      // Pinned CTAs — resumable procedures swap in the Continue / Start Over
+      // pair with a transport pill; fresh procedures keep the two-button
+      // glasses-vs-iPhone layout.
       VStack(spacing: 0) {
         LinearGradient(
           colors: [Color.backgroundPrimary.opacity(0), Color.backgroundPrimary],
@@ -144,33 +164,11 @@ struct LearnerProcedureDetailView: View {
         )
         .frame(height: 20)
 
-        VStack(spacing: Spacing.md) {
-          CustomButton(
-            title: "Coach with Glasses",
-            icon: "eyeglasses",
-            style: .primary,
-            isDisabled: false
-          ) {
-            // Three-way gate:
-            //   - Not registered  → Meta AI pairing sheet
-            //   - Registered but glasses not awake / in range → inactive prompt
-            //   - Registered + active → start coaching
-            if wearablesVM.registrationState != .registered {
-              showRegistrationSheet = true
-            } else if !wearablesVM.hasActiveDevice {
-              showGlassesInactiveSheet = true
-            } else {
-              presentedCoaching = .glasses
-            }
-          }
-
-          CustomButton(
-            title: "Coach with iPhone",
-            icon: "iphone",
-            style: .secondary,
-            isDisabled: false
-          ) {
-            presentedCoaching = .iPhone
+        Group {
+          if let resumable {
+            resumeCTAs(resumable)
+          } else {
+            freshCTAs
           }
         }
         .padding(.horizontal, Spacing.screenPadding)
@@ -178,6 +176,176 @@ struct LearnerProcedureDetailView: View {
         .background(Color.backgroundPrimary)
       }
     }
+  }
+
+  // MARK: - Resume progress section
+
+  @ViewBuilder
+  private func resumeProgressSection(_ resumable: SessionRecord) -> some View {
+    VStack(alignment: .leading, spacing: Spacing.md) {
+      HStack {
+        Text("IN PROGRESS")
+          .font(.retraceOverline)
+          .tracking(0.5)
+          .foregroundColor(.appPrimary)
+        Spacer()
+        Text(relativeTime(from: resumable.startedAt))
+          .font(.retraceCaption1)
+          .foregroundColor(.textSecondary)
+      }
+
+      StepProgressBar(
+        currentStep: resumable.stepsCompleted,
+        totalSteps: resumable.totalSteps
+      )
+
+      Text("Step \(resumable.stepsCompleted + 1) of \(resumable.totalSteps)")
+        .font(.retraceCallout)
+        .foregroundColor(.textPrimary)
+    }
+    .padding(Spacing.xl)
+    .background(Color.surfaceBase)
+    .cornerRadius(Radius.lg)
+    .overlay(
+      RoundedRectangle(cornerRadius: Radius.lg)
+        .stroke(Color.appPrimary.opacity(0.3), lineWidth: 1)
+    )
+  }
+
+  // MARK: - Fresh CTAs (no in-progress session)
+
+  @ViewBuilder
+  private var freshCTAs: some View {
+    VStack(spacing: Spacing.md) {
+      CustomButton(
+        title: "Coach with Glasses",
+        icon: "eyeglasses",
+        style: .primary,
+        isDisabled: false
+      ) {
+        // Three-way gate:
+        //   - Not registered  → Meta AI pairing sheet
+        //   - Registered but glasses not awake / in range → inactive prompt
+        //   - Registered + active → start coaching
+        if wearablesVM.registrationState != .registered {
+          showRegistrationSheet = true
+        } else if !wearablesVM.hasActiveDevice {
+          showGlassesInactiveSheet = true
+        } else {
+          coachingStartingStep = nil
+          presentedCoaching = .glasses
+        }
+      }
+
+      CustomButton(
+        title: "Coach with iPhone",
+        icon: "iphone",
+        style: .secondary,
+        isDisabled: false
+      ) {
+        coachingStartingStep = nil
+        presentedCoaching = .iPhone
+      }
+    }
+  }
+
+  // MARK: - Resume CTAs (in-progress session present)
+
+  @ViewBuilder
+  private func resumeCTAs(_ resumable: SessionRecord) -> some View {
+    let continueStep = resumable.stepsCompleted + 1
+
+    VStack(spacing: Spacing.md) {
+      // Transport pill — single tap changes the launch path.
+      HStack(spacing: 0) {
+        transportPillOption(
+          label: "Glasses",
+          icon: "eyeglasses",
+          value: .glasses
+        )
+        transportPillOption(
+          label: "iPhone",
+          icon: "iphone",
+          value: .iPhone
+        )
+      }
+      .padding(4)
+      .background(Color.surfaceBase)
+      .clipShape(Capsule())
+      .overlay(
+        Capsule().stroke(Color.borderSubtle, lineWidth: 1)
+      )
+
+      CustomButton(
+        title: "Continue from Step \(continueStep)",
+        icon: "arrow.right.circle.fill",
+        style: .primary,
+        isDisabled: false
+      ) {
+        launchCoaching(transport: resumeTransport, startingStep: continueStep)
+      }
+
+      CustomButton(
+        title: "Start Over",
+        icon: "arrow.counterclockwise",
+        style: .secondary,
+        isDisabled: false
+      ) {
+        progressStore.updateSession(
+          id: resumable.id,
+          stepsCompleted: resumable.stepsCompleted,
+          status: .abandoned
+        )
+        launchCoaching(transport: resumeTransport, startingStep: nil)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func transportPillOption(
+    label: String,
+    icon: String,
+    value: CaptureTransport
+  ) -> some View {
+    let isSelected = resumeTransport == value
+    Button {
+      resumeTransport = value
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: icon)
+        Text(label)
+      }
+      .font(.retraceCallout)
+      .fontWeight(isSelected ? .semibold : .regular)
+      .foregroundColor(isSelected ? .backgroundPrimary : .textSecondary)
+      .frame(maxWidth: .infinity)
+      .frame(height: 36)
+      .background(isSelected ? Color.appPrimary : Color.clear)
+      .clipShape(Capsule())
+    }
+    .buttonStyle(.plain)
+  }
+
+  private func launchCoaching(transport: CaptureTransport, startingStep: Int?) {
+    coachingStartingStep = startingStep
+    switch transport {
+    case .glasses:
+      if wearablesVM.registrationState != .registered {
+        showRegistrationSheet = true
+      } else if !wearablesVM.hasActiveDevice {
+        showGlassesInactiveSheet = true
+      } else {
+        presentedCoaching = .glasses
+      }
+    case .iPhone:
+      presentedCoaching = .iPhone
+    }
+  }
+
+  private func relativeTime(from date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .short
+    return "Started " + formatter.localizedString(for: date, relativeTo: Date())
   }
 
   @ViewBuilder

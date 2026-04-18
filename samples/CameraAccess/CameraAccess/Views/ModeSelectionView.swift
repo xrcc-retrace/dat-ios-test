@@ -12,9 +12,45 @@ struct ModeSelectionView: View {
   @State private var selectedMode: AppMode?
 
   var body: some View {
+    ZStack {
+      // Persistent backdrop so no edge reveals system white during transitions.
+      Color.backgroundPrimary.ignoresSafeArea()
+
+      // Base layer: the mode selector is always rendered. It stays visible
+      // behind the tab view as the tab view slides in/out from the right.
+      modeSelectorScreen
+
+      // Overlay layer: the selected mode's tab view slides in from the
+      // trailing edge, covering the mode selector. On exit it slides back
+      // out, revealing the mode selector already in place (no blink).
+      if let mode = selectedMode {
+        Group {
+          switch mode {
+          case .expert:
+            ExpertTabView(
+              wearables: wearables,
+              wearablesVM: wearablesVM,
+              onExit: { selectedMode = nil }
+            )
+          case .learner:
+            LearnerTabView(
+              wearables: wearables,
+              wearablesVM: wearablesVM,
+              onExit: { selectedMode = nil }
+            )
+          }
+        }
+        .transition(.move(edge: .trailing))
+        .zIndex(1)
+      }
+    }
+    .animation(.easeInOut(duration: 0.35), value: selectedMode)
+    .tint(.appPrimary)
+  }
+
+  private var modeSelectorScreen: some View {
     NavigationStack {
-      ZStack {
-        Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+      RetraceScreen {
 
         // Subtle ambient glow
         RadialGradient(
@@ -68,75 +104,16 @@ struct ModeSelectionView: View {
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           NavigationLink {
-            ServerSettingsView()
+            ServerSettingsView(wearablesVM: wearablesVM)
           } label: {
             Image(systemName: "gearshape")
               .foregroundColor(.textSecondary)
           }
         }
       }
-      .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-      .toolbarBackground(.visible, for: .navigationBar)
-      .navigationDestination(item: $selectedMode) { mode in
-        switch mode {
-        case .expert:
-          ExpertTabView(wearables: wearables, wearablesVM: wearablesVM)
-            .navigationBarBackButtonHidden(false)
-        case .learner:
-          LearnerTabView(wearables: wearables, wearablesVM: wearablesVM)
-            .navigationBarBackButtonHidden(false)
-        }
-      }
+      .toolbarBackground(.hidden, for: .navigationBar)
     }
-    .tint(.appPrimary)
   }
 }
 
 extension AppMode: Hashable {}
-
-struct ModeCard: View {
-  let icon: String
-  let title: String
-  let subtitle: String
-  let isEnabled: Bool
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: Spacing.xl) {
-        Image(systemName: icon)
-          .font(.system(size: 24))
-          .foregroundColor(isEnabled ? .appPrimary : .textTertiary)
-          .frame(width: 48, height: 48)
-          .background(isEnabled ? Color.accentMuted : Color.surfaceRaised)
-          .cornerRadius(Radius.md)
-
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-          Text(title)
-            .font(.retraceTitle3)
-            .foregroundColor(isEnabled ? .textPrimary : .textTertiary)
-          Text(subtitle)
-            .font(.retraceCallout)
-            .foregroundColor(.textSecondary)
-        }
-
-        Spacer()
-
-        if isEnabled {
-          Image(systemName: "chevron.right")
-            .font(.retraceSubheadline)
-            .foregroundColor(.textTertiary)
-        }
-      }
-      .padding(Spacing.xxl)
-      .background(Color.surfaceBase)
-      .cornerRadius(Radius.lg)
-      .overlay(
-        RoundedRectangle(cornerRadius: Radius.lg)
-          .stroke(Color.borderSubtle, lineWidth: 1)
-      )
-    }
-    .buttonStyle(ScaleButtonStyle())
-    .disabled(!isEnabled)
-  }
-}

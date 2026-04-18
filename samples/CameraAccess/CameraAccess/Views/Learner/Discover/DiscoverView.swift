@@ -5,19 +5,21 @@ struct DiscoverView: View {
   let wearables: WearablesInterface
   @ObservedObject var wearablesVM: WearablesViewModel
   @ObservedObject var progressStore: LocalProgressStore
+  let onExit: () -> Void
   @StateObject private var viewModel = DiscoverViewModel()
   @State private var showSearch = false
+  // Swipe-to-dismiss offset for the resume card. Negative only (leftward).
+  @State private var resumeDragOffset: CGFloat = 0
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(alignment: .leading, spacing: Spacing.xxl) {
           searchBar
 
           if let session = progressStore.anyInProgressSession {
-            resumeCard(session)
+            swipeableResumeCard(session)
           }
 
           categoryChips
@@ -40,18 +42,18 @@ struct DiscoverView: View {
       }
     }
     .navigationTitle("Procedures")
-    .navigationBarTitleDisplayMode(.large)
+    .navigationBarTitleDisplayMode(.inline)
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        HStack(spacing: Spacing.lg) {
-          Circle()
-            .fill(wearablesVM.registrationState == .registered ? Color.semanticSuccess : Color.textTertiary)
-            .frame(width: 8, height: 8)
+      ToolbarItem(placement: .topBarLeading) {
+        Button {
+          onExit()
+        } label: {
+          Image(systemName: "chevron.backward")
+            .foregroundColor(.textSecondary)
         }
       }
     }
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .refreshable {
       await viewModel.fetchProcedures()
     }
@@ -78,6 +80,73 @@ struct DiscoverView: View {
         .stroke(Color.borderSubtle, lineWidth: 1)
     )
     .padding(.horizontal, Spacing.screenPadding)
+  }
+
+  // MARK: - Swipeable resume card wrapper
+
+  @ViewBuilder
+  private func swipeableResumeCard(_ session: SessionRecord) -> some View {
+    ZStack {
+      // Red trash reveal — static layer behind the sliding card. Respects the
+      // card's padding so the red panel inherits the same gutter.
+      HStack {
+        Spacer()
+        Image(systemName: "trash.fill")
+          .font(.system(size: 22, weight: .semibold))
+          .foregroundColor(.white)
+          .padding(.trailing, Spacing.xxl)
+      }
+      .frame(maxWidth: .infinity)
+      .frame(minHeight: 120)
+      .background(Color.red)
+      .cornerRadius(Radius.lg)
+      .padding(.horizontal, Spacing.screenPadding)
+
+      NavigationLink {
+        LearnerProcedureDetailView(
+          procedureId: session.procedureId,
+          wearables: wearables,
+          wearablesVM: wearablesVM,
+          progressStore: progressStore
+        )
+      } label: {
+        resumeCard(session)
+      }
+      .buttonStyle(.plain)
+      .offset(x: min(0, resumeDragOffset))
+      // simultaneousGesture so a short tap still activates the NavigationLink;
+      // a leftward drag beyond 20pt is intercepted and abandons locally.
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 20)
+          .onChanged { value in
+            if value.translation.width < 0 {
+              resumeDragOffset = value.translation.width
+            }
+          }
+          .onEnded { value in
+            if value.translation.width < -120 {
+              withAnimation(.easeInOut(duration: 0.22)) {
+                resumeDragOffset = -500
+              }
+              // Defer the model mutation until the card finishes sliding;
+              // otherwise the anyInProgressSession == nil re-render yanks
+              // the card out mid-animation.
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                progressStore.updateSession(
+                  id: session.id,
+                  stepsCompleted: session.stepsCompleted,
+                  status: .abandoned
+                )
+                resumeDragOffset = 0
+              }
+            } else {
+              withAnimation(.spring()) {
+                resumeDragOffset = 0
+              }
+            }
+          }
+      )
+    }
   }
 
   // MARK: - Resume Card
@@ -143,18 +212,11 @@ struct DiscoverView: View {
   // MARK: - Empty State
 
   private var emptyState: some View {
-    VStack(spacing: Spacing.lg) {
-      Image(systemName: "doc.text.magnifyingglass")
-        .font(.system(size: 36))
-        .foregroundColor(.textTertiary)
-      Text("No procedures found")
-        .font(.retraceHeadline)
-        .foregroundColor(.textPrimary)
-      Text("Try a different search or category")
-        .font(.retraceSubheadline)
-        .foregroundColor(.textSecondary)
-    }
-    .frame(maxWidth: .infinity)
+    EmptyStateView(
+      icon: "doc.text.magnifyingglass",
+      title: "No procedures found",
+      message: "Try a different search or category"
+    )
     .padding(.top, Spacing.jumbo)
   }
 

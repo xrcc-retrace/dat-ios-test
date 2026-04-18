@@ -17,7 +17,7 @@ struct PiPReferenceView: View {
             VideoPlayer(player: player)
           } else {
             ZStack {
-              Color(.systemGray5).opacity(0.3)
+              VideoThumbnailView(url: url)
               Button {
                 let p = AVPlayer(url: url)
                 player = p

@@ -101,15 +101,16 @@ struct ControlsView: View {
   var body: some View {
     let isRecording = viewModel.recordingManager.isRecording
 
+    let isStarting = viewModel.recordingManager.isStarting
     HStack(alignment: .bottom, spacing: Spacing.md) {
       VStack(spacing: Spacing.md) {
         if !isRecording {
           CustomButton(
-            title: "Start recording",
+            title: isStarting ? "Starting…" : "Start recording",
             style: .primary,
-            isDisabled: false
+            isDisabled: isStarting
           ) {
-            viewModel.recordingManager.startRecording()
+            Task { await viewModel.recordingManager.startRecording() }
           }
         }
 

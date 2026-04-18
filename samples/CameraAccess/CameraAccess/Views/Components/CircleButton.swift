@@ -27,7 +27,7 @@ struct CircleButton: View {
           .font(.retraceHeadline)
       }
     }
-    .foregroundColor(Color("backgroundPrimary"))
+    .foregroundColor(Color.backgroundPrimary)
     .frame(width: 56, height: 56)
     .background(Color.textPrimary)
     .clipShape(Circle())

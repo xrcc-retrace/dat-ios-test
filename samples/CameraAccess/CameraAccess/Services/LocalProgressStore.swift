@@ -30,14 +30,19 @@ class LocalProgressStore: ObservableObject {
 
   // MARK: - Session History
 
-  func startSession(procedureId: String, procedureTitle: String, totalSteps: Int) -> SessionRecord {
+  func startSession(
+    procedureId: String,
+    procedureTitle: String,
+    totalSteps: Int,
+    stepsCompleted: Int = 0
+  ) -> SessionRecord {
     let record = SessionRecord(
       id: UUID().uuidString,
       procedureId: procedureId,
       procedureTitle: procedureTitle,
       startedAt: Date(),
       completedAt: nil,
-      stepsCompleted: 0,
+      stepsCompleted: stepsCompleted,
       totalSteps: totalSteps,
       status: .inProgress
     )
@@ -62,6 +67,20 @@ class LocalProgressStore: ObservableObject {
 
   var anyInProgressSession: SessionRecord? {
     sessionHistory.first { $0.status == .inProgress }
+  }
+
+  // MARK: - Session History — Delete
+
+  func deleteSessions(ids: Set<String>) {
+    guard !ids.isEmpty else { return }
+    sessionHistory.removeAll { ids.contains($0.id) }
+    persistHistory()
+  }
+
+  func clearAllHistory() {
+    guard !sessionHistory.isEmpty else { return }
+    sessionHistory.removeAll()
+    persistHistory()
   }
 
   // MARK: - Stats

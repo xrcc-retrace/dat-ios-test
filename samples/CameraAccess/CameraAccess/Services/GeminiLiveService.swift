@@ -27,6 +27,11 @@ class GeminiLiveService: ObservableObject {
   private var reconnectAttempts: Int = 0
   private let maxReconnectAttempts: Int = 2
 
+  // Diagnostic — cap how many initial binary frames we hex-dump so we can
+  // identify the wire format without spamming the console once real audio flows.
+  private var binaryFramesLogged = 0
+  private let binaryFramesLogLimit = 5
+
   // MARK: - Callbacks
 
   /// Called when decoded PCM audio data is received from Gemini.
@@ -72,6 +77,12 @@ class GeminiLiveService: ObservableObject {
   private var firstAudioReceivedLogged = false
   private var statsTask: Task<Void, Never>?
 
+  /// Last `usageMetadata.totalTokenCount` observed from Gemini. Drops of
+  /// >30k between consecutive samples are a strong signal that context
+  /// window compression fired server-side (trigger=100k → target=40k).
+  private var lastTokenCount: Int?
+  private var lastLoggedTokenBand: Int = -1
+
   init(tokenManager: GeminiTokenManager) {
     self.tokenManager = tokenManager
   }
@@ -85,6 +96,16 @@ class GeminiLiveService: ObservableObject {
   }
 
   /// User-initiated retry after a terminal `.error` state.
+  ///
+  /// Uses the token the TokenManager currently holds — callers that need a
+  /// specific token (e.g. `reconnectWithResumption`, which mints a
+  /// handle-baked token just prior to calling this) must set it via
+  /// `tokenManager.forceRefresh(handle:)` before invoking `retry()`.
+  ///
+  /// If the cached token has already been consumed (uses=1 per Google docs),
+  /// the initial handshake will fail and `handleConnectionError` will
+  /// auto-retry with a fresh token on the next performConnect pass — costing
+  /// one round-trip but preserving the "fresh-then-fallback" invariant.
   func retry() async {
     reconnectAttempts = 0
     startStatsTimer()
@@ -97,17 +118,16 @@ class GeminiLiveService: ObservableObject {
     connectionState = .disconnected
   }
 
-  // MARK: - Stats timer
+  // MARK: - Stats
+
+  /// Previously printed `[GeminiLive] Audio out/in: N chunks …` every 5s.
+  /// Removed as noise once the first-chunk logs confirmed bidirectional flow.
+  /// Counters are still maintained (audioOutChunks etc.) for future UI use.
 
   private func startStatsTimer() {
-    guard statsTask == nil else { return }
-    statsTask = Task { @MainActor [weak self] in
-      while !Task.isCancelled {
-        try? await Task.sleep(nanoseconds: 5_000_000_000)  // 5 s
-        if Task.isCancelled { return }
-        self?.flushStats()
-      }
-    }
+    // No-op placeholder — kept so existing `connect()` call site still compiles
+    // without having to thread state changes through the VM. Re-enable if a
+    // real periodic stat readout is needed again.
   }
 
   private func stopStatsTimer() {
@@ -119,23 +139,35 @@ class GeminiLiveService: ObservableObject {
     audioInBytes = 0
     firstAudioSentLogged = false
     firstAudioReceivedLogged = false
+    lastTokenCount = nil
+    lastLoggedTokenBand = -1
   }
 
-  private func flushStats() {
-    if audioOutChunks > 0 {
-      print(
-        "[GeminiLive] Audio out: \(audioOutChunks) chunks / \(audioOutBytes) bytes in last 5s"
-      )
+  /// Parse any `usageMetadata.totalTokenCount` in a server JSON message,
+  /// log when the context crosses a new 10k band (so we see progression
+  /// toward the 100k compression trigger), and flag a confirmed compression
+  /// when the count drops by more than 30k between consecutive samples.
+  private func observeUsageMetadata(_ json: [String: Any]) {
+    let usage = (json["usageMetadata"] as? [String: Any])
+      ?? (json["usage_metadata"] as? [String: Any])
+    guard let usage,
+          let totalAny = usage["totalTokenCount"] ?? usage["total_token_count"],
+          let total = (totalAny as? Int) ?? (totalAny as? NSNumber)?.intValue
+    else { return }
+
+    // Crossed a new 10k threshold? Log once per band so we see growth.
+    let band = total / 10_000
+    if band != lastLoggedTokenBand {
+      lastLoggedTokenBand = band
+      print("[GeminiLive] context: totalTokenCount=\(total) (band=\(band * 10)k)")
     }
-    if audioInChunks > 0 {
-      print(
-        "[GeminiLive] Audio in: \(audioInChunks) chunks / \(audioInBytes) bytes in last 5s"
-      )
+
+    // Compression detection — trigger=100k → target=40k means a ~60k drop.
+    if let prev = lastTokenCount, prev - total >= 30_000 {
+      print("[GeminiLive] ⚡ Context window COMPRESSION fired: \(prev) → \(total) tokens (Δ=\(prev - total))")
+      lastLoggedTokenBand = total / 10_000
     }
-    audioOutChunks = 0
-    audioOutBytes = 0
-    audioInChunks = 0
-    audioInBytes = 0
+    lastTokenCount = total
   }
 
   /// Send raw PCM16 16kHz mono audio to Gemini Live.
@@ -186,7 +218,11 @@ class GeminiLiveService: ObservableObject {
     try await sendText(text)
 
     videoFramesSent += 1
-    print("[GeminiLive] Video frame sent (\(jpegData.count) bytes, total=\(videoFramesSent))")
+    // Log the first frame, then one in every 20 — enough to confirm video is
+    // still flowing without spamming every ~2 s.
+    if videoFramesSent == 1 || videoFramesSent % 20 == 0 {
+      print("[GeminiLive] Video frames sent: \(videoFramesSent) (latest=\(jpegData.count) bytes)")
+    }
   }
 
   /// Send a synthetic user text turn. Used after session resumption to inject
@@ -253,12 +289,25 @@ class GeminiLiveService: ObservableObject {
     connectionState = .connecting
 
     do {
-      // First attempt uses cached token; retries force-refresh in case the
-      // token itself is the problem.
-      let token: EphemeralTokenResponse =
-        reconnectAttempts > 0
-        ? try await tokenManager.forceRefresh()
-        : try await tokenManager.validToken()
+      // First attempt uses cached token. Retries force-refresh to get a
+      // fresh token. If we have a resumption handle from the prior
+      // session (Gemini emits these periodically via
+      // `sessionResumptionUpdate.newHandle`), pass it into the refresh so
+      // the new token is baked with `SessionResumptionConfig(handle=…)`
+      // and Gemini continues the prior session with compressed context
+      // intact — instead of starting fresh and repeating the intro.
+      let token: EphemeralTokenResponse
+      if reconnectAttempts > 0 {
+        let handle = resumptionHandle
+        if let handle = handle {
+          print("[GeminiLive] Reconnecting with resumption handle (len=\(handle.count))")
+        } else {
+          print("[GeminiLive] Reconnecting without resumption handle (none cached yet)")
+        }
+        token = try await tokenManager.forceRefresh(handle: handle)
+      } else {
+        token = try await tokenManager.validToken()
+      }
       try establishConnection(token: token)
       startReceiveLoop()
       // .connected flips once the delegate reports a successful handshake.
@@ -275,6 +324,7 @@ class GeminiLiveService: ObservableObject {
     urlSession?.invalidateAndCancel()
     urlSession = nil
     delegateAdapter = nil
+    binaryFramesLogged = 0
   }
 
   private func establishConnection(token: EphemeralTokenResponse) throws {
@@ -334,7 +384,7 @@ class GeminiLiveService: ObservableObject {
       throw LiveServiceError.encodingFailed
     }
     try await sendText(text)
-    print("[GeminiLive] Setup frame sent, awaiting setupComplete")
+    print("[GeminiLive] Setup frame sent (→ \(text.count) chars), awaiting setupComplete")
   }
 
   private func handleDidClose(closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
@@ -368,9 +418,35 @@ class GeminiLiveService: ObservableObject {
   private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
     switch message {
     case .string(let text):
+      // Log a head-only preview so we can see setupComplete / goAway / errors
+      // arrive without dumping entire audio base64 payloads into the console.
+      let head = String(text.prefix(160))
+      let suffix = text.count > 160 ? "… (\(text.count) chars)" : ""
+      print("[GeminiLive] ← string: \(head)\(suffix)")
       parseJsonMessage(text)
     case .data(let data):
-      // Binary frames — treat as raw PCM audio
+      // The `BidiGenerateContentConstrained` endpoint (v1alpha ephemeral-token
+      // variant of Gemini Live — see services/ephemeral_token.py on the server)
+      // delivers JSON control messages as BINARY WebSocket frames (opcode 0x02)
+      // rather than text frames. Verified on the wire: setupComplete arrives
+      // here as the 26 bytes of `{"setupComplete":{}}` pretty-printed.
+      //
+      // Try to decode as UTF-8 JSON first. If it parses (or even just starts
+      // with `{` / `[`), route to the JSON handler. Otherwise fall through to
+      // the raw-PCM path for audio frames.
+      if let text = String(data: data, encoding: .utf8),
+         let first = text.first,
+         first == "{" || first == "[" {
+        parseJsonMessage(text)
+        return
+      }
+      // Not JSON — treat as PCM audio. Keep diagnostic for the first few.
+      if binaryFramesLogged < binaryFramesLogLimit {
+        binaryFramesLogged += 1
+        let preview = data.prefix(64)
+        let hex = preview.map { String(format: "%02x", $0) }.joined(separator: " ")
+        print("[GeminiLive] ← binary/pcm #\(binaryFramesLogged): \(data.count) bytes hex=\(hex)")
+      }
       onAudioData?(data)
     @unknown default:
       break
@@ -385,6 +461,9 @@ class GeminiLiveService: ObservableObject {
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else { return }
 
+    // Token usage — surface context growth + detect compression.
+    observeUsageMetadata(json)
+
     // Handle server content (model turn with audio, turn complete)
     if let serverContent = json["serverContent"] as? [String: Any] {
       // Barge-in: Gemini's server VAD detected the learner talking over the
@@ -397,7 +476,6 @@ class GeminiLiveService: ObservableObject {
 
       // Check for turn complete
       if let turnComplete = serverContent["turnComplete"] as? Bool, turnComplete {
-        print("[GeminiLive] turnComplete")
         onTurnComplete?()
       }
 
@@ -419,15 +497,14 @@ class GeminiLiveService: ObservableObject {
         }
       }
 
-      // Incremental transcription for learner mic and Gemini reply
+      // Transcripts forward to the UI but aren't logged — the activity feed
+      // already renders them, and per-word prints flooded the console.
       if let input = serverContent["inputTranscription"] as? [String: Any],
          let text = input["text"] as? String, !text.isEmpty {
-        print("[GeminiLive] transcript/in: \"\(truncatedForLog(text))\"")
         onInputTranscript?(text)
       }
       if let output = serverContent["outputTranscription"] as? [String: Any],
          let text = output["text"] as? String, !text.isEmpty {
-        print("[GeminiLive] transcript/out: \"\(truncatedForLog(text))\"")
         onOutputTranscript?(text)
       }
     }

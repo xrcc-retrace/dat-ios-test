@@ -46,7 +46,7 @@ struct CameraAccessApp: App {
     if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
       let device = MockDeviceKit.shared.pairRaybanMeta()
 
-      let cameraKit = device.getCameraKit()
+      let cameraKit = device.services.camera
       Task {
         guard let videoURL = Bundle.main.url(forResource: "plant", withExtension: "mp4"),
           let imageURL = Bundle.main.url(forResource: "plant", withExtension: "png")

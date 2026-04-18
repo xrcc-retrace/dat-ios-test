@@ -26,6 +26,10 @@ class WearablesViewModel: ObservableObject {
   @Published var devices: [DeviceIdentifier]
   @Published var hasMockDevice: Bool
   @Published var registrationState: RegistrationState
+  /// True when there's an actively reachable device (powered on, awake, in
+  /// range) — not merely a paired one. Use this for "is the device connected
+  /// right now" UI; glasses sitting in their case yield `false`.
+  @Published var hasActiveDevice: Bool = false
   @Published var showGettingStartedSheet: Bool = false
   @Published var showError: Bool = false
   @Published var errorMessage: String = ""
@@ -33,6 +37,7 @@ class WearablesViewModel: ObservableObject {
   private var registrationTask: Task<Void, Never>?
   private var deviceStreamTask: Task<Void, Never>?
   private var setupDeviceStreamTask: Task<Void, Never>?
+  private var activeDeviceTask: Task<Void, Never>?
   private let wearables: WearablesInterface
   private var compatibilityListenerTokens: [DeviceIdentifier: AnyListenerToken] = [:]
 
@@ -56,12 +61,26 @@ class WearablesViewModel: ObservableObject {
         }
       }
     }
+
+    // Observe active-device availability via the SDK's auto-selector. This
+    // differs from `devices` (paired roster) — it reflects whether a device
+    // is reachable/awake right now, which is what "Connected" should mean.
+    let activeSelector = AutoDeviceSelector(wearables: wearables)
+    activeDeviceTask = Task { [weak self] in
+      for await device in activeSelector.activeDeviceStream() {
+        guard let self else { return }
+        await MainActor.run {
+          self.hasActiveDevice = device != nil
+        }
+      }
+    }
   }
 
   deinit {
     registrationTask?.cancel()
     deviceStreamTask?.cancel()
     setupDeviceStreamTask?.cancel()
+    activeDeviceTask?.cancel()
   }
 
   private func setupDeviceStream() async {
@@ -123,6 +142,26 @@ class WearablesViewModel: ObservableObject {
       do {
         try await wearables.startUnregistration()
       } catch let error as UnregistrationError {
+        showError(error.description)
+      } catch {
+        showError(error.localizedDescription)
+      }
+    }
+  }
+
+  /// Disconnect then immediately re-register. Convenience for the settings
+  /// screen — useful when the Meta AI handshake has gone stale.
+  func reRegisterGlasses() {
+    Task { @MainActor in
+      do {
+        try await wearables.startUnregistration()
+      } catch {
+        // Non-fatal — we may have already been unregistered.
+        print("[WearablesVM] reRegister: unregistration failed: \(error)")
+      }
+      do {
+        try await wearables.startRegistration()
+      } catch let error as RegistrationError {
         showError(error.description)
       } catch {
         showError(error.localizedDescription)

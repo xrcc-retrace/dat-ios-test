@@ -28,8 +28,7 @@ struct ProcedureEditView: View {
   }
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(alignment: .leading, spacing: Spacing.screenPadding) {
@@ -116,23 +115,13 @@ struct ProcedureEditView: View {
               .font(.retraceSubheadline)
               .foregroundColor(.semanticError)
           }
-
-          // Delete
-          CustomButton(
-            title: "Delete Procedure",
-            style: .destructive,
-            isDisabled: isSaving
-          ) {
-            dismiss()
-          }
         }
         .padding(Spacing.screenPadding)
       }
     }
     .navigationTitle("Edit Workflow")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
         Button("Cancel") { dismiss() }

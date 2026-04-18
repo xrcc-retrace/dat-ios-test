@@ -33,8 +33,7 @@ struct StepEditView: View {
   }
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       ScrollView {
         VStack(alignment: .leading, spacing: Spacing.screenPadding) {
@@ -131,8 +130,7 @@ struct StepEditView: View {
     }
     .navigationTitle("Edit Step \(step.stepNumber)")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
         Button("Cancel") { dismiss() }

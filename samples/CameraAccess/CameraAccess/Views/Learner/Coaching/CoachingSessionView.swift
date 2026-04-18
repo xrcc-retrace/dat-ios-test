@@ -8,6 +8,8 @@ struct CoachingSessionView: View {
   @ObservedObject var wearablesVM: WearablesViewModel
   @ObservedObject var progressStore: LocalProgressStore
   let serverBaseURL: String
+  let transport: CaptureTransport
+  let startingStep: Int?
 
   @Environment(\.dismiss) private var dismiss
   @StateObject private var viewModel: CoachingSessionViewModel
@@ -19,23 +21,27 @@ struct CoachingSessionView: View {
     wearables: WearablesInterface,
     wearablesVM: WearablesViewModel,
     progressStore: LocalProgressStore,
-    serverBaseURL: String
+    serverBaseURL: String,
+    transport: CaptureTransport = .glasses,
+    startingStep: Int? = nil
   ) {
     self.procedure = procedure
     self.wearables = wearables
     self.wearablesVM = wearablesVM
     self.progressStore = progressStore
     self.serverBaseURL = serverBaseURL
+    self.transport = transport
+    self.startingStep = startingStep
     self._viewModel = StateObject(wrappedValue: CoachingSessionViewModel(
       procedure: procedure,
       wearables: wearables,
-      serverBaseURL: serverBaseURL
+      serverBaseURL: serverBaseURL,
+      transport: transport
     ))
   }
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       VStack(spacing: 0) {
         topBar
@@ -76,7 +82,7 @@ struct CoachingSessionView: View {
       Text("Your progress will be saved.")
     }
     .onAppear {
-      viewModel.startSession(progressStore: progressStore)
+      viewModel.startSession(progressStore: progressStore, startingStep: startingStep)
     }
     .onDisappear {
       viewModel.endSession(progressStore: progressStore)

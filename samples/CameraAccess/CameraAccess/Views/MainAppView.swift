@@ -30,12 +30,11 @@ struct MainAppView: View {
 
   var body: some View {
     ZStack(alignment: .top) {
-      if viewModel.registrationState == .registered || viewModel.hasMockDevice {
-        ModeSelectionView(wearables: wearables, wearablesVM: viewModel)
-      } else {
-        // User not registered - show registration/onboarding flow
-        HomeScreenView(viewModel: viewModel)
-      }
+      // Root gate removed — the app runs end-to-end via iPhone without glasses
+      // paired. Glasses-connection is checked at the exact moment the user
+      // picks a glasses-backed action ("Record with Glasses" / "Coach with
+      // Glasses"), which presents a registration sheet on demand.
+      ModeSelectionView(wearables: wearables, wearablesVM: viewModel)
 
       if showConnectedToast {
         HStack(spacing: 8) {
@@ -43,7 +42,7 @@ struct MainAppView: View {
             .foregroundColor(.green)
           Text("Server Connected")
             .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundColor(.primary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

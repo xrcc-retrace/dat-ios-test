@@ -13,8 +13,7 @@ struct HomeScreenView: View {
   @ObservedObject var viewModel: WearablesViewModel
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       VStack(spacing: Spacing.lg) {
         Spacer()

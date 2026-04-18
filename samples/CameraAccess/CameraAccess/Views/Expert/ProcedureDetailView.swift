@@ -7,8 +7,7 @@ struct ProcedureDetailView: View {
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       if viewModel.isLoading && viewModel.procedure == nil {
         ProgressView()
@@ -31,8 +30,7 @@ struct ProcedureDetailView: View {
     }
     .navigationBarTitleDisplayMode(.inline)
     .navigationTitle(viewModel.procedure?.title ?? "")
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {
@@ -197,7 +195,11 @@ struct ProcedureDetailView: View {
         .tracking(0.5)
         .foregroundColor(.textSecondary)
 
-      if let videoURL = URL(string: "\(viewModel.serverBaseURL)/api/uploads/\(procedure.id).mp4") {
+      // Server returns the upload's real filename (preserves original .mp4 / .mov
+      // extension). Fall back to the legacy `{id}.mp4` URL only for older servers
+      // that don't include `source_video` in the response.
+      let filename = procedure.sourceVideo ?? "\(procedure.id).mp4"
+      if let videoURL = URL(string: "\(viewModel.serverBaseURL)/api/uploads/\(filename)") {
         StepClipPlayer(url: videoURL)
       }
     }

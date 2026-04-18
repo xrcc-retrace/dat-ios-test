@@ -14,12 +14,16 @@ struct ProcedureResponse: Codable, Identifiable {
   let createdAt: String
   let status: String?
   let errorMessage: String?
+  // Filename of the original upload (e.g. "{uuid}.mov"). Optional for
+  // compatibility with older servers that don't return this field.
+  let sourceVideo: String?
 
   enum CodingKeys: String, CodingKey {
     case id, title, description, steps, status
     case totalDuration = "total_duration"
     case createdAt = "created_at"
     case errorMessage = "error_message"
+    case sourceVideo = "source_video"
   }
 }
 

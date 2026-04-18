@@ -4,8 +4,9 @@ import SwiftUI
 struct ExpertTabView: View {
   let wearables: WearablesInterface
   @ObservedObject var wearablesVM: WearablesViewModel
+  let onExit: () -> Void
   @State private var selectedTab = 0
-  @State private var navigateToProcedure: String?
+  @State private var workflowsPath = NavigationPath()
 
   var body: some View {
     TabView(selection: $selectedTab) {
@@ -15,9 +16,10 @@ struct ExpertTabView: View {
           wearables: wearables,
           wearablesVM: wearablesVM,
           onProcedureCreated: { procedureId in
-            navigateToProcedure = procedureId
+            workflowsPath.append(procedureId)
             selectedTab = 1
-          }
+          },
+          onExit: onExit
         )
       }
       .tabItem {
@@ -27,9 +29,10 @@ struct ExpertTabView: View {
       .tag(0)
 
       // Tab 2: Workflows
-      NavigationStack {
+      NavigationStack(path: $workflowsPath) {
         WorkflowListView(
-          navigateToProcedure: $navigateToProcedure
+          wearablesVM: wearablesVM,
+          onExit: onExit
         )
       }
       .tabItem {

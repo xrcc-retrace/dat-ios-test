@@ -9,9 +9,13 @@ struct StatCard: View {
       Text(value)
         .font(.retraceTitle2)
         .foregroundColor(.textPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
       Text(label)
         .font(.retraceCaption1)
         .foregroundColor(.textSecondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
     }
     .frame(maxWidth: .infinity)
     .padding(Spacing.xl)

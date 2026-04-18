@@ -2,11 +2,11 @@ import SwiftUI
 
 struct WorkflowListView: View {
   @StateObject private var viewModel = WorkflowListViewModel()
-  @Binding var navigateToProcedure: String?
+  @ObservedObject var wearablesVM: WearablesViewModel
+  let onExit: () -> Void
 
   var body: some View {
-    ZStack {
-      Color.backgroundPrimary.edgesIgnoringSafeArea(.all)
+    RetraceScreen {
 
       if viewModel.isLoading && viewModel.procedures.isEmpty {
         ProgressView()
@@ -19,48 +19,45 @@ struct WorkflowListView: View {
       }
     }
     .navigationTitle("Workflows")
-    .navigationBarTitleDisplayMode(.large)
+    .navigationBarTitleDisplayMode(.inline)
     .toolbar {
+      ToolbarItem(placement: .topBarLeading) {
+        Button {
+          onExit()
+        } label: {
+          Image(systemName: "chevron.backward")
+            .foregroundColor(.textSecondary)
+        }
+      }
       ToolbarItem(placement: .topBarTrailing) {
         NavigationLink {
-          ServerSettingsView()
+          ServerSettingsView(wearablesVM: wearablesVM)
         } label: {
           Image(systemName: "gearshape")
             .foregroundColor(.textSecondary)
         }
       }
     }
-    .toolbarBackground(Color.backgroundPrimary, for: .navigationBar)
-    .toolbarBackground(.visible, for: .navigationBar)
+    .retraceNavBar()
+    .navigationDestination(for: String.self) { procedureId in
+      ProcedureDetailView(procedureId: procedureId)
+    }
     .refreshable {
       await viewModel.fetchProcedures()
     }
     .task {
       await viewModel.fetchProcedures()
     }
-    .navigationDestination(item: $navigateToProcedure) { procedureId in
-      ProcedureDetailView(procedureId: procedureId)
-    }
   }
 
   // MARK: - Empty State
 
   private var emptyState: some View {
-    VStack(spacing: Spacing.xl) {
-      Image(systemName: "video.badge.plus")
-        .font(.system(size: 48))
-        .foregroundColor(.textTertiary)
-
-      Text("No workflows yet")
-        .font(.retraceTitle3)
-        .foregroundColor(.textPrimary)
-
-      Text("Record your first procedure using your\nglasses or upload a video")
-        .font(.retraceCallout)
-        .foregroundColor(.textSecondary)
-        .multilineTextAlignment(.center)
-    }
-    .padding(Spacing.screenPadding)
+    EmptyStateView(
+      icon: "video.badge.plus",
+      title: "No workflows yet",
+      message: "Record your first procedure using your\nglasses or upload a video"
+    )
   }
 
   // MARK: - Procedure List
@@ -89,24 +86,10 @@ struct WorkflowListView: View {
               status: procedure.status
             )
           }
-          .contextMenu {
-            Button(role: .destructive) {
-              Task { await viewModel.deleteProcedure(id: procedure.id) }
-            } label: {
-              Label("Delete", systemImage: "trash")
-            }
-          }
           .padding(.horizontal, Spacing.screenPadding)
         }
       }
       .padding(.bottom, Spacing.screenPadding)
     }
-    .navigationDestination(for: String.self) { procedureId in
-      ProcedureDetailView(procedureId: procedureId)
-    }
   }
-}
-
-extension String: @retroactive Identifiable {
-  public var id: String { self }
 }

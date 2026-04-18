@@ -30,7 +30,11 @@ class CoachingSessionViewModel: ObservableObject {
   private let procedure: ProcedureResponse
   private let wearables: WearablesInterface
   private let serverBaseURL: String
+  private let transport: CaptureTransport
+  private var deviceSession: DeviceSession?
   private var streamSession: StreamSession?
+  private var iPhoneCamera: IPhoneCameraCapture?
+  private var iPhoneVideoSource: IPhoneCoachingCameraSource?
   private var stateListenerToken: AnyListenerToken?
   private var videoFrameListenerToken: AnyListenerToken?
   private var sessionStartTime: Date?
@@ -48,8 +52,19 @@ class CoachingSessionViewModel: ObservableObject {
   private var resumptionHandle: String?
   private var isResuming = false
 
+  // Intro seed — fires one synthetic user turn the first time the socket
+  // flips to .connected so Gemini produces its greeting immediately instead
+  // of waiting for the learner to speak. Must NOT fire on resumption reconnects
+  // (those already get re-oriented via context-summary inject).
+  private var hasSeededIntro = false
+
   // Audio send gate state — for edge-triggered logging (only log OPEN/CLOSED transitions).
   private var audioGateWasOpen = false
+
+  /// Serializes camera setup / teardown so `endSession → stopCameraStream`
+  /// can't race a concurrent `setupCameraStream` (reconnect, rapid dismiss+reopen).
+  /// Each call appends to this chain and awaits the prior lifecycle step.
+  private var cameraLifecycleTask: Task<Void, Never>?
 
   // Transcript coalescing — next delta of matching kind appends to last entry
   // unless the previous turn closed (turnComplete or speaker change).
@@ -63,7 +78,12 @@ class CoachingSessionViewModel: ObservableObject {
   private var tokenManager: GeminiTokenManager?
   private var sessionId: String?
   private var isSendingAudio = true
-  private var pendingToolCallId: String?  // non-nil while waiting for server tool response
+  // Set of in-flight Gemini tool-call ids. Gate is closed while non-empty.
+  // Using a Set (not a single Optional<String>) so that if Gemini ever emits
+  // multiple functionCalls in one toolCall frame — which the Live API spec
+  // allows — the first to finish doesn't prematurely reopen the audio/video
+  // send gate while the second is still being dispatched to the server.
+  private var pendingToolCallIds: Set<String> = []
   private var isGeminiReady = false  // gates audio send hot path; mirrors .connected state
   private var cancellables: Set<AnyCancellable> = []
   private weak var progressStore: LocalProgressStore?
@@ -73,36 +93,88 @@ class CoachingSessionViewModel: ObservableObject {
     return procedure.steps.sorted { $0.stepNumber < $1.stepNumber }[currentStepIndex]
   }
 
+  /// Frozen total duration, captured the moment the session completes so the
+  /// "Procedure Complete" panel doesn't keep ticking.
+  private var frozenSessionDuration: TimeInterval?
+
   var formattedSessionDuration: String {
-    guard let start = sessionStartTime else { return "0:00" }
-    let elapsed = Date().timeIntervalSince(start)
+    let elapsed: TimeInterval
+    if let frozen = frozenSessionDuration {
+      elapsed = frozen
+    } else if let start = sessionStartTime {
+      elapsed = Date().timeIntervalSince(start)
+    } else {
+      elapsed = 0
+    }
     let mins = Int(elapsed) / 60
     let secs = Int(elapsed) % 60
     return String(format: "%d:%02d", mins, secs)
   }
 
-  init(procedure: ProcedureResponse, wearables: WearablesInterface, serverBaseURL: String) {
+  init(
+    procedure: ProcedureResponse,
+    wearables: WearablesInterface,
+    serverBaseURL: String,
+    transport: CaptureTransport = .glasses
+  ) {
     self.procedure = procedure
     self.wearables = wearables
     self.serverBaseURL = serverBaseURL
+    self.transport = transport
   }
 
-  func startSession(progressStore: LocalProgressStore) {
+  func startSession(progressStore: LocalProgressStore, startingStep: Int? = nil) {
+    print("[Coaching] ── session STARTED (transport=\(transport), procedure=\(procedure.id), startingStep=\(startingStep.map(String.init) ?? "nil"))")
+    // Defensive reset of everything that could leak from a prior session.
+    // Today the VM is re-created on each fullScreenCover present, so these
+    // are normally already defaults — but this guards against SwiftUI caching
+    // or any in-flight closures from a prior run racing the new setup.
+    // Server is 1-indexed, VM is 0-indexed. `startingStep == nil` means fresh
+    // session at step 1 → index 0.
+    let seededIndex = max(0, (startingStep ?? 1) - 1)
+    currentStepIndex = seededIndex
+    isCompleted = false
+    frozenSessionDuration = nil
+    isMuted = false
+    showPiP = false
+    voiceStatus = "Connecting..."
+    isAISpeaking = false
+    geminiConnectionState = .disconnected
+    activity = []
+    isSendingAudio = true
+    isGeminiReady = false
+    audioGateWasOpen = false
+    pendingToolCallIds.removeAll()
+    lastVideoSendAt = nil
+    isForwardingFrame = false
+    learnerTurnOpen = false
+    assistantTurnOpen = false
+    resumptionHandle = nil
+    isResuming = false
+    hasSeededIntro = false
+    cancellables.removeAll()
+
     self.progressStore = progressStore
     sessionStartTime = Date()
     let record = progressStore.startSession(
       procedureId: procedure.id,
       procedureTitle: procedure.title,
-      totalSteps: procedure.steps.count
+      totalSteps: procedure.steps.count,
+      stepsCompleted: seededIndex
     )
     sessionRecordId = record.id
 
-    // Start glasses camera stream
-    setupCameraStream()
+    // Start camera stream for the chosen transport.
+    switch transport {
+    case .glasses:
+      setupCameraStream()
+    case .iPhone:
+      setupIPhoneCameraStream()
+    }
 
     // Start Gemini Live audio session
     Task {
-      await startGeminiLiveSession()
+      await startGeminiLiveSession(startingStep: startingStep)
     }
   }
 
@@ -110,8 +182,41 @@ class CoachingSessionViewModel: ObservableObject {
     guard let recordId = sessionRecordId else { return }
     let status: SessionStatus = isCompleted ? .completed : .abandoned
     progressStore.updateSession(id: recordId, stepsCompleted: currentStepIndex, status: status)
+
+    // Snapshot before stopGeminiLiveSession() nils them out, then fire the
+    // DELETE in the background. Without this the server's in-memory _sessions
+    // dict grows unboundedly — sessions are never cleaned up server-side
+    // until the process restarts.
+    let sidToDelete = sessionId
+    let base = serverBaseURL
+    if let sid = sidToDelete {
+      Task.detached {
+        await Self.deleteLearnerSession(sessionId: sid, serverBaseURL: base)
+      }
+    }
+
     stopGeminiLiveSession()
-    Task { await stopCameraStream() }
+    stopCameraStream()
+    print("[Coaching] ── session ENDED")
+  }
+
+  private static func deleteLearnerSession(sessionId: String, serverBaseURL: String) async {
+    guard let url = URL(string: "\(serverBaseURL)/api/learner/session/\(sessionId)") else {
+      return
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "DELETE"
+    request.timeoutInterval = 5
+    do {
+      let (_, response) = try await URLSession.shared.data(for: request)
+      let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+      if !(200...299).contains(code) {
+        print("[Coaching] Session DELETE returned HTTP \(code)")
+      }
+    } catch {
+      // Best-effort. Server's in-memory state will be lost on restart anyway.
+      print("[Coaching] Session DELETE failed: \(error.localizedDescription)")
+    }
   }
 
   func retryGemini() {
@@ -130,9 +235,11 @@ class CoachingSessionViewModel: ObservableObject {
 
   // MARK: - Gemini Live Session
 
-  private func startGeminiLiveSession() async {
-    // 1. Set up audio manager
-    let audio = AudioSessionManager()
+  private func startGeminiLiveSession(startingStep: Int? = nil) async {
+    // 1. Set up audio manager — pin to built-in mic + loudspeaker when the
+    // learner picked the iPhone transport, otherwise allow HFP glasses route.
+    let audioMode: AudioSessionMode = (transport == .iPhone) ? .coachingPhoneOnly : .coaching
+    let audio = AudioSessionManager(mode: audioMode)
     self.audioManager = audio
 
     let micGranted = await audio.requestMicrophonePermission()
@@ -142,14 +249,31 @@ class CoachingSessionViewModel: ObservableObject {
       return
     }
 
-    // 2. Start learner session on server to get ephemeral token
+    // 2. Start learner session on server to get ephemeral token.
+    // Read the user's auto-advance preference from the same UserDefaults key
+    // that ProfileView's @AppStorage("autoAdvanceEnabled") writes. Using
+    // `object(forKey:) as? Bool ?? true` preserves the @AppStorage default
+    // (true) when the key has never been written — otherwise
+    // UserDefaults.bool(forKey:) returns false for missing keys and we'd
+    // disagree with the UI on first launch.
+    let autoAdvance = UserDefaults.standard.object(forKey: "autoAdvanceEnabled") as? Bool ?? true
+    print("[Coaching] auto_advance = \(autoAdvance) (from UserDefaults)")
+
+    // Voice comes from @AppStorage("geminiVoice") written by
+    // VoiceSelectionView / ProfileView. Reading UserDefaults directly keeps
+    // the VM signature stable and mirrors how autoAdvance is consumed above.
+    let selectedVoice = UserDefaults.standard.string(forKey: "geminiVoice") ?? "Puck"
+    print("[Coaching] voice = \(selectedVoice) (from UserDefaults)")
+
     voiceStatus = "Starting session..."
     let apiService = ProcedureAPIService()
     let sessionResponse: LearnerSessionStartResponse
     do {
       sessionResponse = try await apiService.startLearnerSession(
         procedureId: procedure.id,
-        voice: "Puck"  // Default voice
+        voice: selectedVoice,
+        autoAdvance: autoAdvance,
+        startingStep: startingStep
       )
     } catch {
       voiceStatus = "Session error"
@@ -230,7 +354,7 @@ class CoachingSessionViewModel: ObservableObject {
     audio.onAudioBuffer = { [weak self] buffer, _ in
       guard let self = self else { return }
       let sendingOk = self.isSendingAudio
-      let noTool = self.pendingToolCallId == nil
+      let noTool = self.pendingToolCallIds.isEmpty
       let ready = self.isGeminiReady
       let gateOpen = sendingOk && noTool && ready
 
@@ -264,8 +388,11 @@ class CoachingSessionViewModel: ObservableObject {
     // 6. Start audio capture (this also starts playback)
     audio.startCapture()
 
-    // Observe isAISpeaking polling loop
-    observeGeminiState()
+    // Mirror the audio manager's isAISpeaking onto the VM. Combine sink
+    // instead of a 200ms poll — previously the poll could race with
+    // onTurnComplete and cause UI flicker (true→false→true→false as the
+    // playback queue finished draining).
+    observeAudioIsAISpeaking(audio)
   }
 
   private func observeGeminiConnectionState(_ gemini: GeminiLiveService) {
@@ -273,12 +400,37 @@ class CoachingSessionViewModel: ObservableObject {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] state in
         guard let self = self else { return }
+        // Log every transition (was only "connected" before) so we can see
+        // when the VM gets stuck in .connecting / .error states.
+        print("[Coaching] Gemini connection state → \(state)")
         self.geminiConnectionState = state
         switch state {
         case .connected:
           self.isGeminiReady = true
           self.voiceStatus = self.isMuted ? "Muted" : "Listening"
           print("[Coaching] Gemini Live connected")
+          // Seed the conversation once per session so the coach greets the
+          // learner immediately instead of waiting for them to speak. Only
+          // on the FIRST .connected — subsequent transitions are reconnects
+          // / resumptions where the context-summary inject handles
+          // re-orientation and a second "hello" would be a jarring replay.
+          if !self.hasSeededIntro {
+            self.hasSeededIntro = true
+            Task { [weak self] in
+              guard let self = self, let gemini = self.geminiService else { return }
+              do {
+                // Phrased first-person, learner-style; sent as a text turn
+                // via sendClientTextTurn which does NOT trigger
+                // inputTranscription, so this line stays invisible in the
+                // activity feed while still eliciting the greeting.
+                try await gemini.sendClientTextTurn("Hi, I'm ready to begin.")
+                print("[Coaching] Seeded intro turn on first .connected")
+              } catch {
+                print("[Coaching] Failed to seed intro turn: \(error)")
+                // Not fatal — learner can still speak first to start the flow.
+              }
+            }
+          }
         case .connecting:
           self.isGeminiReady = false
           self.voiceStatus = "Connecting..."
@@ -313,7 +465,19 @@ class CoachingSessionViewModel: ObservableObject {
       return
     }
     guard let handle = resumptionHandle else {
-      print("[Coaching] Reconnect (\(reason)): no handle yet, plain retry")
+      // No resumption handle yet (pre-first-update). Mint a fresh token
+      // before retry — the cached token from session/start was likely
+      // consumed by the failed handshake, and Google's uses=1 semantics
+      // reject reusing it. Without this pre-mint, gemini.retry() would
+      // burn a handshake on the spent token and only then auto-refresh.
+      print("[Coaching] Reconnect (\(reason)): no handle yet, refreshing token + retrying")
+      do {
+        _ = try await tm.forceRefresh()
+      } catch {
+        print("[Coaching] Plain-retry token refresh failed: \(error)")
+        voiceStatus = "Connection error"
+        return
+      }
       await gemini.retry()
       return
     }
@@ -367,39 +531,51 @@ class CoachingSessionViewModel: ObservableObject {
   }
 
   private func stopGeminiLiveSession() {
+    // Order matters here for graceful shutdown:
+    //   1. Close the audio send gate so the mic-tap closure stops queueing
+    //      sends into a WebSocket that's about to close (`try? await` would
+    //      otherwise silently eat a torrent of "notConnected" errors).
+    //   2. Drop Combine subscriptions so no state handler re-enters mid-teardown.
+    //   3. Stop audio capture BEFORE disconnecting Gemini — guarantees no more
+    //      mic buffers can race the WebSocket close.
+    //   4. Disconnect Gemini, then nil out the service so tool-call callbacks
+    //      can't reach a dead socket.
+    //   5. Wipe per-session state so a subsequent `startSession()` starts clean.
+    isSendingAudio = false
+    isGeminiReady = false
+    audioGateWasOpen = false
     cancellables.removeAll()
-    geminiService?.disconnect()
+
     audioManager?.stopCapture()
+    geminiService?.disconnect()
+
     geminiService = nil
     audioManager = nil
     tokenManager = nil
     sessionId = nil
-    pendingToolCallId = nil
-    isGeminiReady = false
+    pendingToolCallIds.removeAll()
     lastVideoSendAt = nil
     isForwardingFrame = false
     learnerTurnOpen = false
     assistantTurnOpen = false
     resumptionHandle = nil
     isResuming = false
-    audioGateWasOpen = false
+    hasSeededIntro = false
     voiceStatus = "Ended"
     geminiConnectionState = .disconnected
   }
 
-  private func observeGeminiState() {
-    // Periodically sync isAISpeaking from audioManager
-    Task { @MainActor in
-      while geminiService != nil {
-        if let audio = audioManager {
-          isAISpeaking = audio.isAISpeaking
-          if audio.isAISpeaking && !isMuted {
-            voiceStatus = "AI speaking"
-          }
+  private func observeAudioIsAISpeaking(_ audio: AudioSessionManager) {
+    audio.$isAISpeaking
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] speaking in
+        guard let self = self else { return }
+        self.isAISpeaking = speaking
+        if speaking, !self.isMuted {
+          self.voiceStatus = "AI speaking"
         }
-        try? await Task.sleep(nanoseconds: 200_000_000)  // 200ms
       }
-    }
+      .store(in: &cancellables)
   }
 
   // MARK: - Tool Call Handling
@@ -407,13 +583,15 @@ class CoachingSessionViewModel: ObservableObject {
   private func handleToolCall(id: String, name: String, args: [String: Any]) async {
     guard let sessionId = sessionId else { return }
 
-    // Pause audio sending while tool call is pending
-    pendingToolCallId = id
+    // Close the send gate for the lifetime of THIS tool call. Using a Set
+    // keeps the gate closed until every in-flight tool call completes.
+    pendingToolCallIds.insert(id)
 
     // Clear playback buffer — Gemini stops speaking during tool calls
     audioManager?.clearPlaybackBuffer(reason: "tool-call")
 
-    print("[Coaching] Tool call: \(name) (id: \(id), args: \(args))")
+    let startedAt = Date()
+    print("[Coaching] ▶ Tool call START name=\(name) id=\(id) args=\(args)")
 
     // Forward to server
     let result = await forwardToolCallToServer(
@@ -422,12 +600,17 @@ class CoachingSessionViewModel: ObservableObject {
       functionName: name,
       args: args
     )
+    let elapsedMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+    print("[Coaching] ◀ Tool call DONE  name=\(name) id=\(id) result=\(result) (\(elapsedMs)ms)")
 
     // Update local state based on tool call. Server returns step numbers as
     // flat Ints: `new_step` for advance_step, `current_step` for go_to_step.
     switch name {
     case "advance_step":
       if let status = result["status"] as? String, status == "completed" {
+        if let start = sessionStartTime {
+          frozenSessionDuration = Date().timeIntervalSince(start)
+        }
         isCompleted = true
         currentStepIndex = procedure.steps.count - 1
         if let rid = sessionRecordId {
@@ -467,12 +650,14 @@ class CoachingSessionViewModel: ObservableObject {
         name: name,
         response: result
       )
+      print("[Coaching] ✓ Tool response ACK sent to Gemini name=\(name) id=\(id)")
     } catch {
-      print("[Coaching] Failed to send tool response: \(error)")
+      print("[Coaching] ✗ Failed to send tool response name=\(name) id=\(id): \(error)")
     }
 
-    // Resume audio sending
-    pendingToolCallId = nil
+    // Drop this call's id. Gate reopens only when the set is empty, so a
+    // concurrent tool call still in flight keeps the gate closed.
+    pendingToolCallIds.remove(id)
   }
 
   private func forwardToolCallToServer(
@@ -491,9 +676,11 @@ class CoachingSessionViewModel: ObservableObject {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.timeoutInterval = 10
 
+    // Server contract: ToolCallRequest { tool_name: str, arguments: dict }.
+    // The function-call `id` is round-tripped back to Gemini via
+    // sendToolResponse — the server doesn't need it.
     let body: [String: Any] = [
-      "tool_call_id": toolCallId,
-      "function_name": functionName,
+      "tool_name": functionName,
       "arguments": args,
     ]
 
@@ -501,25 +688,50 @@ class CoachingSessionViewModel: ObservableObject {
       request.httpBody = try JSONSerialization.data(withJSONObject: body)
       let (data, response) = try await URLSession.shared.data(for: request)
 
-      guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-        return ["error": "Server error (HTTP \(statusCode))"]
+      guard let http = response as? HTTPURLResponse else {
+        print("[Coaching] Tool call: non-HTTP response")
+        return [
+          "error": "transient_network_failure",
+          "message": "No HTTP response from server",
+          "retryable": true,
+        ]
       }
 
+      guard (200...299).contains(http.statusCode) else {
+        let bodySnippet = String(data: data.prefix(200), encoding: .utf8) ?? "<non-utf8>"
+        print("[Coaching] Tool call failed: HTTP \(http.statusCode) body=\(bodySnippet)")
+        return [
+          "error": "server_rejected_tool_call",
+          "message": "HTTP \(http.statusCode): \(bodySnippet)",
+          "retryable": http.statusCode >= 500,  // 4xx is a contract bug — not retryable
+        ]
+      }
+
+      // Server wraps the handler result as {"result": {...}} (ToolCallResponse).
+      // Unwrap so Gemini sees the raw result fields (status, new_step, etc.).
       if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        if let inner = json["result"] as? [String: Any] {
+          return inner
+        }
         return json
       }
       return ["status": "ok"]
     } catch {
       print("[Coaching] Tool call forward error: \(error)")
-      return ["error": error.localizedDescription]
+      return [
+        "error": "transient_network_failure",
+        "message": error.localizedDescription,
+        "retryable": true,
+      ]
     }
   }
 
   // MARK: - Camera Stream
 
   private func setupCameraStream() {
-    Task { [weak self] in
+    let prior = cameraLifecycleTask
+    cameraLifecycleTask = Task { [weak self] in
+      await prior?.value                     // wait for any in-flight stop/start
       guard let self = self else { return }
 
       // Defensive: fully stop any prior session (e.g., from a repeat onAppear)
@@ -531,39 +743,137 @@ class CoachingSessionViewModel: ObservableObject {
         self.videoFrameListenerToken = nil
         self.stateListenerToken = nil
       }
+      if let existing = self.deviceSession {
+        existing.stop()
+        self.deviceSession = nil
+      }
 
+      // 0.6 API: wearables.createSession → deviceSession.addStream.
+      // StreamSession has no public init anymore; it's a Capability attached
+      // to a DeviceSession.
       let deviceSelector = AutoDeviceSelector(wearables: self.wearables)
       let config = StreamSessionConfig(
         videoCodec: .raw,
         resolution: .low,
         frameRate: 24
       )
-      let session = StreamSession(streamSessionConfig: config, deviceSelector: deviceSelector)
-      self.streamSession = session
+      let session: DeviceSession
+      let stream: StreamSession
+      do {
+        session = try self.wearables.createSession(deviceSelector: deviceSelector)
+        guard let s = try session.addStream(config: config) else {
+          print("[Coaching] Could not attach stream capability to the device session")
+          return
+        }
+        stream = s
+      } catch {
+        print("[Coaching] Failed to create coaching stream session: \(error)")
+        return
+      }
+      self.deviceSession = session
+      self.streamSession = stream
 
-      self.videoFrameListenerToken = session.videoFramePublisher.listen { [weak self] videoFrame in
+      self.videoFrameListenerToken = stream.videoFramePublisher.listen { [weak self] videoFrame in
         Task { @MainActor [weak self] in
           self?.forwardFrameToGemini(videoFrame)
         }
       }
 
-      await session.start()
+      do {
+        try session.start()
+      } catch {
+        print("[Coaching] Failed to start device session: \(error)")
+        return
+      }
+      await stream.start()
     }
   }
 
-  private func stopCameraStream() async {
-    if let session = streamSession {
-      await session.stop()
+  /// Enqueue camera teardown onto the lifecycle chain. Safe to call while a
+  /// prior setup Task is still running — this one awaits it first, so start
+  /// and stop never race for the same `streamSession` / `iPhoneCamera` refs.
+  private func stopCameraStream() {
+    let prior = cameraLifecycleTask
+    cameraLifecycleTask = Task { [weak self] in
+      await prior?.value
+      guard let self = self else { return }
+
+      // Listener tokens first — so trailing frame/state events can't push into
+      // a half-dead VM during the async stop below.
+      self.videoFrameListenerToken = nil
+      self.stateListenerToken = nil
+
+      if let session = self.streamSession {
+        await session.stop()
+      }
+      self.deviceSession?.stop()
+      self.streamSession = nil
+      self.deviceSession = nil
+
+      // iPhone transport — drop the sample-buffer handler FIRST so a trailing
+      // AVCaptureSession frame can't reach a dying JPEG throttler.
+      self.iPhoneCamera?.onSampleBuffer = nil
+      self.iPhoneCamera?.stop()
+      self.iPhoneCamera = nil
+      self.iPhoneVideoSource = nil
     }
-    streamSession = nil
-    stateListenerToken = nil
-    videoFrameListenerToken = nil
+  }
+
+  /// iPhone-native video source for coaching. Mirrors `forwardFrameToGemini`
+  /// but drives JPEGs out of `AVCaptureSession` via `IPhoneCoachingCameraSource`
+  /// (same 0.5 fps / 0.5 quality throttle as the glasses path).
+  private func setupIPhoneCameraStream() {
+    let prior = cameraLifecycleTask
+    cameraLifecycleTask = Task { [weak self] in
+      await prior?.value                     // wait for any in-flight stop/start
+      guard let self = self else { return }
+
+      // Defensive: drop a prior iPhone session if we raced (re-enter from onAppear).
+      self.iPhoneCamera?.onSampleBuffer = nil
+      self.iPhoneCamera?.stop()
+      self.iPhoneCamera = nil
+      self.iPhoneVideoSource = nil
+
+      let camera = IPhoneCameraCapture()
+      let granted = await camera.requestPermission()
+      guard granted else {
+        self.voiceStatus = "Camera denied"
+        print("[Coaching] iPhone camera permission denied")
+        return
+      }
+
+      let source = IPhoneCoachingCameraSource(
+        minInterval: self.videoMinInterval,
+        jpegQuality: self.videoJpegQuality
+      ) { [weak self] jpeg in
+        // Gate in the same way `forwardFrameToGemini` does for the glasses path.
+        let gate = await MainActor.run { [weak self] () -> Bool in
+          guard let self = self else { return false }
+          return self.isGeminiReady && self.pendingToolCallIds.isEmpty
+        }
+        guard gate else { return }
+        try? await self?.geminiService?.sendVideoFrame(jpeg)
+      }
+      self.iPhoneVideoSource = source
+
+      camera.onSampleBuffer = { [weak source] sampleBuffer in
+        source?.submit(sampleBuffer)
+      }
+
+      do {
+        try await camera.start()
+      } catch {
+        print("[Coaching] iPhone camera failed to start: \(error)")
+        return
+      }
+      self.iPhoneCamera = camera
+    }
   }
 
   // MARK: - Frame forwarding
 
   private func forwardFrameToGemini(_ frame: VideoFrame) {
-    guard isGeminiReady, pendingToolCallId == nil, !isForwardingFrame else { return }
+    guard isGeminiReady, pendingToolCallIds.isEmpty, !isForwardingFrame else { return }
     let now = Date()
     if let last = lastVideoSendAt, now.timeIntervalSince(last) < videoMinInterval {
       return

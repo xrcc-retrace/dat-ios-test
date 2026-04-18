@@ -45,7 +45,7 @@ struct ModeSelectionView: View {
       }
     }
     .animation(.easeInOut(duration: 0.35), value: selectedMode)
-    .tint(.appPrimary)
+    .tint(.textPrimary)
   }
 
   private var modeSelectorScreen: some View {
@@ -54,7 +54,7 @@ struct ModeSelectionView: View {
 
         // Subtle ambient glow
         RadialGradient(
-          colors: [Color.appPrimary.opacity(0.06), .clear],
+          colors: [Color.textPrimary.opacity(0.04), .clear],
           center: UnitPoint(x: 0.5, y: 0.25),
           startRadius: 0,
           endRadius: 280
@@ -65,9 +65,10 @@ struct ModeSelectionView: View {
           Spacer()
 
           VStack(spacing: Spacing.lg) {
-            Text("Retrace")
-              .font(.retraceDisplay)
-              .foregroundColor(.textPrimary)
+            Image("RetraceLogo")
+              .resizable()
+              .scaledToFit()
+              .frame(maxWidth: 240)
 
             Text("Record an expert once.\nCoach every learner forever.")
               .font(.retraceBody)

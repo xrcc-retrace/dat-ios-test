@@ -12,6 +12,7 @@
 		1E4F439EAE369380451037CB /* ModeSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36F94839AA7C4E3C9519970E /* ModeSelectionView.swift */; };
 		1EF74E91AB192886D219EE59 /* StatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E77749B79943BF9F41098144 /* StatCard.swift */; };
 		25424734A69FCD46958B0617 /* GeminiLiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFD4E1884B15ADD90501837 /* GeminiLiveService.swift */; };
+		26081C35AB194E6BA05692A6 /* VideoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */; };
 		29EB4BBFB219301C48660997 /* ServerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65304E7AB009BBE6224140C3 /* ServerSettingsView.swift */; };
 		312C4D5894EA98F086F012B2 /* ProcedureDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ECA46CD88AA357E8B876D68 /* ProcedureDetailViewModel.swift */; };
 		34F240439F7EFE03260221FF /* StepEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6774179B49818FB9612C61E /* StepEditView.swift */; };
@@ -21,6 +22,9 @@
 		51C242D4BF959C022764AC33 /* MetadataPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F13449B876DE9D2EA5DF77D /* MetadataPill.swift */; };
 		60DF4617925A0CACD6F03C7E /* CoachingSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A24F39AC3FBF21EED9B635 /* CoachingSessionView.swift */; };
 		67E94702B2B1B436E4C0CA96 /* GeminiTokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294E49E7941DD887735E3CDB /* GeminiTokenManager.swift */; };
+		68B622482F9383BA008690E4 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 68B622472F9383BA008690E4 /* AppIcon.icon */; };
+		68B622492F9383BA008690E4 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 68B622472F9383BA008690E4 /* AppIcon.icon */; };
+		68B6224A2F9383BA008690E4 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 68B622472F9383BA008690E4 /* AppIcon.icon */; };
 		6B834DD19E3C401388F96E98 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C64B77A5C8C6B418C0EAAF /* ProfileView.swift */; };
 		731C4E9BB8B14032A9B3C286 /* VoiceSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF6245968116F15F41790113 /* VoiceSelectionView.swift */; };
 		7A7745B6AC3E22919F80AAF0 /* CoachingSessionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D424E4BA44D0156B45D29B0 /* CoachingSessionViewModel.swift */; };
@@ -97,7 +101,6 @@
 		FA0100000000000000000006 /* GolosText-Black.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FB0100000000000000000006 /* GolosText-Black.ttf */; };
 		FDFE4D7CABB57A912D95CD32 /* ProcedureAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA24ED7A41BD690DE9F8CBD /* ProcedureAPIService.swift */; };
 		FE5F49669B7A87C7AAA10A0B /* VoicePreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF4216B6006231F97080BF /* VoicePreviewPlayer.swift */; };
-		26081C35AB194E6BA05692A6 /* VideoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -150,6 +153,7 @@
 		607149ADAC868392CEA214B7 /* ProcedureCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureCardView.swift; path = CameraAccess/Views/Components/ProcedureCardView.swift; sourceTree = SOURCE_ROOT; };
 		65304E7AB009BBE6224140C3 /* ServerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerSettingsView.swift; path = CameraAccess/Views/ServerSettingsView.swift; sourceTree = SOURCE_ROOT; };
 		65A849EA88ED898041402BAE /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryView.swift; path = CameraAccess/Views/Learner/Library/LibraryView.swift; sourceTree = SOURCE_ROOT; };
+		68B622472F9383BA008690E4 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		6D7F4383882B22765067A716 /* RecordTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RecordTabView.swift; path = CameraAccess/Views/Expert/RecordTabView.swift; sourceTree = SOURCE_ROOT; };
 		6F13449B876DE9D2EA5DF77D /* MetadataPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetadataPill.swift; path = CameraAccess/Views/Components/MetadataPill.swift; sourceTree = SOURCE_ROOT; };
 		731A4EA49C2D88F60F8FF5AB /* ProcedureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureModels.swift; path = CameraAccess/Models/ProcedureModels.swift; sourceTree = SOURCE_ROOT; };
@@ -190,6 +194,7 @@
 		8FFD605F2E84A2F70035E446 /* MainAppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainAppView.swift; sourceTree = "<group>"; };
 		948E4153AE26C2C238229983 /* ExpertTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertTabView.swift; path = CameraAccess/Views/Expert/ExpertTabView.swift; sourceTree = SOURCE_ROOT; };
 		99BE488FAC885889315D07C1 /* ExpertRecordingReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertRecordingReviewView.swift; path = CameraAccess/Views/ExpertRecordingReviewView.swift; sourceTree = SOURCE_ROOT; };
+		A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoThumbnailView.swift; path = CameraAccess/Views/Components/VideoThumbnailView.swift; sourceTree = SOURCE_ROOT; };
 		A9274EEE92DABFFE4A474DCB /* EditableStringList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EditableStringList.swift; path = CameraAccess/Views/Components/EditableStringList.swift; sourceTree = SOURCE_ROOT; };
 		AA1111111111111111111111 /* RetraceColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RetraceColors.swift; path = CameraAccess/Utils/RetraceColors.swift; sourceTree = SOURCE_ROOT; };
 		AA2222222222222222222222 /* RetraceTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RetraceTypography.swift; path = CameraAccess/Utils/RetraceTypography.swift; sourceTree = SOURCE_ROOT; };
@@ -223,7 +228,6 @@
 		FB0946179E2E3FE4233AE018 /* UploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UploadService.swift; path = CameraAccess/Utils/UploadService.swift; sourceTree = SOURCE_ROOT; };
 		FD28474AAC05F5935FA6950B /* LearnerTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LearnerTabView.swift; path = CameraAccess/Views/Learner/LearnerTabView.swift; sourceTree = SOURCE_ROOT; };
 		FF6245968116F15F41790113 /* VoiceSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoiceSelectionView.swift; path = CameraAccess/Views/Learner/Profile/VoiceSelectionView.swift; sourceTree = SOURCE_ROOT; };
-		A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoThumbnailView.swift; path = CameraAccess/Views/Components/VideoThumbnailView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -304,7 +308,29 @@
 				FF6245968116F15F41790113 /* VoiceSelectionView.swift */,
 				51DF4216B6006231F97080BF /* VoicePreviewPlayer.swift */,
 				A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */,
+				68B6223E2F932D2E008690E4 /* Recovered References */,
 			);
+			sourceTree = "<group>";
+		};
+		68B6223E2F932D2E008690E4 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				8FD96BA12E6F9A9800F56AB1 /* CaptureTransport.swift */,
+				68B622472F9383BA008690E4 /* AppIcon.icon */,
+				8FD96BA32E6F9A9800F56AB1 /* IPhoneCameraCapture.swift */,
+				8FD96BA52E6F9A9800F56AB1 /* IPhoneCameraPreview.swift */,
+				8FD96BA72E6F9A9800F56AB1 /* IPhoneExpertRecordingViewModel.swift */,
+				8FD96BA92E6F9A9800F56AB1 /* IPhoneRecordingView.swift */,
+				8FD96BAB2E6F9A9800F56AB1 /* IPhoneCoachingCameraSource.swift */,
+				8FD96BAD2E6F9A9800F56AB1 /* RegistrationPromptSheet.swift */,
+				8FD96BC12E6F9A9900F56AB1 /* RetraceNavBar.swift */,
+				8FD96BC32E6F9A9900F56AB1 /* RetraceScreen.swift */,
+				8FD96BC52E6F9A9900F56AB1 /* EmptyStateView.swift */,
+				8FD96BC72E6F9A9900F56AB1 /* ModeCard.swift */,
+				8FD96BC92E6F9A9900F56AB1 /* LibraryViewModel.swift */,
+				8FD96BCB2E6F9A9A00F56AB1 /* GlassesInactiveSheet.swift */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		7A7A7A7A7A7A7A7A7A7A7A7A /* Products */ = {
@@ -543,6 +569,7 @@
 				FA0100000000000000000005 /* GolosText-ExtraBold.ttf in Resources */,
 				FA0100000000000000000006 /* GolosText-Black.ttf in Resources */,
 				E66CC01B2F3E1A9300B07379 /* plant.png in Resources */,
+				68B6224A2F9383BA008690E4 /* AppIcon.icon in Resources */,
 				E66CC01C2F3E1A9300B07379 /* plant.mp4 in Resources */,
 				8FD96B8D2E6F0A9800F56AB1 /* Assets.xcassets in Resources */,
 			);
@@ -552,6 +579,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				68B622482F9383BA008690E4 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -559,6 +587,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				68B622492F9383BA008690E4 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -681,67 +710,6 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		'EEEEEEEEEEEEEEEEEEEEEE' = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
-				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-			};
-			name = Debug;
-		};
 		0B0B0B0B0B0B0B0B0B0B0B0B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -753,7 +721,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 9SVBTR9GV3;
+				DEVELOPMENT_TEAM = V56DG94ZL5;
 				ENABLE_PREVIEWS = YES;
 				FRAMEWORK_SEARCH_PATHS = "";
 				INFOPLIST_FILE = CameraAccess/Info.plist;
@@ -763,7 +731,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xrccarthur.retrace.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xrcc.retrace.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -782,7 +750,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = 9SVBTR9GV3;
+				DEVELOPMENT_TEAM = V56DG94ZL5;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = CameraAccess/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -791,7 +759,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xrccarthur.retrace.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xrcc.retrace.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -1040,15 +1008,6 @@
 			buildConfigurations = (
 				EEEEEEEEEEEEEEEEEEEEEE /* Debug */,
 				FFFFFFFFFFFFFFFFFFFFFFFF /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		9A9A9A9A9A9A9A9A9A9A9A9A /* Build configuration list for PBXNativeTarget "CameraAccess" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0B0B0B0B0B0B0B0B0B0B0B0B /* Debug */,
-				0C0C0C0C0C0C0C0C0C0C0C0C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

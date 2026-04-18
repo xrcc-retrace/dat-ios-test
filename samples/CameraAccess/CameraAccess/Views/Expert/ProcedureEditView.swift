@@ -87,7 +87,7 @@ struct ProcedureEditView: View {
 
                 Text("\(step.stepNumber).")
                   .font(.retraceFace(.semibold, size: 16))
-                  .foregroundColor(.appPrimary)
+                  .foregroundColor(.textPrimary)
 
                 Text(step.title)
                   .font(.retraceCallout)
@@ -99,10 +99,6 @@ struct ProcedureEditView: View {
               .padding(Spacing.lg)
               .background(Color.surfaceBase)
               .cornerRadius(Radius.sm)
-              .overlay(
-                RoundedRectangle(cornerRadius: Radius.sm)
-                  .stroke(Color.borderSubtle, lineWidth: 1)
-              )
             }
             .onMove { from, to in
               stepOrder.move(fromOffsets: from, toOffset: to)
@@ -131,7 +127,7 @@ struct ProcedureEditView: View {
         Button("Save") {
           Task { await save() }
         }
-        .foregroundColor(hasChanges ? .appPrimary : .textTertiary)
+        .foregroundColor(hasChanges ? .textPrimary : .textTertiary)
         .disabled(!hasChanges || isSaving)
       }
     }

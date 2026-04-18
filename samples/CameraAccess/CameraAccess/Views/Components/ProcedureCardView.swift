@@ -49,11 +49,11 @@ struct ProcedureCardView: View {
   private var statusBadge: some View {
     if status == "processing" {
       Circle()
-        .fill(Color.appPrimary.opacity(0.2))
+        .fill(Color.iconSurface)
         .overlay(
           ProgressView()
             .scaleEffect(0.7)
-            .tint(.appPrimary)
+            .tint(.textPrimary)
         )
     } else {
       Circle()

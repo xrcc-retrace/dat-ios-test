@@ -29,14 +29,14 @@ struct LearnerProcedureDetailView: View {
       if viewModel.isLoading && viewModel.procedure == nil {
         ProgressView()
           .scaleEffect(1.5)
-          .tint(.appPrimary)
+          .tint(.textPrimary)
       } else if let procedure = viewModel.procedure {
         procedureContent(procedure)
       } else if let error = viewModel.errorMessage {
         VStack(spacing: Spacing.lg) {
           Image(systemName: "exclamationmark.triangle")
             .font(.system(size: 36))
-            .foregroundColor(.appPrimary)
+            .foregroundColor(.textPrimary)
           Text(error)
             .font(.retraceCallout)
             .foregroundColor(.textSecondary)
@@ -121,7 +121,7 @@ struct LearnerProcedureDetailView: View {
           } label: {
             HStack(spacing: Spacing.md) {
               Image(systemName: progressStore.isSaved(procedure.id) ? "bookmark.fill" : "bookmark")
-                .foregroundColor(.appPrimary)
+                .foregroundColor(.textPrimary)
               Text(progressStore.isSaved(procedure.id) ? "Saved to Library" : "Save to Library")
                 .font(.retraceFace(.medium, size: 17))
                 .foregroundColor(.textPrimary)
@@ -130,10 +130,6 @@ struct LearnerProcedureDetailView: View {
             .frame(height: 48)
             .background(Color.surfaceBase)
             .cornerRadius(Radius.full)
-            .overlay(
-              RoundedRectangle(cornerRadius: Radius.full)
-                .stroke(Color.borderSubtle, lineWidth: 1)
-            )
           }
 
           // Steps preview
@@ -204,10 +200,6 @@ struct LearnerProcedureDetailView: View {
     .padding(Spacing.xl)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.lg)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.lg)
-        .stroke(Color.appPrimary.opacity(0.3), lineWidth: 1)
-    )
   }
 
   // MARK: - Fresh CTAs (no in-progress session)
@@ -270,9 +262,6 @@ struct LearnerProcedureDetailView: View {
       .padding(4)
       .background(Color.surfaceBase)
       .clipShape(Capsule())
-      .overlay(
-        Capsule().stroke(Color.borderSubtle, lineWidth: 1)
-      )
 
       CustomButton(
         title: "Continue from Step \(continueStep)",
@@ -318,7 +307,7 @@ struct LearnerProcedureDetailView: View {
       .foregroundColor(isSelected ? .backgroundPrimary : .textSecondary)
       .frame(maxWidth: .infinity)
       .frame(height: 36)
-      .background(isSelected ? Color.appPrimary : Color.clear)
+      .background(isSelected ? Color.textPrimary : Color.clear)
       .clipShape(Capsule())
     }
     .buttonStyle(.plain)
@@ -369,10 +358,6 @@ struct LearnerProcedureDetailView: View {
     .padding(Spacing.xl)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.md)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.md)
-        .stroke(Color.borderSubtle, lineWidth: 1)
-    )
   }
 
   @ViewBuilder

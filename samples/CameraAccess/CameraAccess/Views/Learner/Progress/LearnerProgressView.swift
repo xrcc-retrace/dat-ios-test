@@ -71,7 +71,7 @@ struct LearnerProgressView: View {
             isEditing = false
             selectedIDs.removeAll()
           }
-          .foregroundColor(.appPrimary)
+          .foregroundColor(.textPrimary)
         } else {
           Menu {
             Button {
@@ -157,7 +157,7 @@ struct LearnerProgressView: View {
         ForEach(0..<7, id: \.self) { index in
           VStack(spacing: Spacing.sm) {
             Circle()
-              .fill(days[index] ? Color.appPrimary : Color.surfaceRaised)
+              .fill(days[index] ? Color.textPrimary : Color.surfaceRaised)
               .frame(width: 24, height: 24)
             Text(dayLabels[index])
               .font(.system(size: 10))
@@ -169,10 +169,6 @@ struct LearnerProgressView: View {
       .padding(Spacing.xl)
       .background(Color.surfaceBase)
       .cornerRadius(Radius.md)
-      .overlay(
-        RoundedRectangle(cornerRadius: Radius.md)
-          .stroke(Color.borderSubtle, lineWidth: 1)
-      )
     }
   }
 
@@ -195,7 +191,7 @@ struct LearnerProgressView: View {
           HStack(spacing: Spacing.lg) {
             if isEditing {
               Image(systemName: selectedIDs.contains(session.id) ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(selectedIDs.contains(session.id) ? .appPrimary : .textTertiary)
+                .foregroundColor(selectedIDs.contains(session.id) ? .textPrimary : .textTertiary)
                 .font(.system(size: 20))
             }
 
@@ -225,10 +221,6 @@ struct LearnerProgressView: View {
           .padding(Spacing.lg)
           .background(Color.surfaceBase)
           .cornerRadius(Radius.sm)
-          .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm)
-              .stroke(Color.borderSubtle, lineWidth: 1)
-            )
           .contentShape(Rectangle())
           .onTapGesture {
             guard isEditing else { return }

@@ -49,10 +49,6 @@ struct ServerSettingsView: View {
       .padding(14)
       .background(Color.surfaceRaised)
       .cornerRadius(Radius.md)
-      .overlay(
-        RoundedRectangle(cornerRadius: Radius.md)
-          .stroke(Color.borderSubtle, lineWidth: 1)
-      )
 
       CustomButton(
         title: wearablesVM.registrationState == .registering
@@ -88,7 +84,7 @@ struct ServerSettingsView: View {
       VStack(spacing: Spacing.md) {
         Image(systemName: "server.rack")
           .font(.system(size: 40))
-          .foregroundColor(.appPrimary)
+          .foregroundColor(.textPrimary)
         Text("Server Connection")
           .font(.retraceTitle2)
           .fontWeight(.bold)
@@ -131,17 +127,13 @@ struct ServerSettingsView: View {
     .padding(14)
     .background(Color.surfaceRaised)
     .cornerRadius(Radius.md)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.md)
-        .stroke(Color.borderSubtle, lineWidth: 1)
-    )
   }
 
   @ViewBuilder
   private var leadingIndicator: some View {
     if discovery.discoveredURL == nil && discovery.isSearching {
       ProgressView()
-        .tint(.appPrimary)
+        .tint(.textPrimary)
     } else {
       Circle()
         .fill(serverStatusColor)

@@ -97,7 +97,7 @@ struct CoachingSessionView: View {
   private var reconnectBanner: some View {
     HStack(spacing: Spacing.md) {
       Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundColor(.appPrimary)
+        .foregroundColor(.textPrimary)
       Text("Voice coaching disconnected")
         .font(.retraceCallout)
         .foregroundColor(.textPrimary)
@@ -107,7 +107,7 @@ struct CoachingSessionView: View {
       } label: {
         Text("Reconnect")
           .font(.retraceFace(.semibold, size: 16))
-          .foregroundColor(.appPrimary)
+          .foregroundColor(.textPrimary)
       }
     }
     .padding(Spacing.md)
@@ -273,7 +273,7 @@ struct CoachingSessionView: View {
         if !viewModel.isMuted {
           SoundWaveView(
             isActive: viewModel.isAISpeaking,
-            color: .appPrimary
+            color: .textPrimary
           )
         } else {
           Text("Muted")
@@ -290,7 +290,7 @@ struct CoachingSessionView: View {
       VStack(spacing: Spacing.xs) {
         Image(systemName: viewModel.showPiP ? "pip.fill" : "pip")
           .font(.system(size: 20))
-          .foregroundColor(viewModel.showPiP ? .appPrimary : .textPrimary)
+          .foregroundColor(viewModel.showPiP ? .semanticInfo : .textPrimary)
         Text("Reference")
           .font(.system(size: 10))
           .foregroundColor(.textSecondary)
@@ -392,7 +392,7 @@ private struct ActivityRow: View {
     switch entry.kind {
     case .toolCall:
       Image(systemName: "wand.and.stars")
-        .foregroundColor(.appPrimary)
+        .foregroundColor(.textPrimary)
     case .assistant:
       Image(systemName: "sparkles")
         .foregroundColor(.semanticInfo)
@@ -412,7 +412,7 @@ private struct ActivityRow: View {
 
   private var labelColor: Color {
     switch entry.kind {
-    case .toolCall: return .appPrimary
+    case .toolCall: return .textPrimary
     case .assistant: return .semanticInfo
     case .learner: return .textSecondary
     }

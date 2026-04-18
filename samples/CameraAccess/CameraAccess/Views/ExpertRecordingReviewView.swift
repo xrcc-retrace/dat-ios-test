@@ -31,7 +31,7 @@ struct ExpertRecordingReviewView: View {
                   .foregroundColor(.textSecondary)
 
                 ProgressView(value: uploadService.uploadProgress)
-                  .tint(.appPrimary)
+                  .tint(.textPrimary)
 
                 Text("\(Int(uploadService.uploadProgress * 100))%")
                   .font(.system(size: 14, design: .monospaced))
@@ -45,7 +45,7 @@ struct ExpertRecordingReviewView: View {
               VStack(spacing: Spacing.xl) {
                 ProgressView()
                   .scaleEffect(1.5)
-                  .tint(.appPrimary)
+                  .tint(.textPrimary)
 
                 Text("Processing with AI...")
                   .font(.retraceHeadline)
@@ -59,10 +59,6 @@ struct ExpertRecordingReviewView: View {
               .frame(maxWidth: .infinity)
               .background(Color.surfaceBase)
               .cornerRadius(Radius.lg)
-              .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg)
-                  .stroke(Color.borderSubtle, lineWidth: 1)
-              )
             }
 
             // Error
@@ -227,10 +223,6 @@ struct ProcedureSummaryView: View {
     .padding(Spacing.xl)
     .background(Color.surfaceBase)
     .cornerRadius(Radius.md)
-    .overlay(
-      RoundedRectangle(cornerRadius: Radius.md)
-        .stroke(Color.borderSubtle, lineWidth: 1)
-    )
   }
 }
 
@@ -251,7 +243,7 @@ struct StepDetailView: View {
         HStack(alignment: .top, spacing: Spacing.md) {
           Text("\(step.stepNumber).")
             .font(.retraceFace(.semibold, size: 16))
-            .foregroundColor(.appPrimary)
+            .foregroundColor(.textPrimary)
             .frame(width: 24, alignment: .trailing)
 
           VStack(alignment: .leading, spacing: Spacing.xs) {

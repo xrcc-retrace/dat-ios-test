@@ -37,14 +37,11 @@ struct CustomButton: View {
       switch self {
       case .primary: return .backgroundPrimary
       case .secondary: return .textPrimary
-      case .ghost: return .appPrimary
+      case .ghost: return .textPrimary
       case .destructive: return .destructiveForeground
       }
     }
 
-    var hasBorder: Bool {
-      self == .secondary
-    }
   }
 
   @State private var isPressed = false
@@ -66,14 +63,6 @@ struct CustomButton: View {
       .frame(height: 52)
       .background(style.backgroundColor)
       .cornerRadius(Radius.full)
-      .overlay(
-        Group {
-          if style.hasBorder {
-            RoundedRectangle(cornerRadius: Radius.full)
-              .stroke(Color.borderSubtle, lineWidth: 1)
-          }
-        }
-      )
     }
     .buttonStyle(ScaleButtonStyle())
     .disabled(isDisabled)

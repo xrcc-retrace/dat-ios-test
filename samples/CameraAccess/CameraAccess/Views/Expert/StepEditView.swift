@@ -140,7 +140,7 @@ struct StepEditView: View {
         Button("Save") {
           Task { await save() }
         }
-        .foregroundColor(hasChanges ? .appPrimary : .textTertiary)
+        .foregroundColor(hasChanges ? .textPrimary : .textTertiary)
         .disabled(!hasChanges || isSaving)
       }
     }

@@ -14,14 +14,14 @@ import SwiftUI
 ///       `alwaysDiscardsLateVideoFrames`).
 ///   [2] Ray-Ban HUD surface — injected per flow (`CoachingRayBanHUD` for
 ///       learner coaching, `TroubleshootRayBanHUD` for diagnostic). The
-///       layout enforces three invariants on whatever the caller passes:
+///       layout enforces two invariants on whatever the caller passes:
 ///         • Full-screen bounds (matches the camera's frame exactly).
 ///         • Transparent container (no background fills applied here).
-///         • Pass-through hit testing (so drawer drags / future camera
-///           taps aren't swallowed). Individual HUD subviews can opt
-///           back into hit testing on themselves.
-///       Owning the invariants at the layout means the frontend designer
-///       editing a HUD file can't accidentally break the camera-first UX.
+///       The HUD is hit-testable — interactive controls (step card,
+///       exit pill, completion pills) accept taps directly. Because HUD
+///       interactive surfaces are small and specifically placed inside
+///       a square work-area, the rest of the HUD frame is `Color.clear`
+///       and taps pass through to the drawer handle beneath it.
 ///   [3] `BottomDrawer` — handle-only at rest, pull up to expand to ~90%
 ///       height. All the mode's existing session UI (activity feed, step
 ///       instructions, controls, reconnect banner, progress bar) lives
@@ -31,15 +31,18 @@ struct IPhoneCoachingLayout<HUD: View, Drawer: View>: View {
   @Binding var drawerExpanded: Bool
   let hud: () -> HUD
   let drawer: () -> Drawer
+  let showDrawer: Bool
 
   init(
     viewModel: GeminiLiveSessionBase,
     drawerExpanded: Binding<Bool>,
+    showDrawer: Bool = true,
     @ViewBuilder hud: @escaping () -> HUD,
     @ViewBuilder drawer: @escaping () -> Drawer
   ) {
     self.viewModel = viewModel
     self._drawerExpanded = drawerExpanded
+    self.showDrawer = showDrawer
     self.hud = hud
     self.drawer = drawer
   }
@@ -57,18 +60,21 @@ struct IPhoneCoachingLayout<HUD: View, Drawer: View>: View {
       }
 
       // [2] Ray-Ban HUD surface — injected per flow. Wrapped here with
-      // the three invariants (full-bleed sizing, safe-area ignoring,
-      // hit-test pass-through). Crucially: no `.background(...)` call is
-      // ever applied, so the HUD stays fully transparent above the
-      // camera.
+      // the full-bleed sizing + safe-area ignoring invariants. Crucially:
+      // no `.background(...)` call is ever applied, so the HUD stays fully
+      // transparent above the camera. Hit-testing is on; the HUD body
+      // itself is responsible for placing `Color.clear` wherever taps
+      // should fall through to the drawer handle.
       hud()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
-        .allowsHitTesting(false)
 
-      // [3] Draggable bottom drawer
-      BottomDrawer(isExpanded: $drawerExpanded) {
-        drawer()
+      // [3] Draggable bottom drawer (portrait only; landscape hides the
+      // drawer so the HUD simulates the Ray-Ban lens uninterrupted).
+      if showDrawer {
+        BottomDrawer(isExpanded: $drawerExpanded) {
+          drawer()
+        }
       }
     }
   }

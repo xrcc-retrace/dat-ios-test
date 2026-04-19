@@ -66,6 +66,7 @@
 		<string>GolosText-Bold.ttf</string>
 		<string>GolosText-ExtraBold.ttf</string>
 		<string>GolosText-Black.ttf</string>
+		<string>Inter-Variable.ttf</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
@@ -92,6 +93,8 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

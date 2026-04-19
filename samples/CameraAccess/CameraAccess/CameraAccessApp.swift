@@ -25,6 +25,9 @@ import MWDATMockDevice
 
 @main
 struct CameraAccessApp: App {
+  @UIApplicationDelegateAdaptor(RetraceAppDelegate.self) private var appDelegate
+  @StateObject private var appOrientationController = AppOrientationController.shared
+
   #if DEBUG
   // Debug menu for simulating device connections during development
   @StateObject private var debugMenuViewModel = DebugMenuViewModel(mockDeviceKit: MockDeviceKit.shared)
@@ -72,11 +75,9 @@ struct CameraAccessApp: App {
 
   var body: some Scene {
     WindowGroup {
-      // Main app view with access to the shared Wearables SDK instance
-      // The Wearables.shared singleton provides the core DAT API
       MainAppView(wearables: Wearables.shared, viewModel: wearablesViewModel)
+        .environmentObject(appOrientationController)
         .preferredColorScheme(.light)
-        // Show error alerts for view model failures
         .alert("Error", isPresented: $wearablesViewModel.showError) {
           Button("OK") {
             wearablesViewModel.dismissError()
@@ -85,16 +86,16 @@ struct CameraAccessApp: App {
           Text(wearablesViewModel.errorMessage)
         }
         #if DEBUG
-      .sheet(isPresented: $debugMenuViewModel.showDebugMenu) {
-        MockDeviceKitView(viewModel: debugMenuViewModel.mockDeviceKitViewModel)
-      }
-      .overlay {
-        DebugMenuView(debugMenuViewModel: debugMenuViewModel)
-      }
+        .sheet(isPresented: $debugMenuViewModel.showDebugMenu) {
+          MockDeviceKitView(viewModel: debugMenuViewModel.mockDeviceKitViewModel)
+        }
+        .overlay {
+          DebugMenuView(debugMenuViewModel: debugMenuViewModel)
+        }
         #endif
-
-      // Registration view handles the flow for connecting to the glasses via Meta AI
-      RegistrationView(viewModel: wearablesViewModel)
+        .overlay {
+          RegistrationView(viewModel: wearablesViewModel)
+        }
     }
   }
 }

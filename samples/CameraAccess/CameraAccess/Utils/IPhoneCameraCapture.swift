@@ -100,6 +100,26 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     isRunning = false
   }
 
+  /// Rotate the on-screen preview to match the current interface orientation.
+  /// The capture output's connection stays pinned at 90° — JPEG frames sent to
+  /// Gemini keep their portrait-normalized geometry regardless of which way
+  /// the phone is held.
+  func setPreviewInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
+    guard let connection = previewLayer.connection else { return }
+    let angle: CGFloat
+    switch orientation {
+    case .portrait: angle = 90
+    case .landscapeRight: angle = 0
+    case .landscapeLeft: angle = 180
+    case .portraitUpsideDown: angle = 270
+    case .unknown: angle = 90
+    @unknown default: angle = 90
+    }
+    if connection.isVideoRotationAngleSupported(angle) {
+      connection.videoRotationAngle = angle
+    }
+  }
+
   // MARK: - Internals
 
   private func configureIfNeeded() throws {

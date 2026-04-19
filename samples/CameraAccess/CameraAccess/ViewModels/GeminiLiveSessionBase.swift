@@ -212,6 +212,13 @@ class GeminiLiveSessionBase: ObservableObject {
     Task { await reconnectWithResumption(reason: "user retry") }
   }
 
+  /// Forward a new interface orientation to the iPhone capture preview
+  /// (glasses transport is a no-op). Keeps the Gemini-facing JPEG pipeline
+  /// portrait-normalized — only the on-screen preview rotates.
+  func setPreviewInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
+    iPhoneCamera?.setPreviewInterfaceOrientation(orientation)
+  }
+
   // MARK: - Session lifecycle
 
   /// Brings up audio + camera + WebSocket and wires callbacks. Called by

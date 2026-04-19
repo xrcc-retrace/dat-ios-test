@@ -122,7 +122,7 @@ struct CoachingRayBanHUD: View {
       mode: stepCardMode,
       horizontalOffset: stepCardOffset,
       onConfirm: {
-        viewModel.showPiP = true
+        viewModel.showPiP.toggle()
       },
       onDragChanged: handleStepCardDragChanged,
       onDragEnded: handleStepCardDragEnded,
@@ -333,15 +333,20 @@ private enum StepCardPresentationState: Equatable {
 
 enum RayBanHUDLayoutTokens {
   static let viewportInset: CGFloat = 24
-  static let contentPadding: CGFloat = 24
-  static let stackSpacing: CGFloat = 16
+  static let contentPadding: CGFloat = 20
+  static let stackSpacing: CGFloat = 12
   static let exitToPanelSpacing: CGFloat = 8
-  static let cardRadius: CGFloat = 28
-  static let iconFrame: CGFloat = 40
-  static let completionHeight: CGFloat = 165
-  static let completionActionRadius: CGFloat = 26
-  static let detailHeight: CGFloat = 208
-  static let stepCardMinHeight: CGFloat = 188
+  static let cardRadius: CGFloat = 24
+  static let iconFrame: CGFloat = 36
+  static let completionHeight: CGFloat = 140
+  static let completionActionRadius: CGFloat = 22
+  static let detailHeight: CGFloat = 180
+  static let stepCardMinHeight: CGFloat = 124
+  /// Fixed content height for the step card's scrollable body (STEP label +
+  /// title + description). Tweak to taste — at 100 the description is one
+  /// short line before scrolling kicks in, useful when the HUD is squeezed
+  /// into the lower-right landscape viewport.
+  static let stepCardContentHeight: CGFloat = 100
   static let stepSwipeMinimumDistance: CGFloat = 12
   static let stepSwipeCommitThreshold: CGFloat = 80
   static let stepSwipeOffscreenOffset: CGFloat = 420

@@ -19,7 +19,11 @@ struct CoachingSessionView: View {
   // Drawer state for the iPhone camera-first layout. Ignored on glasses
   // transport (which keeps the existing vertical stack).
   @State private var drawerExpanded = false
-  @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
+  // Seeded to landscape because the iPhone coaching flow force-rotates to
+  // landscape on appear. Keeping this landscape from frame 1 prevents a
+  // one-frame flash where the drawer renders in portrait before the
+  // orientation notification catches up.
+  @State private var currentInterfaceOrientation: UIInterfaceOrientation = .landscapeRight
 
   init(
     procedure: ProcedureResponse,
@@ -95,14 +99,26 @@ struct CoachingSessionView: View {
     .onAppear {
       viewModel.startSession(progressStore: progressStore, startingStep: startingStep)
       if transport == .iPhone {
-        appOrientationController.lock([.portrait, .landscapeLeft, .landscapeRight])
-        currentInterfaceOrientation = resolveInterfaceOrientation()
-        viewModel.setPreviewInterfaceOrientation(currentInterfaceOrientation)
+        // Force landscape on entry by locking to landscape-only first —
+        // `requestGeometryUpdate` rotates the scene even if the device is
+        // held in portrait. Then broaden the mask so the user can rotate
+        // back to portrait naturally.
+        appOrientationController.lock([.landscapeRight])
+        appOrientationController.setAllowed([.portrait, .landscapeLeft, .landscapeRight])
+        // `orientationDidChangeNotification` only fires while device
+        // orientation notifications are actively being generated.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        // Seed the camera preview to landscape immediately. If the camera
+        // hasn't finished starting, `GeminiLiveSessionBase` caches this
+        // and replays it onto the preview layer the moment it comes up.
+        currentInterfaceOrientation = .landscapeRight
+        viewModel.setPreviewInterfaceOrientation(.landscapeRight)
       }
     }
     .onDisappear {
       viewModel.endSession(progressStore: progressStore)
       if transport == .iPhone {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
         appOrientationController.unlock()
       }
     }

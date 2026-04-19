@@ -23,6 +23,13 @@ final class AppOrientationController: ObservableObject {
     requestGeometryUpdate(mask)
   }
 
+  /// Broaden (or narrow) the allowed-orientation mask without asking the
+  /// scene to rotate. Used after `lock(...)` forced an initial rotation,
+  /// so the user can subsequently rotate the device naturally.
+  func setAllowed(_ mask: UIInterfaceOrientationMask) {
+    currentMask = mask
+  }
+
   func unlock() {
     currentMask = .portrait
     requestGeometryUpdate(.portrait)

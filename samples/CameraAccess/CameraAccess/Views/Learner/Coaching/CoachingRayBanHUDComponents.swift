@@ -14,16 +14,16 @@ struct RayBanHUDExitPill: View {
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: "rectangle.portrait.and.arrow.forward")
-        .font(.system(size: 24, weight: .medium))
+        .font(.system(size: 20, weight: .medium))
         .frame(width: RayBanHUDLayoutTokens.iconFrame, height: RayBanHUDLayoutTokens.iconFrame)
 
       Text("Exit workflow")
-        .font(.inter(.medium, size: 16))
+        .font(.inter(.medium, size: 14))
         .lineLimit(1)
     }
     .foregroundStyle(Color.white.opacity(0.98))
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 12)
+    .padding(.vertical, 10)
     .rayBanHUDPanel(shape: .capsule)
     .hoverSelectable(.exitWorkflow, shape: .capsule, behavior: .selectOnly) {}
     .simultaneousGesture(
@@ -73,27 +73,29 @@ struct RayBanHUDStepCard: View {
   private var cardSurface: some View {
     switch mode {
     case .content(let stepIndex, let stepCount, let step):
-      VStack(alignment: .leading, spacing: 12) {
-        Text("STEP \(stepIndex) OF \(stepCount)")
-          .font(.inter(.medium, size: 12))
-          .tracking(1.2)
-          .foregroundStyle(Color.white.opacity(0.9))
+      ScrollView(.vertical, showsIndicators: false) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("STEP \(stepIndex) OF \(stepCount)")
+            .font(.inter(.medium, size: 12))
+            .tracking(1.2)
+            .foregroundStyle(Color.white.opacity(0.9))
 
-        if let step {
-          Text(step.title)
-            .font(.inter(.bold, size: 24))
-            .foregroundStyle(Color.white.opacity(0.98))
-            .lineLimit(3)
-            .fixedSize(horizontal: false, vertical: true)
+          if let step {
+            Text(step.title)
+              .font(.inter(.bold, size: 20))
+              .foregroundStyle(Color.white.opacity(0.98))
+              .fixedSize(horizontal: false, vertical: true)
 
-          Text(step.description)
-            .font(.inter(.medium, size: 16))
-            .foregroundStyle(Color.white.opacity(0.96))
-            .lineSpacing(3)
-            .lineLimit(4)
-            .fixedSize(horizontal: false, vertical: true)
+            Text(step.description)
+              .font(.inter(.medium, size: 14))
+              .foregroundStyle(Color.white.opacity(0.96))
+              .lineSpacing(2)
+              .fixedSize(horizontal: false, vertical: true)
+          }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
+      .frame(height: RayBanHUDLayoutTokens.stepCardContentHeight)
 
     case .loading:
       VStack {
@@ -145,11 +147,11 @@ struct RayBanHUDDetailPanel: View {
 
       VStack(spacing: 10) {
         Image(systemName: "film.stack")
-          .font(.system(size: 24, weight: .medium))
+          .font(.system(size: 20, weight: .medium))
           .foregroundStyle(Color.white.opacity(0.78))
 
         Text("No reference clip for this step")
-          .font(.inter(.medium, size: 16))
+          .font(.inter(.medium, size: 14))
           .foregroundStyle(Color.white.opacity(0.82))
       }
       .multilineTextAlignment(.center)
@@ -169,7 +171,7 @@ struct RayBanHUDExitOverlay: View {
       VStack(alignment: .leading, spacing: 16) {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
           Text("Exit workflow")
-            .font(.inter(.bold, size: 24))
+            .font(.inter(.bold, size: 20))
             .foregroundStyle(Color.white.opacity(0.98))
 
           Spacer(minLength: 0)
@@ -222,12 +224,12 @@ struct RayBanHUDCompletionSummaryCard: View {
   var body: some View {
     VStack(spacing: 16) {
       Image(systemName: "checkmark.circle.fill")
-        .font(.system(size: 72, weight: .regular))
+        .font(.system(size: 60, weight: .regular))
         .foregroundStyle(completionGradient)
-        .frame(height: 76)
+        .frame(height: 64)
 
       Text("You’re all done. Great job!")
-        .font(.inter(.bold, size: 20))
+        .font(.inter(.bold, size: 16))
         .foregroundStyle(Color.white.opacity(0.98))
         .multilineTextAlignment(.center)
     }
@@ -261,17 +263,17 @@ struct RayBanHUDCompletionActionCard: View {
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: icon)
-        .font(.system(size: 22, weight: .medium))
+        .font(.system(size: 18, weight: .medium))
         .frame(width: RayBanHUDLayoutTokens.iconFrame, height: RayBanHUDLayoutTokens.iconFrame)
 
       Text(label)
-        .font(.inter(.medium, size: 18))
+        .font(.inter(.medium, size: 14))
 
       Spacer(minLength: 0)
     }
     .foregroundStyle(Color.white.opacity(0.98))
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 14)
+    .padding(.vertical, 12)
     .frame(maxWidth: .infinity)
     .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.completionActionRadius))
     .hoverSelectable(

@@ -87,8 +87,8 @@ struct HUDSurfaceBackground: View {
   private var surfaceBase: LinearGradient {
     LinearGradient(
       colors: [
-        Color(red: 0.44, green: 0.48, blue: 0.49).opacity(0.92),
-        Color(red: 0.39, green: 0.43, blue: 0.44).opacity(0.9),
+        Color(red: 0.44, green: 0.48, blue: 0.49).opacity(0.75),
+        Color(red: 0.39, green: 0.43, blue: 0.44).opacity(0.75),
       ],
       startPoint: .topLeading,
       endPoint: .bottomTrailing

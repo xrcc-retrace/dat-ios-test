@@ -15,11 +15,18 @@
 		26081C35AB194E6BA05692A6 /* VideoThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */; };
 		29EB4BBFB219301C48660997 /* ServerSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65304E7AB009BBE6224140C3 /* ServerSettingsView.swift */; };
 		312C4D5894EA98F086F012B2 /* ProcedureDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ECA46CD88AA357E8B876D68 /* ProcedureDetailViewModel.swift */; };
+		346A4BD3822DB564BFB451F0 /* DiagnosticModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6C4A9CAA8A6B6DB9FF8505 /* DiagnosticModels.swift */; };
 		34F240439F7EFE03260221FF /* StepEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6774179B49818FB9612C61E /* StepEditView.swift */; };
+		36374B0DA8333BE5B83AB0C2 /* TroubleshootSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E849158079F4E5CBC2DD31 /* TroubleshootSessionView.swift */; };
 		38714865AC69AAA0B400AC0B /* ExpertRecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D68441B99AB7E102A0AB0B9 /* ExpertRecordingManager.swift */; };
+		441F4C20B372F729872CEAF0 /* DiagnosticResolutionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61E4D008FCEA947E55496F5 /* DiagnosticResolutionPanel.swift */; };
+		1CA0ACB531BDD10B287CE0C3 /* ManualUploadSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB606A2D9721475EF2447206 /* ManualUploadSheet.swift */; };
 		44A54FBC8816981749777AA4 /* ProcedureCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607149ADAC868392CEA214B7 /* ProcedureCardView.swift */; };
 		46804CD584501C88D173A7C1 /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0946179E2E3FE4233AE018 /* UploadService.swift */; };
 		51C242D4BF959C022764AC33 /* MetadataPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F13449B876DE9D2EA5DF77D /* MetadataPill.swift */; };
+		58354F36B76F9824D360443C /* DiagnosticSessionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99084BE9B47CA8BFEA173174 /* DiagnosticSessionViewModel.swift */; };
+		C2E5B075169FFA153CE06E2C /* GeminiLiveSessionBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4032E6C4B7888AA4B354B6C /* GeminiLiveSessionBase.swift */; };
+		5DD6406BB4A46418A2193B60 /* DiagnosticPhaseBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63E4DB6B45A9AAD0ECFEE8F /* DiagnosticPhaseBar.swift */; };
 		60DF4617925A0CACD6F03C7E /* CoachingSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A24F39AC3FBF21EED9B635 /* CoachingSessionView.swift */; };
 		67E94702B2B1B436E4C0CA96 /* GeminiTokenManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 294E49E7941DD887735E3CDB /* GeminiTokenManager.swift */; };
 		68B622482F9383BA008690E4 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 68B622472F9383BA008690E4 /* AppIcon.icon */; };
@@ -106,14 +113,14 @@
 /* Begin PBXContainerItemProxy section */
 		E66CC0132F3E05D900B07379 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = CCCCCCCCCCCCCCCCCCCCCC /* Project object */;
+			containerPortal = CCCCCCCCCCCCCCCCCCCCCC;
 			proxyType = 1;
 			remoteGlobalIDString = 8A8A8A8A8A8A8A8A8A8A8A8A;
 			remoteInfo = CameraAccess;
 		};
 		E699CC992E8150670052C240 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = CCCCCCCCCCCCCCCCCCCCCC /* Project object */;
+			containerPortal = CCCCCCCCCCCCCCCCCCCCCC;
 			proxyType = 1;
 			remoteGlobalIDString = 8A8A8A8A8A8A8A8A8A8A8A8A;
 			remoteInfo = CameraAccess;
@@ -135,6 +142,8 @@
 
 /* Begin PBXFileReference section */
 		07404D8FBB8C80A8A82E300C /* LocalProgressStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LocalProgressStore.swift; path = CameraAccess/Services/LocalProgressStore.swift; sourceTree = SOURCE_ROOT; };
+		0A6C4A9CAA8A6B6DB9FF8505 /* DiagnosticModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticModels.swift; path = CameraAccess/Models/DiagnosticModels.swift; sourceTree = SOURCE_ROOT; };
+		10E849158079F4E5CBC2DD31 /* TroubleshootSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TroubleshootSessionView.swift; path = CameraAccess/Views/Troubleshoot/TroubleshootSessionView.swift; sourceTree = SOURCE_ROOT; };
 		17C0439BAEAF309681C62270 /* LearnerProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LearnerProgressView.swift; path = CameraAccess/Views/Learner/Progress/LearnerProgressView.swift; sourceTree = SOURCE_ROOT; };
 		217E5F479DBBCD15000BF0DC /* BonjourDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BonjourDiscovery.swift; path = CameraAccess/Services/BonjourDiscovery.swift; sourceTree = SOURCE_ROOT; };
 		294E49E7941DD887735E3CDB /* GeminiTokenManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiTokenManager.swift; path = CameraAccess/Services/GeminiTokenManager.swift; sourceTree = SOURCE_ROOT; };
@@ -193,7 +202,11 @@
 		8FFD605E2E84A2F70035E446 /* DebugMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugMenuView.swift; sourceTree = "<group>"; };
 		8FFD605F2E84A2F70035E446 /* MainAppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainAppView.swift; sourceTree = "<group>"; };
 		948E4153AE26C2C238229983 /* ExpertTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertTabView.swift; path = CameraAccess/Views/Expert/ExpertTabView.swift; sourceTree = SOURCE_ROOT; };
+		99084BE9B47CA8BFEA173174 /* DiagnosticSessionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticSessionViewModel.swift; path = CameraAccess/ViewModels/DiagnosticSessionViewModel.swift; sourceTree = SOURCE_ROOT; };
+		E4032E6C4B7888AA4B354B6C /* GeminiLiveSessionBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GeminiLiveSessionBase.swift; path = CameraAccess/ViewModels/GeminiLiveSessionBase.swift; sourceTree = SOURCE_ROOT; };
 		99BE488FAC885889315D07C1 /* ExpertRecordingReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertRecordingReviewView.swift; path = CameraAccess/Views/ExpertRecordingReviewView.swift; sourceTree = SOURCE_ROOT; };
+		A61E4D008FCEA947E55496F5 /* DiagnosticResolutionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticResolutionPanel.swift; path = CameraAccess/Views/Troubleshoot/DiagnosticResolutionPanel.swift; sourceTree = SOURCE_ROOT; };
+		AB606A2D9721475EF2447206 /* ManualUploadSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ManualUploadSheet.swift; path = CameraAccess/Views/Troubleshoot/ManualUploadSheet.swift; sourceTree = SOURCE_ROOT; };
 		A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoThumbnailView.swift; path = CameraAccess/Views/Components/VideoThumbnailView.swift; sourceTree = SOURCE_ROOT; };
 		A9274EEE92DABFFE4A474DCB /* EditableStringList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EditableStringList.swift; path = CameraAccess/Views/Components/EditableStringList.swift; sourceTree = SOURCE_ROOT; };
 		AA1111111111111111111111 /* RetraceColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RetraceColors.swift; path = CameraAccess/Utils/RetraceColors.swift; sourceTree = SOURCE_ROOT; };
@@ -202,6 +215,7 @@
 		AA4444444444444444444444 /* GlassPanelModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GlassPanelModifier.swift; path = CameraAccess/Views/Components/GlassPanelModifier.swift; sourceTree = SOURCE_ROOT; };
 		AA5555555555555555555555 /* SoundWaveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SoundWaveView.swift; path = CameraAccess/Views/Components/SoundWaveView.swift; sourceTree = SOURCE_ROOT; };
 		C06C456A852E3B95EE5276D9 /* CategoryChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CategoryChip.swift; path = CameraAccess/Views/Components/CategoryChip.swift; sourceTree = SOURCE_ROOT; };
+		C63E4DB6B45A9AAD0ECFEE8F /* DiagnosticPhaseBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticPhaseBar.swift; path = CameraAccess/Views/Troubleshoot/DiagnosticPhaseBar.swift; sourceTree = SOURCE_ROOT; };
 		C6774179B49818FB9612C61E /* StepEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StepEditView.swift; path = CameraAccess/Views/Expert/StepEditView.swift; sourceTree = SOURCE_ROOT; };
 		DCFE420BBC04BE5574B2C3DD /* DiscoverViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiscoverViewModel.swift; path = CameraAccess/ViewModels/DiscoverViewModel.swift; sourceTree = SOURCE_ROOT; };
 		E66CC00D2F3E05D900B07379 /* CameraAccessUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CameraAccessUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -309,6 +323,13 @@
 				51DF4216B6006231F97080BF /* VoicePreviewPlayer.swift */,
 				A63E83CFFD084637914FA2FE /* VideoThumbnailView.swift */,
 				68B6223E2F932D2E008690E4 /* Recovered References */,
+				99084BE9B47CA8BFEA173174 /* DiagnosticSessionViewModel.swift */,
+				E4032E6C4B7888AA4B354B6C /* GeminiLiveSessionBase.swift */,
+				0A6C4A9CAA8A6B6DB9FF8505 /* DiagnosticModels.swift */,
+				10E849158079F4E5CBC2DD31 /* TroubleshootSessionView.swift */,
+				C63E4DB6B45A9AAD0ECFEE8F /* DiagnosticPhaseBar.swift */,
+				A61E4D008FCEA947E55496F5 /* DiagnosticResolutionPanel.swift */,
+				AB606A2D9721475EF2447206 /* ManualUploadSheet.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -453,9 +474,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9A9A9A9A9A9A9A9A9A9A9A9A /* Build configuration list for PBXNativeTarget "CameraAccess" */;
 			buildPhases = (
-				AAAAAAAAAAAAAAAAAAAAAA /* Sources */,
+				AAAAAAAAAAAAAAAAAAAAAA,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Frameworks */,
-				BBBBBBBBBBBBBBBBBBBBBB /* Resources */,
+				BBBBBBBBBBBBBBBBBBBBBB,
 				8FD96B932E6F0C6E00F56AB1 /* Embed Frameworks */,
 			);
 			buildRules = (
@@ -515,7 +536,7 @@
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		CCCCCCCCCCCCCCCCCCCCCC /* Project object */ = {
+		'CCCCCCCCCCCCCCCCCCCCCC' = {
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 2620;
@@ -534,7 +555,7 @@
 					};
 				};
 			};
-			buildConfigurationList = DDDDDDDDDDDDDDDDDDDDDD /* Build configuration list for PBXProject "CameraAccess" */;
+			buildConfigurationList = DDDDDDDDDDDDDDDDDDDDDD;
 			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -558,7 +579,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		BBBBBBBBBBBBBBBBBBBBBB /* Resources */ = {
+		'BBBBBBBBBBBBBBBBBBBBBB' = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -594,7 +615,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		AAAAAAAAAAAAAAAAAAAAAA /* Sources */ = {
+		'AAAAAAAAAAAAAAAAAAAAAA' = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -677,6 +698,13 @@
 				8FD96BC62E6F9A9900F56AB1 /* ModeCard.swift in Sources */,
 				8FD96BC82E6F9A9900F56AB1 /* LibraryViewModel.swift in Sources */,
 				8FD96BCA2E6F9A9A00F56AB1 /* GlassesInactiveSheet.swift in Sources */,
+				58354F36B76F9824D360443C /* DiagnosticSessionViewModel.swift in Sources */,
+				C2E5B075169FFA153CE06E2C /* GeminiLiveSessionBase.swift in Sources */,
+				346A4BD3822DB564BFB451F0 /* DiagnosticModels.swift in Sources */,
+				36374B0DA8333BE5B83AB0C2 /* TroubleshootSessionView.swift in Sources */,
+				5DD6406BB4A46418A2193B60 /* DiagnosticPhaseBar.swift in Sources */,
+				441F4C20B372F729872CEAF0 /* DiagnosticResolutionPanel.swift in Sources */,
+				1CA0ACB531BDD10B287CE0C3 /* ManualUploadSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -875,7 +903,7 @@
 			};
 			name = Release;
 		};
-		EEEEEEEEEEEEEEEEEEEEEE /* Debug */ = {
+		'EEEEEEEEEEEEEEEEEEEEEE' = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1003,10 +1031,10 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DDDDDDDDDDDDDDDDDDDDDD /* Build configuration list for PBXProject "CameraAccess" */ = {
+		'DDDDDDDDDDDDDDDDDDDDDD' = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EEEEEEEEEEEEEEEEEEEEEE /* Debug */,
+				EEEEEEEEEEEEEEEEEEEEEE,
 				FFFFFFFFFFFFFFFFFFFFFFFF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1061,5 +1089,5 @@
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = CCCCCCCCCCCCCCCCCCCCCC /* Project object */;
+	rootObject = CCCCCCCCCCCCCCCCCCCCCC;
 }

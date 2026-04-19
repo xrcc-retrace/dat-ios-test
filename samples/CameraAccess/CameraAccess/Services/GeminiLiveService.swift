@@ -538,17 +538,11 @@ class GeminiLiveService: ObservableObject {
 
     // Session resumption handle — Gemini issues these periodically so the
     // client can reopen a session (with compressed context intact) after a
-    // drop or goAway. We store the most recent handle verbatim.
-    //
-    // Gemini on `BidiGenerateContentConstrained` (v1alpha) emits these very
-    // aggressively — ~1-2/sec sustained. Dedup on the handle value so we
-    // only log+propagate when it actually changes; the prefix in the log
-    // lets us confirm distinctness at a glance without leaking the full token.
+    // drop or goAway. BidiGenerateContentConstrained emits ~1-2/sec, so
+    // dedup on the handle value to avoid redundant callbacks.
     if let update = json["sessionResumptionUpdate"] as? [String: Any],
        let handle = update["newHandle"] as? String, !handle.isEmpty,
        handle != resumptionHandle {
-      let prefix = String(handle.prefix(8))
-      print("[GeminiLive] resumption handle updated: \(prefix)… (len=\(handle.count))")
       resumptionHandle = handle
       onResumptionUpdate?(handle)
     }

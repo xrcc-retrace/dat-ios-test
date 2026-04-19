@@ -28,7 +28,13 @@ final class BonjourDiscovery: ObservableObject {
   private static let serverURLKey = "serverBaseURL"
   private static let userOverrideKey = "userOverrodeServerURL"
 
-  private init() {}
+  private init() {
+    // The manual-override flag is vestigial — no UI writes it, but older
+    // installs may have left a stale `true` in UserDefaults that silently
+    // blocks Bonjour from refreshing the cached URL. Clear it on launch so
+    // discovery can always heal a stale IP.
+    UserDefaults.standard.removeObject(forKey: Self.userOverrideKey)
+  }
 
   func startBrowsing() {
     guard browser == nil else { return }
@@ -115,14 +121,26 @@ final class BonjourDiscovery: ObservableObject {
       return
     }
 
-    // Read host and port from the TXT record the server embeds
+    // Read hostname/host and port from the TXT record the server embeds.
+    // Prefer `hostname` (a `.local` mDNS name) over `host` (a resolved IP): the
+    // hostname survives DHCP rotation because the OS re-resolves it via mDNS
+    // on every request, whereas a cached IP goes stale the moment the server's
+    // lease rotates.
     if case .bonjour(let txtRecord) = result.metadata {
       let dict = txtRecordToDictionary(txtRecord)
-      if let host = dict["host"], let port = dict["port"] {
-        let url = "http://\(host):\(port)"
-        discoveredURL = url
-        applyIfNotOverridden(url)
-        return
+      if let port = dict["port"] {
+        if let hostname = dict["hostname"], !hostname.isEmpty {
+          let url = "http://\(hostname):\(port)"
+          discoveredURL = url
+          applyIfNotOverridden(url)
+          return
+        }
+        if let host = dict["host"] {
+          let url = "http://\(host):\(port)"
+          discoveredURL = url
+          applyIfNotOverridden(url)
+          return
+        }
       }
     }
 
@@ -153,10 +171,7 @@ final class BonjourDiscovery: ObservableObject {
   }
 
   private func applyIfNotOverridden(_ url: String) {
-    let overridden = UserDefaults.standard.bool(forKey: Self.userOverrideKey)
-    if !overridden {
-      UserDefaults.standard.set(url, forKey: Self.serverURLKey)
-    }
+    UserDefaults.standard.set(url, forKey: Self.serverURLKey)
   }
 
   private func txtRecordToDictionary(_ txtRecord: NWTXTRecord) -> [String: String] {

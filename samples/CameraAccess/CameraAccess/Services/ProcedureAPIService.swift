@@ -141,6 +141,108 @@ class ProcedureAPIService: ObservableObject {
     return try decoder.decode(Payload.self, from: data).summary
   }
 
+  // MARK: - Troubleshoot (diagnostic) session
+
+  func startDiagnosticSession(voice: String) async throws -> DiagnosticSessionStartResponse {
+    guard let url = URL(string: "\(serverBaseURL)/api/troubleshoot/session/start") else {
+      throw APIError.invalidURL
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["voice": voice])
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(DiagnosticSessionStartResponse.self, from: data)
+  }
+
+  func fetchDiagnosticState(sessionId: String) async throws -> TroubleshootSessionState {
+    guard let url = URL(string: "\(serverBaseURL)/api/troubleshoot/session/\(sessionId)/state") else {
+      throw APIError.invalidURL
+    }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(TroubleshootSessionState.self, from: data)
+  }
+
+  /// Atomically ends the diagnostic session and opens a Learner session on
+  /// the matched/generated procedure. Return shape matches startLearnerSession
+  /// so the phone can swap WebSockets with a single mint.
+  func handoffDiagnosticToLearner(
+    sessionId: String,
+    procedureId: String,
+    autoAdvance: Bool,
+    voice: String
+  ) async throws -> LearnerSessionStartResponse {
+    guard let url = URL(string: "\(serverBaseURL)/api/troubleshoot/session/\(sessionId)/handoff") else {
+      throw APIError.invalidURL
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    let body: [String: Any] = [
+      "procedure_id": procedureId,
+      "auto_advance": autoAdvance,
+      "voice": voice,
+    ]
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(LearnerSessionStartResponse.self, from: data)
+  }
+
+  func endDiagnosticSession(sessionId: String) async {
+    guard let url = URL(string: "\(serverBaseURL)/api/troubleshoot/session/\(sessionId)") else {
+      return
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "DELETE"
+    _ = try? await URLSession.shared.data(for: request)
+  }
+
+  func uploadManual(pdfURL: URL) async throws -> ManualUploadResponse {
+    guard let url = URL(string: "\(serverBaseURL)/api/troubleshoot/manuals/upload") else {
+      throw APIError.invalidURL
+    }
+    let pdfData = try Data(contentsOf: pdfURL)
+    let boundary = "Boundary-\(UUID().uuidString)"
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+    var body = Data()
+    let filename = pdfURL.lastPathComponent
+    body.append("--\(boundary)\r\n".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+    body.append("Content-Type: application/pdf\r\n\r\n".data(using: .utf8)!)
+    body.append(pdfData)
+    body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+    request.httpBody = body
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(ManualUploadResponse.self, from: data)
+  }
+
+  func pollManual(manualId: String) async throws -> ManualStatusResponse {
+    guard let url = URL(string: "\(serverBaseURL)/api/troubleshoot/manuals/\(manualId)") else {
+      throw APIError.invalidURL
+    }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(ManualStatusResponse.self, from: data)
+  }
+
   // MARK: - Base URL accessor for clip URLs
 
   var baseURL: String { serverBaseURL }

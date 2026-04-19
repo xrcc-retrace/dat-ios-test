@@ -36,6 +36,7 @@ struct ProcedureStepResponse: Codable, Identifiable {
   let timestampEnd: Double
   let tips: [String]
   let warnings: [String]
+  let errorCriteria: [String]
   let clipUrl: String?
 
   enum CodingKeys: String, CodingKey {
@@ -43,7 +44,24 @@ struct ProcedureStepResponse: Codable, Identifiable {
     case stepNumber = "step_number"
     case timestampStart = "timestamp_start"
     case timestampEnd = "timestamp_end"
+    case errorCriteria = "error_criteria"
     case clipUrl = "clip_url"
+  }
+
+  // Custom decoder so old servers that predate the error_criteria column
+  // don't break the client — missing / null field decodes to []. New
+  // servers always emit a list (possibly empty).
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    stepNumber = try c.decode(Int.self, forKey: .stepNumber)
+    title = try c.decode(String.self, forKey: .title)
+    description = try c.decode(String.self, forKey: .description)
+    timestampStart = try c.decode(Double.self, forKey: .timestampStart)
+    timestampEnd = try c.decode(Double.self, forKey: .timestampEnd)
+    tips = try c.decode([String].self, forKey: .tips)
+    warnings = try c.decode([String].self, forKey: .warnings)
+    errorCriteria = try c.decodeIfPresent([String].self, forKey: .errorCriteria) ?? []
+    clipUrl = try c.decodeIfPresent(String.self, forKey: .clipUrl)
   }
 }
 
@@ -88,11 +106,13 @@ struct StepUpdateRequest: Codable {
   var warnings: [String]?
   var timestampStart: Double?
   var timestampEnd: Double?
+  var errorCriteria: [String]?
 
   enum CodingKeys: String, CodingKey {
     case title, description, tips, warnings
     case timestampStart = "timestamp_start"
     case timestampEnd = "timestamp_end"
+    case errorCriteria = "error_criteria"
   }
 }
 

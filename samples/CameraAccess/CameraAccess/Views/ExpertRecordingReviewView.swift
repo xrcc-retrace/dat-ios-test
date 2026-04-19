@@ -284,6 +284,10 @@ struct StepDetailView: View {
           if !step.warnings.isEmpty {
             TagSection(title: "Warnings", items: step.warnings, color: .appPrimary)
           }
+
+          if !step.errorCriteria.isEmpty {
+            TagSection(title: "Observable Errors", items: step.errorCriteria, color: .appPrimary)
+          }
         }
         .padding(.leading, 32)
         .frame(maxWidth: .infinity, alignment: .leading)

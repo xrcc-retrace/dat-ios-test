@@ -10,6 +10,7 @@ struct StepEditView: View {
   @State private var description: String
   @State private var tips: [String]
   @State private var warnings: [String]
+  @State private var errorCriteria: [String]
   @State private var isSaving = false
   @State private var errorMessage: String?
 
@@ -23,13 +24,15 @@ struct StepEditView: View {
     self._description = State(initialValue: step.description)
     self._tips = State(initialValue: step.tips)
     self._warnings = State(initialValue: step.warnings)
+    self._errorCriteria = State(initialValue: step.errorCriteria)
   }
 
   private var hasChanges: Bool {
     title != step.title ||
     description != step.description ||
     tips != step.tips ||
-    warnings != step.warnings
+    warnings != step.warnings ||
+    errorCriteria != step.errorCriteria
   }
 
   var body: some View {
@@ -118,6 +121,14 @@ struct StepEditView: View {
             placeholder: "Enter a warning"
           )
 
+          // Observable Errors (what the AI coach watches for to interject)
+          EditableStringList(
+            title: "Observable Errors",
+            items: $errorCriteria,
+            accentColor: .appPrimary,
+            placeholder: "Describe a visible mistake the coach should catch"
+          )
+
           // Error
           if let error = errorMessage {
             Text(error)
@@ -152,12 +163,14 @@ struct StepEditView: View {
 
     let cleanTips = tips.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     let cleanWarnings = warnings.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    let cleanErrorCriteria = errorCriteria.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
 
     let update = StepUpdateRequest(
       title: title != step.title ? title : nil,
       description: description != step.description ? description : nil,
       tips: cleanTips != step.tips ? cleanTips : nil,
-      warnings: cleanWarnings != step.warnings ? cleanWarnings : nil
+      warnings: cleanWarnings != step.warnings ? cleanWarnings : nil,
+      errorCriteria: cleanErrorCriteria != step.errorCriteria ? cleanErrorCriteria : nil
     )
 
     do {

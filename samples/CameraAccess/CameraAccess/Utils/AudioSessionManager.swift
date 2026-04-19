@@ -45,11 +45,7 @@ class AudioSessionManager: ObservableObject {
 
   // MARK: - Observability
 
-  private var firstMicBufferLogged = false
-  private var firstPlaybackLogged = false
   private var captureBuffersSinceLastFlush = 0
-  private var captureFramesSinceLastFlush: AVAudioFrameCount = 0
-  private var lastCaptureRate: Double = 0
   private var lastBufferReceivedAt: Date?
   private var silentMicWarned = false
   private var invalidFormatWarned = false
@@ -69,10 +65,6 @@ class AudioSessionManager: ObservableObject {
   /// short-circuit route-change rebinds when the live format hasn't changed
   /// (see `rebindMicTapIfCapturing(reason:)`).
   private var converterInputFormat: AVAudioFormat?
-  /// Last route we printed, so we can skip re-logging identical routes. iOS
-  /// fires 2–3 route-change notifications on startup (category/config/override
-  /// side effects of `startCapture()`) that don't actually change the route.
-  private var lastLoggedRouteDescriptor: String?
 
   /// Called on the audio capture queue with each PCM buffer.
   var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
@@ -160,18 +152,6 @@ class AudioSessionManager: ObservableObject {
         forceBuiltInMicPreferred(session)
       }
       checkBluetoothRoute()
-      logAudioRoute()
-      let modeLabel: String
-      switch mode {
-      case .coaching: modeLabel = "coaching (AEC, speaker fallback)"
-      case .coachingPhoneOnly: modeLabel = "coaching (phone-only, AEC)"
-      case .recording: modeLabel = "recording (simplex capture)"
-      case .recordingPhoneOnly: modeLabel = "recording (phone-only, simplex)"
-      }
-      print(
-        "[AudioSession] Configured for \(modeLabel): category=\(session.category.rawValue), "
-        + "mode=\(session.mode.rawValue), sampleRate=\(session.sampleRate)Hz"
-      )
     } catch {
       print("[AudioSession] Failed to configure audio session: \(error)")
     }
@@ -189,7 +169,6 @@ class AudioSessionManager: ObservableObject {
     }
     do {
       try session.setPreferredInput(builtIn)
-      print("[AudioSession] Preferred input pinned to built-in mic: \(builtIn.portName)")
     } catch {
       print("[AudioSession] Failed to pin built-in mic input: \(error)")
     }
@@ -226,7 +205,6 @@ class AudioSessionManager: ObservableObject {
       if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
         do {
           try capturedInputNode.setVoiceProcessingEnabled(true)
-          print("[AudioSession] Voice processing (AEC/NS/AGC) enabled on input node")
         } catch {
           print("[AudioSession] ⚠ Failed to enable voice processing: \(error)")
         }
@@ -276,12 +254,7 @@ class AudioSessionManager: ObservableObject {
     }
 
     checkBluetoothRoute()
-    logAudioRoute()
     startStatsTimer()
-    logInputRoute()
-    let hasPlayback = (capturedMode == .coaching || capturedMode == .coachingPhoneOnly)
-    let suffix = hasPlayback ? "with playback" : "(capture only)"
-    print("[AudioSession] Audio engine started \(suffix) (async)")
   }
 
   /// Background-safe session setup called from `startCaptureAsync()`'s
@@ -326,25 +299,11 @@ class AudioSessionManager: ObservableObject {
         if let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
           do {
             try session.setPreferredInput(builtIn)
-            print("[AudioSession] Preferred input pinned to built-in mic: \(builtIn.portName)")
           } catch {
             print("[AudioSession] Failed to pin built-in mic input: \(error)")
           }
-        } else {
-          print("[AudioSession] ⚠ No built-in mic input available to pin")
         }
       }
-      let modeLabel: String
-      switch mode {
-      case .coaching: modeLabel = "coaching (AEC, speaker fallback)"
-      case .coachingPhoneOnly: modeLabel = "coaching (phone-only, AEC)"
-      case .recording: modeLabel = "recording (simplex capture)"
-      case .recordingPhoneOnly: modeLabel = "recording (phone-only, simplex)"
-      }
-      print(
-        "[AudioSession] Configured for \(modeLabel): category=\(session.category.rawValue), "
-        + "mode=\(session.mode.rawValue), sampleRate=\(session.sampleRate)Hz (off-main)"
-      )
     } catch {
       print("[AudioSession] Failed to configure audio session: \(error)")
     }
@@ -366,7 +325,6 @@ class AudioSessionManager: ObservableObject {
     if mode == .coaching || mode == .coachingPhoneOnly {
       do {
         try inputNode.setVoiceProcessingEnabled(true)
-        print("[AudioSession] Voice processing (AEC/NS/AGC) enabled on input node")
       } catch {
         print("[AudioSession] ⚠ Failed to enable voice processing: \(error)")
       }
@@ -396,10 +354,6 @@ class AudioSessionManager: ObservableObject {
       }
 
       startStatsTimer()
-      logInputRoute()
-      let hasPlayback = (mode == .coaching || mode == .coachingPhoneOnly)
-      let suffix = hasPlayback ? "with playback" : "(capture only)"
-      print("[AudioSession] Audio engine started \(suffix)")
     } catch {
       print("[AudioSession] Audio engine start error: \(error)")
       inputNode.removeTap(onBus: 0)
@@ -437,8 +391,6 @@ class AudioSessionManager: ObservableObject {
     stopStatsTimer()
     audioConverter = nil
     converterInputFormat = nil
-    lastLoggedRouteDescriptor = nil
-    print("[AudioSession] Audio engine stopped")
 
     // Leave AVAudioSession in a state that plays nicely with whatever comes
     // next — review sheet's AVPlayer, another capture session, or idle.
@@ -452,7 +404,6 @@ class AudioSessionManager: ObservableObject {
     do {
       try session.setCategory(.playback, mode: .default, options: [])
       try session.setActive(true)
-      print("[AudioSession] Switched to .playback for review")
     } catch {
       print("[AudioSession] Failed to switch to .playback: \(error)")
     }
@@ -462,7 +413,6 @@ class AudioSessionManager: ObservableObject {
         // `.notifyOthersOnDeactivation` wakes any other audio app we bumped
         // during `.voiceChat` so system routing snaps back cleanly.
         try session.setActive(false, options: .notifyOthersOnDeactivation)
-        print("[AudioSession] Deactivated after coaching session")
       } catch {
         print("[AudioSession] Failed to deactivate: \(error)")
       }
@@ -490,16 +440,7 @@ class AudioSessionManager: ObservableObject {
       guard let self = self else { return }
       self.lastBufferReceivedAt = Date()
       self.captureBuffersSinceLastFlush += 1
-      self.captureFramesSinceLastFlush += frames
-      self.lastCaptureRate = rate
       self.silentMicWarned = false  // buffers are flowing; re-arm watchdog
-      if !self.firstMicBufferLogged {
-        self.firstMicBufferLogged = true
-        print(
-          "[AudioSession] First mic buffer: hwRate=\(rate)Hz, "
-          + "frames=\(frames), format=\(commonFormat), channels=\(channels)"
-        )
-      }
     }
   }
 
@@ -519,9 +460,6 @@ class AudioSessionManager: ObservableObject {
     statsTask?.cancel()
     statsTask = nil
     captureBuffersSinceLastFlush = 0
-    captureFramesSinceLastFlush = 0
-    firstMicBufferLogged = false
-    firstPlaybackLogged = false
     silentMicWarned = false
     invalidFormatWarned = false
     lastBufferReceivedAt = nil
@@ -530,18 +468,7 @@ class AudioSessionManager: ObservableObject {
 
   private func flushCaptureStats() {
     guard isCapturing else { return }
-    if captureBuffersSinceLastFlush > 0 {
-      print(
-        "[AudioSession] Capture: \(captureBuffersSinceLastFlush) buffers, "
-        + "\(captureFramesSinceLastFlush) frames, rate=\(lastCaptureRate)Hz "
-        + "| Playback queue: \(scheduledBufferCount) chunks pending"
-      )
-    } else {
-      print("[AudioSession] Capture: 0 buffers in last 5s "
-        + "| Playback queue: \(scheduledBufferCount) chunks pending")
-    }
     captureBuffersSinceLastFlush = 0
-    captureFramesSinceLastFlush = 0
   }
 
   private func checkSilentMicWatchdog() {
@@ -612,13 +539,6 @@ class AudioSessionManager: ObservableObject {
     Task { @MainActor [weak self] in
       guard let self = self else { return }
       self.isAISpeaking = true
-      if !self.firstPlaybackLogged {
-        self.firstPlaybackLogged = true
-        print(
-          "[AudioSession] First playback scheduled: \(data.count) bytes, "
-          + "\(frameCount) frames @ 24kHz"
-        )
-      }
     }
 
     playerNode.scheduleBuffer(buffer) { [weak self] in
@@ -634,14 +554,11 @@ class AudioSessionManager: ObservableObject {
   }
 
   /// Flush all queued playback buffers and restart the player.
-  /// Pass `reason` so logs make it clear WHY we dropped the queue
-  /// (barge-in, tool-call handoff, or session teardown).
   func clearPlaybackBuffer(reason: String = "unspecified") {
     guard mode == .coaching || mode == .coachingPhoneOnly else {
       print("[AudioSession] ⚠ clearPlaybackBuffer called in recording mode — ignoring")
       return
     }
-    let discarded = scheduledBufferCount
     playerNode.stop()
     scheduledBufferCount = 0
     isAISpeaking = false
@@ -653,10 +570,6 @@ class AudioSessionManager: ObservableObject {
     if engine.isRunning {
       playerNode.play()
     }
-    print(
-      "[AudioSession] Playback cleared (reason: \(reason)), "
-      + "discarded \(discarded) queued chunks"
-    )
   }
 
   // MARK: - Format Conversion (mic → PCM16 16kHz mono for Gemini)
@@ -712,13 +625,9 @@ class AudioSessionManager: ObservableObject {
   private func initializeConverterIfNeeded() {
     guard audioConverter == nil else { return }
     let hwFormat = inputNode.inputFormat(forBus: 0)
-    guard hwFormat.sampleRate > 0 else {
-      print("[AudioSession] Hardware format not ready, deferring converter init")
-      return
-    }
+    guard hwFormat.sampleRate > 0 else { return }
     audioConverter = AVAudioConverter(from: hwFormat, to: sendFormat)
     converterInputFormat = hwFormat
-    print("[AudioSession] Audio converter initialized: \(hwFormat.sampleRate)Hz → \(sendFormat.sampleRate)Hz")
   }
 
   // MARK: - Route Monitoring
@@ -738,7 +647,6 @@ class AudioSessionManager: ObservableObject {
 
     Task { @MainActor in
       self.checkBluetoothRoute()
-      self.logAudioRoute()
 
       // Route changes that can alter the input format or invalidate the tap.
       // When capturing, drop the old tap, reinit the converter against the new
@@ -768,10 +676,7 @@ class AudioSessionManager: ObservableObject {
   /// rate or channel count and still fall through to the rebuild path.
   private func rebindMicTapIfCapturing(reason: String) {
     guard isCapturing else { return }
-    guard engine.isRunning else {
-      print("[AudioSession] Route change (\(reason)) while engine is stopped — skipping tap rebind")
-      return
-    }
+    guard engine.isRunning else { return }
 
     let liveFmt = inputNode.inputFormat(forBus: 0)
 
@@ -779,17 +684,11 @@ class AudioSessionManager: ObservableObject {
        built.sampleRate == liveFmt.sampleRate,
        built.channelCount == liveFmt.channelCount,
        built.commonFormat == liveFmt.commonFormat {
-      print(
-        "[AudioSession] Route change (\(reason)) — input format unchanged "
-        + "(\(liveFmt.sampleRate)Hz, \(liveFmt.channelCount)ch); keeping tap and converter"
-      )
       return
     }
 
     // Install at the new format. `installMicTap()` removes any existing tap first.
     installMicTap()
-
-    let afterFmt = inputNode.inputFormat(forBus: 0)
 
     // The hardware format changed (HFP ↔ built-in); rebuild the converter.
     audioConverter = nil
@@ -799,12 +698,6 @@ class AudioSessionManager: ObservableObject {
     // Re-arm the silent-mic watchdog so it evaluates against the new route.
     silentMicWarned = false
     lastBufferReceivedAt = nil
-
-    print(
-      "[AudioSession] Tap re-installed after \(reason): "
-      + "rate \(liveFmt.sampleRate)Hz → \(afterFmt.sampleRate)Hz, "
-      + "channels \(liveFmt.channelCount) → \(afterFmt.channelCount)"
-    )
   }
 
   private func routeChangeReasonLabel(_ reason: AVAudioSession.RouteChangeReason) -> String {
@@ -832,52 +725,5 @@ class AudioSessionManager: ObservableObject {
     isBluetoothConnected = hasBluetoothInput || hasBluetoothOutput
   }
 
-  /// Compact one-line descriptor of the current route, used to deduplicate
-  /// log output when iOS fires cascaded route-change notifications that don't
-  /// actually change the route.
-  private func currentRouteDescriptor() -> String {
-    let route = AVAudioSession.sharedInstance().currentRoute
-    let inputs = route.inputs
-      .map { "\($0.portName)(\($0.portType.rawValue))" }
-      .joined(separator: ",")
-    let outputs = route.outputs
-      .map { "\($0.portName)(\($0.portType.rawValue))" }
-      .joined(separator: ",")
-    return "in=[\(inputs)] out=[\(outputs)]"
-  }
 
-  private func logAudioRoute() {
-    let descriptor = currentRouteDescriptor()
-    guard descriptor != lastLoggedRouteDescriptor else { return }
-    lastLoggedRouteDescriptor = descriptor
-    let route = AVAudioSession.sharedInstance().currentRoute
-    for input in route.inputs {
-      print("[AudioSession] Input: \(input.portName) (\(input.portType.rawValue))")
-    }
-    for output in route.outputs {
-      print("[AudioSession] Output: \(output.portName) (\(output.portType.rawValue))")
-    }
-  }
-
-  private func logInputRoute() {
-    let route = AVAudioSession.sharedInstance().currentRoute
-    for input in route.inputs {
-      if input.portType == .bluetoothHFP {
-        print("[AudioSession] ✓ Input: Bluetooth HFP (glasses mic)")
-      } else if input.portType == .builtInMic {
-        print("[AudioSession] ⚠ Input: Built-in phone mic")
-      } else {
-        print("[AudioSession] Input: \(input.portName) (\(input.portType.rawValue))")
-      }
-    }
-    for output in route.outputs {
-      if output.portType == .bluetoothHFP || output.portType == .bluetoothA2DP {
-        print("[AudioSession] ✓ Output: Bluetooth (\(output.portName))")
-      } else if output.portType == .builtInSpeaker {
-        print("[AudioSession] Output: Built-in speaker (fallback)")
-      } else {
-        print("[AudioSession] Output: \(output.portName) (\(output.portType.rawValue))")
-      }
-    }
-  }
 }

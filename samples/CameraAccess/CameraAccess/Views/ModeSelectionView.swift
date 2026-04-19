@@ -4,6 +4,7 @@ import SwiftUI
 enum AppMode {
   case expert
   case learner
+  case troubleshoot
 }
 
 struct ModeSelectionView: View {
@@ -36,6 +37,15 @@ struct ModeSelectionView: View {
             LearnerTabView(
               wearables: wearables,
               wearablesVM: wearablesVM,
+              onExit: { selectedMode = nil }
+            )
+          case .troubleshoot:
+            TroubleshootSessionView(
+              wearables: wearables,
+              wearablesVM: wearablesVM,
+              progressStore: LocalProgressStore(),
+              serverBaseURL: UserDefaults.standard.string(forKey: "serverBaseURL")
+                ?? "http://192.168.1.100:8000",
               onExit: { selectedMode = nil }
             )
           }
@@ -95,6 +105,15 @@ struct ModeSelectionView: View {
               isEnabled: true
             ) {
               selectedMode = .learner
+            }
+
+            ModeCard(
+              icon: "stethoscope",
+              title: "Troubleshoot",
+              subtitle: "Diagnose a problem and find the fix",
+              isEnabled: true
+            ) {
+              selectedMode = .troubleshoot
             }
           }
 

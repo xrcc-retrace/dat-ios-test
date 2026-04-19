@@ -274,8 +274,21 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
     }
   }
 
+  /// Single source of truth for whether the HUD is allowed to mutate the
+  /// learner session from a manual swipe. Gates both the swipe affordance and
+  /// the commit-time action to prevent races against Gemini readiness and
+  /// in-flight tool calls.
+  var canPerformManualHUDNavigation: Bool {
+    hudStepTransitionState == .idle
+      && sessionId != nil
+      && isGeminiReady
+      && geminiConnectionState == .connected
+      && pendingToolCallIds.isEmpty
+      && !isCompleted
+  }
+
   func navigateStepFromHUD(direction: StepNavigationDirection) async {
-    guard hudStepTransitionState == .idle else { return }
+    guard canPerformManualHUDNavigation else { return }
     guard let sessionId else { return }
 
     let toolName: String

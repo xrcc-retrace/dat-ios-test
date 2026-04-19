@@ -19,11 +19,10 @@ struct CoachingSessionView: View {
   // Drawer state for the iPhone camera-first layout. Ignored on glasses
   // transport (which keeps the existing vertical stack).
   @State private var drawerExpanded = false
-  // Seeded to landscape because the iPhone coaching flow force-rotates to
-  // landscape on appear. Keeping this landscape from frame 1 prevents a
-  // one-frame flash where the drawer renders in portrait before the
-  // orientation notification catches up.
-  @State private var currentInterfaceOrientation: UIInterfaceOrientation = .landscapeRight
+  // Portrait is the app's default; the real value is overwritten in
+  // `.onAppear` from `resolveInterfaceOrientation()` so the session
+  // preserves whatever orientation the phone is already in.
+  @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
 
   init(
     procedure: ProcedureResponse,
@@ -99,20 +98,21 @@ struct CoachingSessionView: View {
     .onAppear {
       viewModel.startSession(progressStore: progressStore, startingStep: startingStep)
       if transport == .iPhone {
-        // Force landscape on entry by locking to landscape-only first —
-        // `requestGeometryUpdate` rotates the scene even if the device is
-        // held in portrait. Then broaden the mask so the user can rotate
-        // back to portrait naturally.
-        appOrientationController.lock([.landscapeRight])
+        // Broaden the allowed orientation mask so the user can naturally
+        // rotate between portrait and landscape, but don't force rotate.
+        // Whatever orientation the phone is already in is what the session
+        // opens in.
         appOrientationController.setAllowed([.portrait, .landscapeLeft, .landscapeRight])
         // `orientationDidChangeNotification` only fires while device
         // orientation notifications are actively being generated.
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-        // Seed the camera preview to landscape immediately. If the camera
+        // Seed from the scene's actual interface orientation so the layout
+        // and preview match the current phone orientation. If the camera
         // hasn't finished starting, `GeminiLiveSessionBase` caches this
         // and replays it onto the preview layer the moment it comes up.
-        currentInterfaceOrientation = .landscapeRight
-        viewModel.setPreviewInterfaceOrientation(.landscapeRight)
+        let resolved = resolveInterfaceOrientation()
+        currentInterfaceOrientation = resolved
+        viewModel.setPreviewInterfaceOrientation(resolved)
       }
     }
     .onDisappear {

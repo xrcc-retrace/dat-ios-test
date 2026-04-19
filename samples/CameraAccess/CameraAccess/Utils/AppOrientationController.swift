@@ -2,14 +2,18 @@ import SwiftUI
 import UIKit
 
 /// App-level orientation gate. The app ships portrait-locked by default; the
-/// iPhone coaching flow temporarily unlocks landscape so the HUD can simulate
-/// the right-lens of the Ray-Ban Meta glasses. Everything else stays portrait.
+/// iPhone coaching flow temporarily broadens the allowed-orientation mask so
+/// the user can rotate naturally into landscape for the Ray-Ban HUD
+/// simulation. Coaching does NOT force-rotate the scene on entry — whatever
+/// orientation the phone is already in is the orientation the session opens
+/// in. Everything else stays portrait.
 ///
 /// Wiring: a shared instance is owned by `RetraceAppDelegate`; SwiftUI views
 /// reach it via `@EnvironmentObject`. The delegate overrides
 /// `application(_:supportedInterfaceOrientationsFor:)` and returns whatever
-/// `currentMask` the controller publishes. When the mask changes we nudge
-/// the active window scene into a valid orientation via `requestGeometryUpdate`.
+/// `currentMask` the controller publishes. `lock(...)` remains available for
+/// callers that genuinely need to force a rotation, but coaching no longer
+/// uses it on entry — it calls `setAllowed(...)` instead.
 @MainActor
 final class AppOrientationController: ObservableObject {
   static let shared = AppOrientationController()
@@ -24,8 +28,9 @@ final class AppOrientationController: ObservableObject {
   }
 
   /// Broaden (or narrow) the allowed-orientation mask without asking the
-  /// scene to rotate. Used after `lock(...)` forced an initial rotation,
-  /// so the user can subsequently rotate the device naturally.
+  /// scene to rotate. Used by the coaching flow on entry so the user can
+  /// rotate the device naturally between portrait and landscape without
+  /// ever forcing an initial rotation.
   func setAllowed(_ mask: UIInterfaceOrientationMask) {
     currentMask = mask
   }

@@ -192,8 +192,7 @@ struct CoachingRayBanHUD: View {
   private var canSwipeStepCard: Bool {
     hoverCoordinator.hovered == .stepCard
       && exitFlowState.progress == nil
-      && viewModel.hudStepTransitionState == .idle
-      && !viewModel.isCompleted
+      && viewModel.canPerformManualHUDNavigation
   }
 
   private var shouldShowScrim: Bool {
@@ -253,6 +252,14 @@ struct CoachingRayBanHUD: View {
       || (direction == .previous && translation >= commitThreshold)
 
     guard committed else {
+      withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+        stepCardPresentationState = .content
+      }
+      return
+    }
+
+    // Re-check readiness at commit time — a tool call could have landed mid-drag.
+    guard viewModel.canPerformManualHUDNavigation else {
       withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
         stepCardPresentationState = .content
       }

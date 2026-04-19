@@ -1,24 +1,29 @@
 import AVKit
 import SwiftUI
 
+enum RayBanHUDStepCardMode {
+  case content(stepIndex: Int, stepCount: Int, step: ProcedureStepResponse?)
+  case loading(stepIndex: Int?, stepCount: Int)
+}
+
 struct RayBanHUDExitPill: View {
   let isSelected: () -> Bool
   let onHoldStart: () -> Void
   let onHoldEnd: () -> Void
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: 10) {
       Image(systemName: "rectangle.portrait.and.arrow.forward")
-        .font(.system(size: 21, weight: .semibold))
+        .font(.system(size: 24, weight: .medium))
         .frame(width: RayBanHUDLayoutTokens.iconFrame, height: RayBanHUDLayoutTokens.iconFrame)
 
       Text("Exit workflow")
-        .font(.inter(.bold, size: 24))
+        .font(.inter(.medium, size: 16))
         .lineLimit(1)
     }
     .foregroundStyle(Color.white.opacity(0.98))
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 18)
+    .padding(.vertical, 12)
     .rayBanHUDPanel(shape: .capsule)
     .hoverSelectable(.exitWorkflow, shape: .capsule, behavior: .selectOnly) {}
     .simultaneousGesture(
@@ -35,37 +40,78 @@ struct RayBanHUDExitPill: View {
 }
 
 struct RayBanHUDStepCard: View {
-  let stepIndex: Int
-  let stepCount: Int
-  let step: ProcedureStepResponse?
+  let mode: RayBanHUDStepCardMode
+  let horizontalOffset: CGFloat
   let onConfirm: () -> Void
+  let onDragChanged: (DragGesture.Value) -> Void
+  let onDragEnded: (DragGesture.Value) -> Void
+  let isSwipeEnabled: Bool
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("STEP \(stepIndex) OF \(stepCount)")
-        .font(.inter(.medium, size: 12))
-        .tracking(1.2)
-        .foregroundStyle(Color.white.opacity(0.9))
+    cardSurface
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(RayBanHUDLayoutTokens.contentPadding)
+      .frame(minHeight: RayBanHUDLayoutTokens.stepCardMinHeight, alignment: .center)
+      .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
+      .offset(x: horizontalOffset)
+      .modifier(StepCardHoverModifier(isInteractive: isContentMode, onConfirm: onConfirm))
+      .contentShape(RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous))
+      .simultaneousGesture(
+        DragGesture(minimumDistance: RayBanHUDLayoutTokens.stepSwipeMinimumDistance)
+          .onChanged { value in
+            guard isSwipeEnabled, isContentMode else { return }
+            onDragChanged(value)
+          }
+          .onEnded { value in
+            guard isSwipeEnabled, isContentMode else { return }
+            onDragEnded(value)
+          }
+      )
+  }
 
-      if let step {
-        Text(step.title)
-          .font(.inter(.bold, size: 24))
-          .foregroundStyle(Color.white.opacity(0.98))
-          .lineLimit(3)
-          .fixedSize(horizontal: false, vertical: true)
+  @ViewBuilder
+  private var cardSurface: some View {
+    switch mode {
+    case .content(let stepIndex, let stepCount, let step):
+      VStack(alignment: .leading, spacing: 12) {
+        Text("STEP \(stepIndex) OF \(stepCount)")
+          .font(.inter(.medium, size: 12))
+          .tracking(1.2)
+          .foregroundStyle(Color.white.opacity(0.9))
 
-        Text(step.description)
-          .font(.inter(.medium, size: 16))
-          .foregroundStyle(Color.white.opacity(0.96))
-          .lineSpacing(3)
-          .lineLimit(4)
-          .fixedSize(horizontal: false, vertical: true)
+        if let step {
+          Text(step.title)
+            .font(.inter(.bold, size: 24))
+            .foregroundStyle(Color.white.opacity(0.98))
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+
+          Text(step.description)
+            .font(.inter(.medium, size: 16))
+            .foregroundStyle(Color.white.opacity(0.96))
+            .lineSpacing(3)
+            .lineLimit(4)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
+
+    case .loading:
+      VStack {
+        Spacer(minLength: 0)
+        ProgressView()
+          .tint(Color.white.opacity(0.94))
+          .controlSize(.large)
+        Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(RayBanHUDLayoutTokens.contentPadding)
-    .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-    .hoverSelectable(.stepCard, shape: .rounded(RayBanHUDLayoutTokens.cardRadius), onConfirm: onConfirm)
+  }
+
+  private var isContentMode: Bool {
+    if case .content = mode {
+      return true
+    }
+    return false
   }
 }
 
@@ -175,7 +221,7 @@ struct RayBanHUDCompletionSummaryCard: View {
 
   var body: some View {
     VStack(spacing: 16) {
-      Image(systemName: "checkmark.seal.fill")
+      Image(systemName: "checkmark.circle.fill")
         .font(.system(size: 72, weight: .regular))
         .foregroundStyle(completionGradient)
         .frame(height: 76)
@@ -206,7 +252,7 @@ struct RayBanHUDCompletionSummaryCard: View {
   }
 }
 
-struct RayBanHUDCompletionActionPill: View {
+struct RayBanHUDCompletionActionCard: View {
   let icon: String
   let label: String
   let id: HUDControl
@@ -227,8 +273,30 @@ struct RayBanHUDCompletionActionPill: View {
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
     .padding(.vertical, 14)
     .frame(maxWidth: .infinity)
-    .rayBanHUDPanel(shape: .capsule)
-    .hoverSelectable(id, shape: .capsule, onConfirm: onConfirm)
+    .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.completionActionRadius))
+    .hoverSelectable(
+      id,
+      shape: .rounded(RayBanHUDLayoutTokens.completionActionRadius),
+      onConfirm: onConfirm
+    )
+  }
+}
+
+private struct StepCardHoverModifier: ViewModifier {
+  let isInteractive: Bool
+  let onConfirm: () -> Void
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if isInteractive {
+      content.hoverSelectable(
+        .stepCard,
+        shape: .rounded(RayBanHUDLayoutTokens.cardRadius),
+        onConfirm: onConfirm
+      )
+    } else {
+      content
+    }
   }
 }
 

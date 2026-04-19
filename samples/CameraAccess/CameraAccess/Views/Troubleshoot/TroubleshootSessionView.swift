@@ -9,6 +9,7 @@ struct TroubleshootSessionView: View {
   @ObservedObject var wearablesVM: WearablesViewModel
   @ObservedObject var progressStore: LocalProgressStore
   let serverBaseURL: String
+  let transport: CaptureTransport
   let onExit: () -> Void
 
   @Environment(\.dismiss) private var dismiss
@@ -16,49 +17,50 @@ struct TroubleshootSessionView: View {
 
   @State private var showDismissConfirmation = false
   @State private var activeHandoff: LearnerSessionStartResponse?
+  // Drawer state for the iPhone camera-first layout. Ignored on glasses
+  // transport (which keeps the existing vertical stack).
+  @State private var drawerExpanded = true
 
   init(
     wearables: WearablesInterface,
     wearablesVM: WearablesViewModel,
     progressStore: LocalProgressStore,
     serverBaseURL: String,
+    transport: CaptureTransport,
     onExit: @escaping () -> Void
   ) {
     self.wearables = wearables
     self.wearablesVM = wearablesVM
     self.progressStore = progressStore
     self.serverBaseURL = serverBaseURL
+    self.transport = transport
     self.onExit = onExit
     self._viewModel = StateObject(wrappedValue: DiagnosticSessionViewModel(
       wearables: wearables,
-      serverBaseURL: serverBaseURL
+      serverBaseURL: serverBaseURL,
+      transport: transport
     ))
   }
 
   var body: some View {
-    RetraceScreen {
-      VStack(spacing: 0) {
-        topBar
-
-        activityFeed
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .padding(.horizontal, Spacing.xl)
-          .padding(.top, Spacing.md)
-
-        if let resolution = viewModel.resolution {
-          DiagnosticResolutionPanel(
-            resolution: resolution,
-            isHandoffInFlight: viewModel.handoffInFlight,
-            handoffError: viewModel.handoffError,
-            onStartProcedure: { procedureId in
-              Task { await startHandoff(procedureId: procedureId) }
-            },
-            onRetry: { retryDiagnostic() }
-          )
+    ZStack {
+      if transport == .iPhone {
+        IPhoneCoachingLayout(
+          viewModel: viewModel,
+          drawerExpanded: $drawerExpanded,
+          hud: {
+            // Troubleshoot-flow Ray-Ban HUD surface. Frontend designer
+            // edits TroubleshootRayBanHUD.swift; layout enforces
+            // full-bleed + transparent + hit-test pass-through.
+            TroubleshootRayBanHUD(viewModel: viewModel)
+          }
+        ) {
+          stackedBody
         }
-
-        phaseSection
-        controlsBar
+      } else {
+        RetraceScreen {
+          stackedBody
+        }
       }
     }
     .preferredColorScheme(.dark)
@@ -79,13 +81,16 @@ struct TroubleshootSessionView: View {
       viewModel.endSession()
     }
     .fullScreenCover(item: $activeHandoff) { handoff in
+      // Handoff into a learner coaching session keeps the same transport
+      // the user picked for the diagnostic — picking glasses here was a
+      // deliberate choice, so honor it on the learner side too.
       CoachingSessionView(
         procedure: handoff.procedure,
         wearables: wearables,
         wearablesVM: wearablesVM,
         progressStore: progressStore,
         serverBaseURL: serverBaseURL,
-        transport: .iPhone
+        transport: transport
       )
     }
     .sheet(isPresented: $viewModel.showManualUploadSheet) {
@@ -96,6 +101,36 @@ struct TroubleshootSessionView: View {
         }
       )
       .presentationDetents([.medium, .large])
+    }
+  }
+
+  // MARK: - Stacked Body (shared by glasses transport directly and by the
+  // iPhone drawer)
+
+  @ViewBuilder
+  private var stackedBody: some View {
+    VStack(spacing: 0) {
+      topBar
+
+      activityFeed
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, Spacing.xl)
+        .padding(.top, Spacing.md)
+
+      if let resolution = viewModel.resolution {
+        DiagnosticResolutionPanel(
+          resolution: resolution,
+          isHandoffInFlight: viewModel.handoffInFlight,
+          handoffError: viewModel.handoffError,
+          onStartProcedure: { procedureId in
+            Task { await startHandoff(procedureId: procedureId) }
+          },
+          onRetry: { retryDiagnostic() }
+        )
+      }
+
+      phaseSection
+      controlsBar
     }
   }
 

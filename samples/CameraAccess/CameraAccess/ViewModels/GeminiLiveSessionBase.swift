@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import MWDATCamera
 import MWDATCore
@@ -89,6 +90,14 @@ class GeminiLiveSessionBase: ObservableObject {
   var iPhoneCamera: IPhoneCameraCapture?
   var iPhoneVideoSource: IPhoneCoachingCameraSource?
   var cameraLifecycleTask: Task<Void, Never>?
+
+  /// Preview layer bound to the live iPhone capture session, or nil when
+  /// transport is `.glasses` or the camera hasn't been set up yet. Attaches
+  /// to a `UIView` via `IPhoneCameraPreview`. Hardware-composited — reading
+  /// it introduces no cost to the JPEG → Gemini send path. @Published so
+  /// the iPhone camera-first layout redraws once the capture session comes
+  /// up after permission grants.
+  @Published var iPhonePreviewLayer: AVCaptureVideoPreviewLayer?
   var lastVideoSendAt: Date?
   var isForwardingFrame = false
 
@@ -453,6 +462,7 @@ class GeminiLiveSessionBase: ObservableObject {
       self.iPhoneCamera?.stop()
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
+      self.iPhonePreviewLayer = nil
 
       let camera = IPhoneCameraCapture()
       let granted = await camera.requestPermission()
@@ -486,6 +496,10 @@ class GeminiLiveSessionBase: ObservableObject {
         return
       }
       self.iPhoneCamera = camera
+      // Publish the preview layer so the camera-first iPhone layout can
+      // attach it as soon as the session is running. The layer composites
+      // the same pixel stream the JPEG throttle drains — no extra capture.
+      self.iPhonePreviewLayer = camera.previewLayer
     }
   }
 
@@ -512,6 +526,7 @@ class GeminiLiveSessionBase: ObservableObject {
       self.iPhoneCamera?.stop()
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
+      self.iPhonePreviewLayer = nil
     }
   }
 

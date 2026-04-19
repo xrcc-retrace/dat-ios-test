@@ -24,8 +24,9 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   @Published var handoffInFlight = false
   @Published var handoffError: String?
 
-  /// v1 Troubleshoot uses iPhone transport exclusively. The base supports
-  /// glasses too; future UI can flip this via init injection.
+  /// Transport chosen on the Troubleshoot intro picker. iPhone routes
+  /// through the camera-first drawer layout; glasses keeps the current
+  /// stacked layout.
   private let diagnosticTransport: CaptureTransport
 
   /// Set to true once the first mintSession succeeds so the view can read
@@ -37,7 +38,7 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   init(
     wearables: WearablesInterface,
     serverBaseURL: String,
-    transport: CaptureTransport = .iPhone
+    transport: CaptureTransport
   ) {
     self.diagnosticTransport = transport
     super.init(wearables: wearables, serverBaseURL: serverBaseURL)
@@ -145,6 +146,13 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   override var introSeedText: String? { "Hi, something is broken." }
 
   override var transport: CaptureTransport { diagnosticTransport }
+
+  /// `.coaching` on glasses (allows HFP audio route), `.coachingPhoneOnly`
+  /// on iPhone. Matches CoachingSessionViewModel's rationale — full-duplex
+  /// voice + AEC regardless of transport; only the route differs.
+  override var audioSessionMode: AudioSessionMode {
+    diagnosticTransport == .iPhone ? .coachingPhoneOnly : .coaching
+  }
 
   override func handleToolCallExtras(name: String, args: [String: Any], result: [String: Any]) async {
     switch name {

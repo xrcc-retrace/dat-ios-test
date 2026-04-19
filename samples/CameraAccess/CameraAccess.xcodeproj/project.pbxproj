@@ -108,6 +108,11 @@
 		FA0100000000000000000006 /* GolosText-Black.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FB0100000000000000000006 /* GolosText-Black.ttf */; };
 		FDFE4D7CABB57A912D95CD32 /* ProcedureAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBA24ED7A41BD690DE9F8CBD /* ProcedureAPIService.swift */; };
 		FE5F49669B7A87C7AAA10A0B /* VoicePreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF4216B6006231F97080BF /* VoicePreviewPlayer.swift */; };
+		9ED5507B6DAF993CD2049D46 /* BottomDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9335DB8EDEFA17CB49E9ABDD /* BottomDrawer.swift */; };
+		30BADC1B68D5C32FCEAE57DA /* IPhoneCoachingLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A67325F7AF6CB6EC53E2F6D /* IPhoneCoachingLayout.swift */; };
+		7F9BF76287EFC794F249AF64 /* TroubleshootIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A537C9E3DE698E50A68E87 /* TroubleshootIntroView.swift */; };
+		0BBE831BB01C652F361E1F63 /* CoachingRayBanHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCA9A6110BAC8D57834777EE /* CoachingRayBanHUD.swift */; };
+		73DCDB4E375B3BDCCFDE37E4 /* TroubleshootRayBanHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3985C9A5A14C44898E8F88AB /* TroubleshootRayBanHUD.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -242,6 +247,11 @@
 		FB0946179E2E3FE4233AE018 /* UploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UploadService.swift; path = CameraAccess/Utils/UploadService.swift; sourceTree = SOURCE_ROOT; };
 		FD28474AAC05F5935FA6950B /* LearnerTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LearnerTabView.swift; path = CameraAccess/Views/Learner/LearnerTabView.swift; sourceTree = SOURCE_ROOT; };
 		FF6245968116F15F41790113 /* VoiceSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VoiceSelectionView.swift; path = CameraAccess/Views/Learner/Profile/VoiceSelectionView.swift; sourceTree = SOURCE_ROOT; };
+		9335DB8EDEFA17CB49E9ABDD /* BottomDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BottomDrawer.swift; path = CameraAccess/Views/Components/BottomDrawer.swift; sourceTree = SOURCE_ROOT; };
+		8A67325F7AF6CB6EC53E2F6D /* IPhoneCoachingLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IPhoneCoachingLayout.swift; path = CameraAccess/Views/Learner/Coaching/IPhoneCoachingLayout.swift; sourceTree = SOURCE_ROOT; };
+		27A537C9E3DE698E50A68E87 /* TroubleshootIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TroubleshootIntroView.swift; path = CameraAccess/Views/Troubleshoot/TroubleshootIntroView.swift; sourceTree = SOURCE_ROOT; };
+		DCA9A6110BAC8D57834777EE /* CoachingRayBanHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CoachingRayBanHUD.swift; path = CameraAccess/Views/Learner/Coaching/CoachingRayBanHUD.swift; sourceTree = SOURCE_ROOT; };
+		3985C9A5A14C44898E8F88AB /* TroubleshootRayBanHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TroubleshootRayBanHUD.swift; path = CameraAccess/Views/Troubleshoot/TroubleshootRayBanHUD.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -330,6 +340,11 @@
 				C63E4DB6B45A9AAD0ECFEE8F /* DiagnosticPhaseBar.swift */,
 				A61E4D008FCEA947E55496F5 /* DiagnosticResolutionPanel.swift */,
 				AB606A2D9721475EF2447206 /* ManualUploadSheet.swift */,
+				9335DB8EDEFA17CB49E9ABDD /* BottomDrawer.swift */,
+				8A67325F7AF6CB6EC53E2F6D /* IPhoneCoachingLayout.swift */,
+				27A537C9E3DE698E50A68E87 /* TroubleshootIntroView.swift */,
+				DCA9A6110BAC8D57834777EE /* CoachingRayBanHUD.swift */,
+				3985C9A5A14C44898E8F88AB /* TroubleshootRayBanHUD.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -705,6 +720,11 @@
 				5DD6406BB4A46418A2193B60 /* DiagnosticPhaseBar.swift in Sources */,
 				441F4C20B372F729872CEAF0 /* DiagnosticResolutionPanel.swift in Sources */,
 				1CA0ACB531BDD10B287CE0C3 /* ManualUploadSheet.swift in Sources */,
+				9ED5507B6DAF993CD2049D46 /* BottomDrawer.swift in Sources */,
+				30BADC1B68D5C32FCEAE57DA /* IPhoneCoachingLayout.swift in Sources */,
+				7F9BF76287EFC794F249AF64 /* TroubleshootIntroView.swift in Sources */,
+				0BBE831BB01C652F361E1F63 /* CoachingRayBanHUD.swift in Sources */,
+				73DCDB4E375B3BDCCFDE37E4 /* TroubleshootRayBanHUD.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

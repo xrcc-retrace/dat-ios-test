@@ -40,10 +40,12 @@ struct ModeSelectionView: View {
               onExit: { selectedMode = nil }
             )
           case .troubleshoot:
-            TroubleshootSessionView(
+            // The intro picker chooses transport (glasses vs iPhone) before
+            // the actual diagnostic session opens — same pattern the
+            // coaching flow uses via LearnerProcedureDetailView.
+            TroubleshootIntroView(
               wearables: wearables,
               wearablesVM: wearablesVM,
-              progressStore: LocalProgressStore(),
               serverBaseURL: UserDefaults.standard.string(forKey: "serverBaseURL")
                 ?? "http://192.168.1.100:8000",
               onExit: { selectedMode = nil }

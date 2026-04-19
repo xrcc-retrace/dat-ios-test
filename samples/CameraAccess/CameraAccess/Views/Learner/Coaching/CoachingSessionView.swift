@@ -15,6 +15,9 @@ struct CoachingSessionView: View {
   @StateObject private var viewModel: CoachingSessionViewModel
 
   @State private var showDismissConfirmation = false
+  // Drawer state for the iPhone camera-first layout. Ignored on glasses
+  // transport (which keeps the existing vertical stack).
+  @State private var drawerExpanded = true
 
   init(
     procedure: ProcedureResponse,
@@ -41,32 +44,32 @@ struct CoachingSessionView: View {
   }
 
   var body: some View {
-    RetraceScreen {
-
-      VStack(spacing: 0) {
-        topBar
-
-        if viewModel.isCompleted {
-          Spacer()
-          completionPanel
-          Spacer()
-        } else {
-          activityFeed
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, Spacing.xl)
-            .padding(.top, Spacing.md)
-
-          if isGeminiError {
-            reconnectBanner
+    ZStack {
+      // Transport switch: iPhone gets the camera-first layout with a
+      // pull-up drawer; glasses keeps today's stacked layout because
+      // there's no iPhone camera feed to use as a base.
+      if transport == .iPhone {
+        IPhoneCoachingLayout(
+          viewModel: viewModel,
+          drawerExpanded: $drawerExpanded,
+          hud: {
+            // Coaching-flow Ray-Ban HUD surface. Frontend designer edits
+            // CoachingRayBanHUD.swift; layout enforces full-bleed +
+            // transparent + hit-test pass-through.
+            CoachingRayBanHUD(viewModel: viewModel)
           }
-
-          stepInstructionPanel
-          stepProgressSection
-          controlsBar
+        ) {
+          stackedBody
+        }
+      } else {
+        RetraceScreen {
+          stackedBody
         }
       }
 
-      // PiP reference overlay
+      // PiP reference clip floats over both transports. Z-ordered above
+      // everything (including the drawer) so the reference video stays
+      // accessible while the learner works.
       if viewModel.showPiP, let clipURL = currentStepClipURL {
         PiPReferenceView(url: clipURL)
       }
@@ -86,6 +89,35 @@ struct CoachingSessionView: View {
     }
     .onDisappear {
       viewModel.endSession(progressStore: progressStore)
+    }
+  }
+
+  // MARK: - Stacked Body (shared by glasses transport directly and by the
+  // iPhone drawer)
+
+  @ViewBuilder
+  private var stackedBody: some View {
+    VStack(spacing: 0) {
+      topBar
+
+      if viewModel.isCompleted {
+        Spacer()
+        completionPanel
+        Spacer()
+      } else {
+        activityFeed
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .padding(.horizontal, Spacing.xl)
+          .padding(.top, Spacing.md)
+
+        if isGeminiError {
+          reconnectBanner
+        }
+
+        stepInstructionPanel
+        stepProgressSection
+        controlsBar
+      }
     }
   }
 

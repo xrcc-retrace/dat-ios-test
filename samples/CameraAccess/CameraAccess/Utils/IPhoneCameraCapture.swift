@@ -125,17 +125,43 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
       session.sessionPreset = .hd1280x720
     }
 
-    // Back camera (wide-angle). Back is right for both expert demonstration
-    // and learner task performance with the phone propped up.
-    guard
-      let camera = AVCaptureDevice.default(
-        .builtInWideAngleCamera,
-        for: .video,
-        position: .back
-      )
-    else {
+    // Back camera — pick the widest lens this device offers so the preview
+    // simulates the Ray-Ban Meta wearable POV (~98° FOV). Priority order:
+    //   1. .builtInUltraWideCamera (standalone ultra-wide — available on every
+    //                               iPhone that has an ultra-wide module, both
+    //                               Pro and non-Pro 11+. Preferred because it
+    //                               addresses the lens directly, no zoom
+    //                               engagement dance.)
+    //   2. .builtInDualWideCamera  (virtual wide+ultra-wide — defensive
+    //                               fallback for the rare non-Pro device where
+    //                               standalone ultra-wide isn't exposed. Needs
+    //                               min-zoom to engage the ultra-wide lens.)
+    //   3. .builtInWideAngleCamera (iPhone Air / SE / pre-11 — narrower ~70°
+    //                               view, always works. Graceful fallback.)
+    //
+    // The zoom engagement below is wrapped in try/catch so a failed
+    // lockForConfiguration never blocks the session from running.
+    let lensPreference: [AVCaptureDevice.DeviceType] = [
+      .builtInUltraWideCamera,
+      .builtInDualWideCamera,
+      .builtInWideAngleCamera,
+    ]
+    let discovery = AVCaptureDevice.DiscoverySession(
+      deviceTypes: lensPreference,
+      mediaType: .video,
+      position: .back
+    )
+    var selected: AVCaptureDevice?
+    for preferred in lensPreference {
+      if let match = discovery.devices.first(where: { $0.deviceType == preferred }) {
+        selected = match
+        break
+      }
+    }
+    guard let camera = selected else {
       throw CaptureError.noCameraAvailable
     }
+    print("[IPhoneCamera] Selected lens: \(camera.deviceType.rawValue) — \(camera.localizedName)")
 
     let input: AVCaptureDeviceInput
     do {
@@ -167,6 +193,31 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     if let previewConnection = previewLayer.connection,
        previewConnection.isVideoRotationAngleSupported(90) {
       previewConnection.videoRotationAngle = 90
+    }
+
+    // Standalone .builtInUltraWideCamera is already addressing the ultra-wide
+    // lens directly — no zoom change needed. For .builtInDualWideCamera
+    // (defensive fallback), setting videoZoomFactor to the device's minimum
+    // physically engages the ultra-wide lens (same mechanism as the "0.5x"
+    // toggle in the system Camera app). The wide-angle fallback doesn't
+    // support sub-1.0x zoom.
+    //
+    // Wrapped in try/catch so a lockForConfiguration failure (extremely rare
+    // during startup, but possible if another process holds the camera) is
+    // logged and the session continues at default zoom rather than crashing.
+    switch camera.deviceType {
+    case .builtInDualWideCamera:
+      do {
+        try camera.lockForConfiguration()
+        let minZoom = camera.minAvailableVideoZoomFactor
+        camera.videoZoomFactor = minZoom
+        camera.unlockForConfiguration()
+        print("[IPhoneCamera] Engaged ultra-wide via zoom=\(minZoom) (range \(camera.minAvailableVideoZoomFactor)…\(camera.maxAvailableVideoZoomFactor))")
+      } catch {
+        print("[IPhoneCamera] lockForConfiguration failed (\(error)) — keeping default zoom (wide lens)")
+      }
+    default:
+      print("[IPhoneCamera] Using \(camera.deviceType.rawValue) at default zoom — no zoom engagement needed")
     }
 
     isConfigured = true

@@ -53,9 +53,9 @@ struct RayBanHUDStepCard: View {
       .padding(RayBanHUDLayoutTokens.contentPadding)
       .frame(minHeight: RayBanHUDLayoutTokens.stepCardMinHeight, alignment: .center)
       .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-      .offset(x: horizontalOffset)
       .modifier(StepCardHoverModifier(isInteractive: isContentMode, onConfirm: onConfirm))
       .contentShape(RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous))
+      .offset(x: horizontalOffset)
       .simultaneousGesture(
         DragGesture(minimumDistance: RayBanHUDLayoutTokens.stepSwipeMinimumDistance)
           .onChanged { value in

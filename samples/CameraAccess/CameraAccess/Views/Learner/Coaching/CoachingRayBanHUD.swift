@@ -76,14 +76,25 @@ struct CoachingRayBanHUD: View {
   }
 
   private var primaryContent: some View {
-    VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.stackSpacing) {
+    VStack(alignment: .trailing, spacing: 0) {
+      Spacer(minLength: 0)
+      bottomContentCluster
+    }
+  }
+
+  private var bottomContentCluster: some View {
+    VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.exitToPanelSpacing) {
       HStack {
         Spacer(minLength: 0)
         exitPill
       }
 
-      Spacer(minLength: 0)
+      activePanelStack
+    }
+  }
 
+  private var activePanelStack: some View {
+    VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.stackSpacing) {
       if viewModel.showPiP {
         detailPanel
       }
@@ -324,6 +335,7 @@ enum RayBanHUDLayoutTokens {
   static let viewportInset: CGFloat = 24
   static let contentPadding: CGFloat = 24
   static let stackSpacing: CGFloat = 16
+  static let exitToPanelSpacing: CGFloat = 8
   static let cardRadius: CGFloat = 28
   static let iconFrame: CGFloat = 40
   static let completionHeight: CGFloat = 165

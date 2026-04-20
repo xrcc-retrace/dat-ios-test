@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 class ProcedureAPIService: ObservableObject {
   private var serverBaseURL: String {
-    UserDefaults.standard.string(forKey: "serverBaseURL") ?? "http://192.168.1.100:8000"
+    ServerEndpoint.shared.resolvedBaseURL
   }
 
   private let decoder: JSONDecoder = {

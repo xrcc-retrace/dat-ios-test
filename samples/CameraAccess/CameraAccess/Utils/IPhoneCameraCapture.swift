@@ -43,6 +43,16 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     set { frameDelegate.handler = newValue }
   }
 
+  /// Called on a *separate* capture delegate queue (serial, off-main) for every
+  /// decoded frame on the hand-tracking output. Runs at the full capture rate
+  /// (~30 fps, BGRA) so MediaPipe can consume without re-converting YUV. The
+  /// Gemini coaching path keeps its own throttled YUV output on `videoOutput`.
+  /// Only wired when `HandTrackingConfig.isAvailable`.
+  var onHandSampleBuffer: (@Sendable (CMSampleBuffer) -> Void)? {
+    get { handFrameDelegate.handler }
+    set { handFrameDelegate.handler = newValue }
+  }
+
   private let session = AVCaptureSession()
   private let videoOutput = AVCaptureVideoDataOutput()
   private let delegateQueue = DispatchQueue(
@@ -50,6 +60,12 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     qos: .userInitiated
   )
   private let frameDelegate = FrameDelegate()
+  private let handVideoOutput = AVCaptureVideoDataOutput()
+  private let handDelegateQueue = DispatchQueue(
+    label: "com.retrace.iphone.handtracking",
+    qos: .userInitiated
+  )
+  private let handFrameDelegate = FrameDelegate()
   private var isConfigured = false
 
   override init() {
@@ -206,6 +222,30 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     if let connection = videoOutput.connection(with: .video) {
       if connection.isVideoRotationAngleSupported(90) {
         connection.videoRotationAngle = 90
+      }
+    }
+
+    // Second output — hand tracking. Lives on its own serial queue + delegate
+    // so MediaPipe inference can never back-pressure the Gemini coaching
+    // stream. BGRA pixel format (vs. YUV on the primary output) because
+    // MediaPipe's `MPImage(pixelBuffer:)` ingests BGRA cheaper than re-
+    // converting the biplanar YUV buffer internally. Attached only when the
+    // model file is bundled so non-hand-tracking builds (previews / future
+    // trimmed targets) don't pay the per-frame buffer-allocation cost.
+    if HandTrackingConfig.isAvailable {
+      handVideoOutput.setSampleBufferDelegate(handFrameDelegate, queue: handDelegateQueue)
+      handVideoOutput.alwaysDiscardsLateVideoFrames = true
+      handVideoOutput.videoSettings = [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+      ]
+      if session.canAddOutput(handVideoOutput) {
+        session.addOutput(handVideoOutput)
+        if let handConnection = handVideoOutput.connection(with: .video),
+           handConnection.isVideoRotationAngleSupported(90) {
+          handConnection.videoRotationAngle = 90
+        }
+      } else {
+        print("[IPhoneCamera] Could not add hand-tracking output — continuing without hand tracking")
       }
     }
 

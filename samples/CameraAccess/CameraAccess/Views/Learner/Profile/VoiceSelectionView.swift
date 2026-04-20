@@ -6,7 +6,7 @@ struct VoiceSelectionView: View {
   @State private var voices: [VoiceOption] = VoiceSelectionView.fallbackVoices
 
   private var serverBaseURL: String {
-    UserDefaults.standard.string(forKey: "serverBaseURL") ?? "http://192.168.1.100:8000"
+    ServerEndpoint.shared.resolvedBaseURL
   }
 
   var body: some View {

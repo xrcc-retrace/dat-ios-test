@@ -46,8 +46,7 @@ struct ModeSelectionView: View {
             TroubleshootIntroView(
               wearables: wearables,
               wearablesVM: wearablesVM,
-              serverBaseURL: UserDefaults.standard.string(forKey: "serverBaseURL")
-                ?? "http://192.168.1.100:8000",
+              serverBaseURL: ServerEndpoint.shared.resolvedBaseURL,
               onExit: { selectedMode = nil }
             )
           }

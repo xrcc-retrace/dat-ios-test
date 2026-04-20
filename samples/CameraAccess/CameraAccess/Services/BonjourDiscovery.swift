@@ -5,36 +5,13 @@ import Network
 final class BonjourDiscovery: ObservableObject {
   static let shared = BonjourDiscovery()
 
-  @Published var discoveredURL: String? {
-    didSet {
-      guard discoveredURL != oldValue else { return }
-      if discoveredURL != nil {
-        startHealthPolling()
-      } else {
-        stopHealthPolling()
-      }
-    }
-  }
+  @Published var discoveredURL: String?
   @Published var isSearching = false
-  /// nil = no URL yet / not pinged; true = last /health returned 200;
-  /// false = /health failed or timed out. Use in combination with
-  /// `discoveredURL` + `isSearching` to derive the UI status.
-  @Published var isReachable: Bool?
 
   private var browser: NWBrowser?
-  private var healthTask: Task<Void, Never>?
   private let queue = DispatchQueue(label: "com.retrace.bonjour-discovery")
 
-  private static let serverURLKey = "serverBaseURL"
-  private static let userOverrideKey = "userOverrodeServerURL"
-
-  private init() {
-    // The manual-override flag is vestigial — no UI writes it, but older
-    // installs may have left a stale `true` in UserDefaults that silently
-    // blocks Bonjour from refreshing the cached URL. Clear it on launch so
-    // discovery can always heal a stale IP.
-    UserDefaults.standard.removeObject(forKey: Self.userOverrideKey)
-  }
+  private init() {}
 
   func startBrowsing() {
     guard browser == nil else { return }
@@ -86,35 +63,6 @@ final class BonjourDiscovery: ObservableObject {
     startBrowsing()
   }
 
-  // MARK: - Health polling
-
-  private func startHealthPolling() {
-    healthTask?.cancel()
-    healthTask = Task { @MainActor [weak self] in
-      while !Task.isCancelled {
-        guard let self, let base = self.discoveredURL,
-          let url = URL(string: "\(base)/health")
-        else { return }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 2.0
-        do {
-          let (_, response) = try await URLSession.shared.data(for: req)
-          let ok = (response as? HTTPURLResponse)?.statusCode == 200
-          self.isReachable = ok
-        } catch {
-          self.isReachable = false
-        }
-        try? await Task.sleep(nanoseconds: 5_000_000_000)
-      }
-    }
-  }
-
-  private func stopHealthPolling() {
-    healthTask?.cancel()
-    healthTask = nil
-    isReachable = nil
-  }
-
   private func handleResults(_ results: Set<NWBrowser.Result>) {
     guard let result = results.first else {
       discoveredURL = nil
@@ -130,15 +78,11 @@ final class BonjourDiscovery: ObservableObject {
       let dict = txtRecordToDictionary(txtRecord)
       if let port = dict["port"] {
         if let hostname = dict["hostname"], !hostname.isEmpty {
-          let url = "http://\(hostname):\(port)"
-          discoveredURL = url
-          applyIfNotOverridden(url)
+          discoveredURL = "http://\(hostname):\(port)"
           return
         }
         if let host = dict["host"] {
-          let url = "http://\(host):\(port)"
-          discoveredURL = url
-          applyIfNotOverridden(url)
+          discoveredURL = "http://\(host):\(port)"
           return
         }
       }
@@ -161,7 +105,6 @@ final class BonjourDiscovery: ObservableObject {
           let url = "http://\(hostStr):\(port)"
           Task { @MainActor in
             self?.discoveredURL = url
-            self?.applyIfNotOverridden(url)
           }
         }
         connection.cancel()
@@ -170,22 +113,7 @@ final class BonjourDiscovery: ObservableObject {
     connection.start(queue: queue)
   }
 
-  private func applyIfNotOverridden(_ url: String) {
-    UserDefaults.standard.set(url, forKey: Self.serverURLKey)
-  }
-
   private func txtRecordToDictionary(_ txtRecord: NWTXTRecord) -> [String: String] {
-    // NWTXTRecord.dictionary returns [String: String]
     return txtRecord.dictionary
-  }
-
-  /// Mark that the user manually set the server URL
-  static func markUserOverride() {
-    UserDefaults.standard.set(true, forKey: userOverrideKey)
-  }
-
-  /// Clear the manual override so auto-discovery takes effect again
-  static func clearUserOverride() {
-    UserDefaults.standard.set(false, forKey: userOverrideKey)
   }
 }

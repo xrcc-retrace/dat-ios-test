@@ -8,21 +8,18 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
   @Published var uploadResult: ProcedureResponse?
   @Published var uploadError: String?
 
-  private static let serverURLKey = "serverBaseURL"
-  private static let defaultServerURL = "http://192.168.1.100:8000"
-
   var serverBaseURL: String {
-    get {
-      UserDefaults.standard.string(forKey: Self.serverURLKey) ?? Self.defaultServerURL
-    }
-    set {
-      UserDefaults.standard.set(newValue, forKey: Self.serverURLKey)
-    }
+    ServerEndpoint.shared.resolvedBaseURL
   }
 
   private lazy var session: URLSession = {
     let config = URLSessionConfiguration.default
-    config.timeoutIntervalForRequest = 60
+    // Cloud uploads of 3-minute expert videos (~150-250 MB) over typical
+    // home upload (10-30 Mbps) take 40-160 s — well past the old 60 s cap.
+    // Bump both: per-request controls idle / response-wait time, resource
+    // controls the total upload window.
+    config.timeoutIntervalForRequest = 600
+    config.timeoutIntervalForResource = 3600
     return URLSession(configuration: config, delegate: self, delegateQueue: .main)
   }()
 
@@ -44,7 +41,7 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-    request.timeoutInterval = 60
+    request.timeoutInterval = 600
 
     // Build multipart body
     var body = Data()

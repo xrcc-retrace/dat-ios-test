@@ -38,6 +38,11 @@ struct CoachingRayBanHUD: View {
           )
           .padding(.trailing, viewport.trailingInset)
           .padding(.bottom, viewport.bottomInset)
+
+        // Single shared gesture-debug stack — composes the landmark
+        // overlay + event log with identical placement across Coaching,
+        // Expert, and Troubleshoot HUDs. See HandGestureDebugStack.swift.
+        HandGestureDebugStack(provider: viewModel)
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
     }

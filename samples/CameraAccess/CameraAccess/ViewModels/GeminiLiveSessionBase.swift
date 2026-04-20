@@ -91,6 +91,78 @@ class GeminiLiveSessionBase: ObservableObject {
   var iPhoneVideoSource: IPhoneCoachingCameraSource?
   var cameraLifecycleTask: Task<Void, Never>?
 
+  // Hand tracking: owns the MediaPipe service + the active gesture
+  // recognizer. Reset symmetrically with the camera (created in
+  // setupIPhoneCameraStream, nilled / reset in stopCameraStream).
+  var handLandmarkerService: HandLandmarkerService?
+
+  // Active recognizer (Milestone 2B) — pinch-drag-release in image space.
+  var pinchDragRecognizer = PinchDragRecognizer()
+
+  // Dormant — Milestone 2A, Meta XR thumb-on-index micro gestures.
+  // Kept compilable and on disk but never wired into the active session
+  // path. See HandTracking/MicroGestureRecognizer.swift if we need to
+  // resurrect it. Intentionally left instantiated so any remaining
+  // accessors don't crash while the UI migrates fully to pinchDrag.
+  // var microGestureRecognizer = MicroGestureRecognizer()
+  // @Published var recentMicroGestures: [MicroGestureLogEntry] = []
+
+  /// Published list of recent pinch-drag emissions, oldest → newest.
+  /// Drives the Ray-Ban HUD debug log.
+  @Published var recentPinchDragEvents: [PinchDragLogEntry] = []
+
+  /// Hard cap on retained log entries. Oldest are dropped when exceeded.
+  let pinchDragLogMaxHistory: Int = 50
+
+  /// Wall-clock timestamp of the most recent `[Orient]` console log.
+  /// Used to throttle orientation logging to ~1 line / second. When we
+  /// add the orientation gate to the recognizer this field can stay —
+  /// it's purely for log throttling, not detection logic.
+  var lastOrientationLogAt: Date?
+
+  /// Latest landmark frame delivered by MediaPipe. Updated every ~15 fps
+  /// while the camera is running. Drives the on-HUD debug overlay that
+  /// visualizes the 3 landmarks the recognizer operates on. Nil while the
+  /// camera is off or no hand has been detected yet.
+  @Published var latestHandFrame: HandLandmarkFrame?
+
+  /// Pinch thresholds in normalized image units — surfaced for the debug
+  /// overlay to render the same gate the recognizer applies.
+  var indexPinchContactThreshold: Float {
+    PinchDragRecognizer.Config().indexContactThreshold
+  }
+  var indexPinchReleaseThreshold: Float {
+    PinchDragRecognizer.Config().indexReleaseThreshold
+  }
+  var middlePinchContactThreshold: Float {
+    PinchDragRecognizer.Config().middleContactThreshold
+  }
+  var middlePinchReleaseThreshold: Float {
+    PinchDragRecognizer.Config().middleReleaseThreshold
+  }
+
+  /// Orientation start-gate bounds, surfaced so the debug overlay renders
+  /// the same check the recognizer applies. Keep in sync if the recognizer's
+  /// defaults change.
+  var gatePalmFacingZMin: Float {
+    PinchDragRecognizer.Config().gatePalmFacingZMin
+  }
+  var gatePalmFacingZMax: Float {
+    PinchDragRecognizer.Config().gatePalmFacingZMax
+  }
+  var gateHandSizeMin: Float {
+    PinchDragRecognizer.Config().gateHandSizeMin
+  }
+
+  /// Thumb position at the most recent pinch start. Read-through from the
+  /// active recognizer. Nil until first contact; persists across frames.
+  var lastContactStartPosition: CGPoint? { pinchDragRecognizer.lastContactStartPosition }
+
+  /// Thumb position at the most recent release / abort. Read-through from
+  /// the active recognizer. Nil until first release; persists until next
+  /// contact begins.
+  var lastContactReleasePosition: CGPoint? { pinchDragRecognizer.lastContactReleasePosition }
+
   /// Preview layer bound to the live iPhone capture session, or nil when
   /// transport is `.glasses` or the camera hasn't been set up yet. Attaches
   /// to a `UIView` via `IPhoneCameraPreview`. Hardware-composited — reading
@@ -471,10 +543,13 @@ class GeminiLiveSessionBase: ObservableObject {
       guard let self = self else { return }
 
       self.iPhoneCamera?.onSampleBuffer = nil
+      self.iPhoneCamera?.onHandSampleBuffer = nil
       self.iPhoneCamera?.stop()
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
       self.iPhonePreviewLayer = nil
+      self.handLandmarkerService?.stop()
+      self.handLandmarkerService = nil
 
       let camera = IPhoneCameraCapture()
       let granted = await camera.requestPermission()
@@ -499,6 +574,63 @@ class GeminiLiveSessionBase: ObservableObject {
 
       camera.onSampleBuffer = { [weak source] sampleBuffer in
         source?.submit(sampleBuffer)
+      }
+
+      // MILESTONE 2 wiring — feed the hand-tracking output into MediaPipe,
+      // ingest each frame into the Meta XR micro-gesture recognizer, and
+      // log any emitted event. No HUD binding yet (deferred to the next
+      // milestone once reliability is validated on-device).
+      if HandTrackingConfig.isAvailable {
+        // Fresh recognizer per camera session so no stale state carries
+        // across restart. Clear the debug log too so it starts empty each
+        // time the user enters a coaching session.
+        self.pinchDragRecognizer = PinchDragRecognizer()
+        self.recentPinchDragEvents.removeAll()
+        let handService = HandLandmarkerService()
+        do {
+          try handService.start()
+          handService.onResult = { [weak self] frame in
+            Task { @MainActor in
+              guard let self = self else { return }
+              // Publish every frame so the debug overlay can render the
+              // landmarks live.
+              self.latestHandFrame = frame
+
+              // Orientation log — throttled to ~1 line / sec so the
+              // console stays readable. Gives the user ground truth
+              // numbers to paste when tuning the start-gate range.
+              if let orient = frame.orientation {
+                let now = Date()
+                if self.lastOrientationLogAt == nil ||
+                   now.timeIntervalSince(self.lastOrientationLogAt!) >= 1.0 {
+                  self.lastOrientationLogAt = now
+                  print(String(
+                    format: "[Orient] palmAngle=%+7.1f°  palmFacingZ=%+.3f  handSize=%.3f  handedness=%@",
+                    orient.palmAngleDegrees,
+                    orient.palmFacingZ,
+                    orient.handSize,
+                    frame.handedness ?? "?"
+                  ))
+                }
+              }
+
+              guard let event = self.pinchDragRecognizer.ingest(frame) else { return }
+              print("[PinchDrag] \(event) ts=\(frame.timestampMs)")
+              self.recentPinchDragEvents.append(PinchDragLogEntry(event: event))
+              let overflow = self.recentPinchDragEvents.count - self.pinchDragLogMaxHistory
+              if overflow > 0 {
+                self.recentPinchDragEvents.removeFirst(overflow)
+              }
+            }
+          }
+          self.handLandmarkerService = handService
+          camera.onHandSampleBuffer = { [weak handService] sampleBuffer in
+            handService?.submit(sampleBuffer: sampleBuffer)
+          }
+          print("[GeminiLive] Hand tracking started — pinch-drag recognizer armed")
+        } catch {
+          print("[GeminiLive] Hand tracking disabled: \(error.localizedDescription)")
+        }
       }
 
       do {
@@ -541,10 +673,13 @@ class GeminiLiveSessionBase: ObservableObject {
       self.deviceSession = nil
 
       self.iPhoneCamera?.onSampleBuffer = nil
+      self.iPhoneCamera?.onHandSampleBuffer = nil
       self.iPhoneCamera?.stop()
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
       self.iPhonePreviewLayer = nil
+      self.handLandmarkerService?.stop()
+      self.handLandmarkerService = nil
     }
   }
 
@@ -854,3 +989,9 @@ class GeminiLiveSessionBase: ObservableObject {
     isResuming = false
   }
 }
+
+// Marker conformance — every property required by `HandGestureDebugProvider`
+// is already declared on the base class. Both `CoachingSessionViewModel`
+// and `DiagnosticSessionViewModel` inherit the conformance automatically,
+// so `HandGestureDebugStack` drives off either without special-casing.
+extension GeminiLiveSessionBase: HandGestureDebugProvider {}

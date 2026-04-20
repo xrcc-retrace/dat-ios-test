@@ -24,6 +24,10 @@ class AudioSessionManager: ObservableObject {
   @Published var isCapturing = false
   @Published var isBluetoothConnected = false
   @Published var isAISpeaking = false
+  /// Peak sample amplitude from the most recent mic buffer, in `0...1`.
+  /// Fed to the Expert HUD's audio meter. Cheap to compute (one pass over
+  /// the buffer in `recordCapturedBuffer`); the HUD smooths it further.
+  @Published var lastBufferPeak: Float = 0
 
   let mode: AudioSessionMode
 
@@ -68,6 +72,24 @@ class AudioSessionManager: ObservableObject {
 
   /// Called on the audio capture queue with each PCM buffer.
   var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
+
+  /// Optional second consumer fired AFTER `onAudioBuffer`. Used by the
+  /// Expert path so the writer (primary) can never be starved by a slow
+  /// secondary consumer (e.g. `SpeechTranscriber`). Install via
+  /// `installSecondaryAudioConsumer`.
+  var onAudioBufferSecondary: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
+
+  /// Install a secondary audio consumer (see `onAudioBufferSecondary`).
+  func installSecondaryAudioConsumer(
+    _ consumer: @escaping (AVAudioPCMBuffer, AVAudioTime) -> Void
+  ) {
+    onAudioBufferSecondary = consumer
+  }
+
+  /// Remove the secondary audio consumer. Safe to call when none is installed.
+  func removeSecondaryAudioConsumer() {
+    onAudioBufferSecondary = nil
+  }
 
   /// The actual hardware sample rate (read after configureAudioSession).
   var hardwareSampleRate: Double {
@@ -370,7 +392,10 @@ class AudioSessionManager: ObservableObject {
     inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, time in
       guard let self = self else { return }
       self.recordCapturedBuffer(buffer)
+      // Primary (writer) first — it must never be starved by a slow secondary.
       self.onAudioBuffer?(buffer, time)
+      // Secondary (e.g. SpeechTranscriber on the Expert path). Optional.
+      self.onAudioBufferSecondary?(buffer, time)
     }
   }
 
@@ -388,6 +413,8 @@ class AudioSessionManager: ObservableObject {
     isAISpeaking = false
     scheduledBufferCount = 0
     onAudioBuffer = nil  // drop any capture handler so trailing taps can't fire
+    onAudioBufferSecondary = nil
+    lastBufferPeak = 0
     stopStatsTimer()
     audioConverter = nil
     converterInputFormat = nil
@@ -425,23 +452,49 @@ class AudioSessionManager: ObservableObject {
   /// Extract primitives here so we don't capture the non-Sendable
   /// `AVAudioPCMBuffer` into the main-actor hop closure.
   nonisolated private func recordCapturedBuffer(_ buffer: AVAudioPCMBuffer) {
-    let frames = buffer.frameLength
-    let rate = buffer.format.sampleRate
-    let channels = buffer.format.channelCount
-    let commonFormat: String
-    switch buffer.format.commonFormat {
-    case .pcmFormatInt16: commonFormat = "Int16"
-    case .pcmFormatFloat32: commonFormat = "Float32"
-    case .pcmFormatInt32: commonFormat = "Int32"
-    case .pcmFormatFloat64: commonFormat = "Float64"
-    default: commonFormat = "other"
-    }
+    let peak = Self.peakAmplitude(of: buffer)
     Task { @MainActor [weak self] in
       guard let self = self else { return }
       self.lastBufferReceivedAt = Date()
       self.captureBuffersSinceLastFlush += 1
       self.silentMicWarned = false  // buffers are flowing; re-arm watchdog
+      self.lastBufferPeak = peak
     }
+  }
+
+  /// Max absolute sample value across the buffer, normalized to 0...1.
+  /// Handles the common Float32 and Int16 cases; returns 0 for unsupported
+  /// formats so the UI meter just stays dark instead of misreporting.
+  nonisolated private static func peakAmplitude(of buffer: AVAudioPCMBuffer) -> Float {
+    let frameLength = Int(buffer.frameLength)
+    guard frameLength > 0 else { return 0 }
+    let channelCount = Int(buffer.format.channelCount)
+
+    if let floatPtr = buffer.floatChannelData {
+      var peak: Float = 0
+      for channel in 0..<channelCount {
+        let samples = floatPtr[channel]
+        for i in 0..<frameLength {
+          let mag = abs(samples[i])
+          if mag > peak { peak = mag }
+        }
+      }
+      return min(1.0, peak)
+    }
+
+    if let int16Ptr = buffer.int16ChannelData {
+      var peak: Int32 = 0
+      for channel in 0..<channelCount {
+        let samples = int16Ptr[channel]
+        for i in 0..<frameLength {
+          let mag = Int32(samples[i].magnitude)
+          if mag > peak { peak = mag }
+        }
+      }
+      return min(1.0, Float(peak) / Float(Int16.max))
+    }
+
+    return 0
   }
 
   private func startStatsTimer() {

@@ -4,6 +4,12 @@ import SwiftUI
 /// iPhone-native expert-recording screen. Mirrors `StreamSessionView` +
 /// `StreamView` but uses an `AVCaptureSession` preview layer instead of the
 /// DAT SDK frame publisher.
+///
+/// Layering (via `ExpertRecordingLayout`):
+///   [0] black fallback
+///   [1] `IPhoneCameraPreview`
+///   [2] `ExpertRayBanHUD` — tip card, recording chip, stop pill, transcript
+///   [3] chrome — close button (top-left), start-recording CTA before recording
 struct IPhoneRecordingView: View {
   let onAcknowledgeProcedure: () -> Void
   @Environment(\.dismiss) private var dismiss
@@ -20,53 +26,18 @@ struct IPhoneRecordingView: View {
   }
 
   var body: some View {
-    RetraceScreen {
-
+    ExpertRecordingLayout {
       // Live camera preview (handled by AVCaptureVideoPreviewLayer — hardware
       // accelerated, no per-frame UIImage work needed).
       IPhoneCameraPreview(previewLayer: viewModel.previewLayer)
-        .edgesIgnoringSafeArea(.all)
-
-      if !viewModel.isPreviewLive {
-        ProgressView()
-          .scaleEffect(1.5)
-          .tint(.textPrimary)
-      }
-
-      // Recording indicator at top
-      if viewModel.recordingManager.isRecording {
-        VStack {
-          IPhoneRecordingTimer(duration: viewModel.recordingManager.recordingDuration)
-            .padding(.top, 60)
-          Spacer()
-        }
-      }
-
-      // Close button (top-left)
-      VStack {
-        HStack {
-          Button {
-            dismiss()
-          } label: {
-            Image(systemName: "xmark")
-              .font(.system(size: 17, weight: .semibold))
-              .foregroundColor(.textPrimary)
-              .frame(width: 36, height: 36)
-              .glassPanel(cornerRadius: Radius.full)
-          }
-          .padding(.leading, 20)
-          .padding(.top, 20)
-          Spacer()
-        }
-        Spacer()
-      }
-
-      // Bottom controls
-      VStack {
-        Spacer()
-        IPhoneRecordingControls(viewModel: viewModel)
-          .padding(.all, 24)
-      }
+    } hud: {
+      ExpertRayBanHUD(
+        recordingManager: viewModel.recordingManager,
+        hud: viewModel.hudViewModel,
+        onStop: { viewModel.stopRecording() }
+      )
+    } chrome: {
+      chromeOverlay
     }
     .task {
       await viewModel.prepare()
@@ -97,60 +68,62 @@ struct IPhoneRecordingView: View {
       }
     }
   }
-}
 
-// MARK: - Controls
+  /// Non-HUD overlays: preview loading spinner, close button, Start CTA.
+  /// The HUD owns the Stop pill, so the Start button hides as soon as
+  /// recording begins.
+  @ViewBuilder
+  private var chromeOverlay: some View {
+    if !viewModel.isPreviewLive {
+      ProgressView()
+        .scaleEffect(1.5)
+        .tint(.textPrimary)
+    }
 
-private struct IPhoneRecordingControls: View {
-  @ObservedObject var viewModel: IPhoneExpertRecordingViewModel
-
-  var body: some View {
-    let isRecording = viewModel.recordingManager.isRecording
-    let isStarting = viewModel.recordingManager.isStarting
-    VStack(spacing: Spacing.md) {
-      if !isRecording {
-        CustomButton(
-          title: isStarting ? "Starting…" : "Start recording",
-          style: .primary,
-          isDisabled: !viewModel.isPreviewLive || isStarting
-        ) {
-          viewModel.startRecording()
+    // Close button (top-left)
+    VStack {
+      HStack {
+        Button {
+          dismiss()
+        } label: {
+          Image(systemName: "xmark")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundColor(.textPrimary)
+            .frame(width: 36, height: 36)
+            .glassPanel(cornerRadius: Radius.full)
         }
-      } else {
-        CustomButton(
-          title: "Stop recording",
-          style: .destructive,
-          isDisabled: false
-        ) {
-          viewModel.stopRecording()
-        }
+        .padding(.leading, 20)
+        .padding(.top, 20)
+        Spacer()
+      }
+      Spacer()
+    }
+
+    // Start-recording CTA — only shown before recording begins. Once
+    // recording starts, the HUD's hold-to-stop pill takes over.
+    if !viewModel.recordingManager.isRecording {
+      VStack {
+        Spacer()
+        IPhoneStartRecordingButton(viewModel: viewModel)
+          .padding(.all, 24)
       }
     }
   }
 }
 
-// MARK: - Timer
+// MARK: - Start button (pre-recording only)
 
-private struct IPhoneRecordingTimer: View {
-  let duration: TimeInterval
+private struct IPhoneStartRecordingButton: View {
+  @ObservedObject var viewModel: IPhoneExpertRecordingViewModel
 
   var body: some View {
-    HStack(spacing: 8) {
-      Circle()
-        .fill(Color.red)
-        .frame(width: 10, height: 10)
-      Text(formatted)
-        .font(.system(size: 16, weight: .semibold, design: .monospaced))
-        .foregroundColor(.textPrimary)
+    let isStarting = viewModel.recordingManager.isStarting
+    CustomButton(
+      title: isStarting ? "Starting…" : "Start recording",
+      style: .primary,
+      isDisabled: !viewModel.isPreviewLive || isStarting
+    ) {
+      viewModel.startRecording()
     }
-    .padding(.horizontal, Spacing.xl)
-    .padding(.vertical, Spacing.md)
-    .glassPanel(cornerRadius: Radius.xl)
-  }
-
-  private var formatted: String {
-    let mins = Int(duration) / 60
-    let secs = Int(duration) % 60
-    return String(format: "%02d:%02d", mins, secs)
   }
 }

@@ -12,12 +12,17 @@ struct CoachingSessionView: View {
   let startingStep: Int?
 
   @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var appOrientationController: AppOrientationController
   @StateObject private var viewModel: CoachingSessionViewModel
 
   @State private var showDismissConfirmation = false
   // Drawer state for the iPhone camera-first layout. Ignored on glasses
   // transport (which keeps the existing vertical stack).
-  @State private var drawerExpanded = true
+  @State private var drawerExpanded = false
+  // Portrait is the app's default; the real value is overwritten in
+  // `.onAppear` from `resolveInterfaceOrientation()` so the session
+  // preserves whatever orientation the phone is already in.
+  @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
 
   init(
     procedure: ProcedureResponse,
@@ -52,11 +57,17 @@ struct CoachingSessionView: View {
         IPhoneCoachingLayout(
           viewModel: viewModel,
           drawerExpanded: $drawerExpanded,
+          showDrawer: currentInterfaceOrientation.isPortrait,
           hud: {
-            // Coaching-flow Ray-Ban HUD surface. Frontend designer edits
-            // CoachingRayBanHUD.swift; layout enforces full-bleed +
-            // transparent + hit-test pass-through.
-            CoachingRayBanHUD(viewModel: viewModel)
+            CoachingRayBanHUD(
+              viewModel: viewModel,
+              stepCount: procedure.steps.count,
+              clipURL: currentStepClipURL,
+              onExit: {
+                viewModel.endSession(progressStore: progressStore)
+                dismiss()
+              }
+            )
           }
         ) {
           stackedBody
@@ -67,10 +78,10 @@ struct CoachingSessionView: View {
         }
       }
 
-      // PiP reference clip floats over both transports. Z-ordered above
-      // everything (including the drawer) so the reference video stays
-      // accessible while the learner works.
-      if viewModel.showPiP, let clipURL = currentStepClipURL {
+      // Floating PiP stays on the glasses transport only. On iPhone, the
+      // Ray-Ban HUD renders the reference clip inline inside its square
+      // detail panel, so no separate floating window is needed.
+      if viewModel.showPiP, transport == .glasses, let clipURL = currentStepClipURL {
         PiPReferenceView(url: clipURL)
       }
     }
@@ -86,10 +97,45 @@ struct CoachingSessionView: View {
     }
     .onAppear {
       viewModel.startSession(progressStore: progressStore, startingStep: startingStep)
+      if transport == .iPhone {
+        // Broaden the allowed orientation mask so the user can naturally
+        // rotate between portrait and landscape, but don't force rotate.
+        // Whatever orientation the phone is already in is what the session
+        // opens in.
+        appOrientationController.setAllowed([.portrait, .landscapeLeft, .landscapeRight])
+        // `orientationDidChangeNotification` only fires while device
+        // orientation notifications are actively being generated.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        // Seed from the scene's actual interface orientation so the layout
+        // and preview match the current phone orientation. If the camera
+        // hasn't finished starting, `GeminiLiveSessionBase` caches this
+        // and replays it onto the preview layer the moment it comes up.
+        let resolved = resolveInterfaceOrientation()
+        currentInterfaceOrientation = resolved
+        viewModel.setPreviewInterfaceOrientation(resolved)
+      }
     }
     .onDisappear {
       viewModel.endSession(progressStore: progressStore)
+      if transport == .iPhone {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        appOrientationController.unlock()
+      }
     }
+    .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+      guard transport == .iPhone else { return }
+      let resolved = resolveInterfaceOrientation()
+      currentInterfaceOrientation = resolved
+      viewModel.setPreviewInterfaceOrientation(resolved)
+    }
+  }
+
+  private func resolveInterfaceOrientation() -> UIInterfaceOrientation {
+    let scene = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .first(where: { $0.activationState == .foregroundActive })
+      ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+    return scene?.interfaceOrientation ?? .portrait
   }
 
   // MARK: - Stacked Body (shared by glasses transport directly and by the

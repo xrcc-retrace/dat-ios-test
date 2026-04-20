@@ -3,6 +3,16 @@ import MWDATCamera
 import MWDATCore
 import SwiftUI
 
+enum StepNavigationDirection: Equatable {
+  case next
+  case previous
+}
+
+enum HUDStepTransitionState: Equatable {
+  case idle
+  case syncing(direction: StepNavigationDirection, targetStepNumber: Int?)
+}
+
 /// Learner-mode coaching session. Inherits the shared Gemini Live
 /// machinery from `GeminiLiveSessionBase` and plugs in coaching-specific
 /// behavior via template-method overrides.
@@ -21,6 +31,7 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   @Published var currentStepIndex = 0
   @Published var isCompleted = false
   @Published var showPiP = false
+  @Published private(set) var hudStepTransitionState: HUDStepTransitionState = .idle
 
   // MARK: - Inputs
 
@@ -99,6 +110,7 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
     isCompleted = false
     frozenSessionDuration = nil
     showPiP = false
+    hudStepTransitionState = .idle
     pendingStartingStep = startingStep
 
     self.progressStore = progressStore
@@ -219,41 +231,7 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   }
 
   override func handleToolCallExtras(name: String, args: [String: Any], result: [String: Any]) async {
-    switch name {
-    case "advance_step":
-      if let status = result["status"] as? String, status == "completed" {
-        if let start = sessionStartTime {
-          frozenSessionDuration = Date().timeIntervalSince(start)
-        }
-        isCompleted = true
-        currentStepIndex = procedure.steps.count - 1
-        if let rid = sessionRecordId {
-          progressStore?.updateSession(
-            id: rid, stepsCompleted: procedure.steps.count, status: .completed)
-        }
-      } else if let newStep = result["new_step"] as? Int {
-        currentStepIndex = newStep - 1
-        if let rid = sessionRecordId {
-          progressStore?.updateSession(
-            id: rid, stepsCompleted: currentStepIndex, status: .inProgress)
-        }
-      }
-
-    case "get_reference_clip":
-      showPiP = true
-
-    case "go_to_step":
-      if let stepNumber = result["current_step"] as? Int {
-        currentStepIndex = stepNumber - 1
-        if let rid = sessionRecordId {
-          progressStore?.updateSession(
-            id: rid, stepsCompleted: currentStepIndex, status: .inProgress)
-        }
-      }
-
-    default:
-      break
-    }
+    applyLearnerToolResult(name: name, args: args, result: result)
   }
 
   override func toolCallSummary(name: String, args: [String: Any], result: [String: Any]) -> String {
@@ -293,6 +271,62 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
     } catch {
       print("[Coaching] Failed to fetch context summary: \(error)")
       return nil
+    }
+  }
+
+  /// Single source of truth for whether the HUD is allowed to mutate the
+  /// learner session from a manual swipe. Gates both the swipe affordance and
+  /// the commit-time action to prevent races against Gemini readiness and
+  /// in-flight tool calls.
+  var canPerformManualHUDNavigation: Bool {
+    hudStepTransitionState == .idle
+      && sessionId != nil
+      && isGeminiReady
+      && geminiConnectionState == .connected
+      && pendingToolCallIds.isEmpty
+      && !isCompleted
+  }
+
+  func navigateStepFromHUD(direction: StepNavigationDirection) async {
+    guard canPerformManualHUDNavigation else { return }
+    guard let sessionId else { return }
+
+    let toolName: String
+    let arguments: [String: Any]
+    let targetStepNumber: Int?
+
+    switch direction {
+    case .next:
+      toolName = "advance_step"
+      arguments = [:]
+      let predicted = currentStepIndex + 2
+      targetStepNumber = predicted <= procedure.steps.count ? predicted : nil
+    case .previous:
+      guard currentStepIndex > 0 else { return }
+      toolName = "go_to_step"
+      arguments = ["step_number": currentStepIndex]
+      targetStepNumber = currentStepIndex
+    }
+
+    hudStepTransitionState = .syncing(direction: direction, targetStepNumber: targetStepNumber)
+    showPiP = false
+
+    defer {
+      hudStepTransitionState = .idle
+    }
+
+    let apiService = ProcedureAPIService()
+
+    do {
+      let result = try await apiService.invokeLearnerToolCall(
+        sessionId: sessionId,
+        toolName: toolName,
+        arguments: arguments
+      )
+      applyLearnerToolResult(name: toolName, args: arguments, result: result)
+      await syncGeminiAfterManualNavigation(direction: direction, result: result)
+    } catch {
+      print("[Coaching] Manual HUD navigation failed: \(error.localizedDescription)")
     }
   }
 
@@ -344,5 +378,89 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
       timestamp: Date()
     ))
     trimActivity()
+  }
+
+  private func applyLearnerToolResult(name: String, args: [String: Any], result: [String: Any]) {
+    switch name {
+    case "advance_step":
+      if let status = result["status"] as? String, status == "completed" {
+        if let start = sessionStartTime {
+          frozenSessionDuration = Date().timeIntervalSince(start)
+        }
+        isCompleted = true
+        currentStepIndex = max(0, procedure.steps.count - 1)
+        if let rid = sessionRecordId {
+          progressStore?.updateSession(
+            id: rid,
+            stepsCompleted: procedure.steps.count,
+            status: .completed
+          )
+        }
+      } else if let newStep = result["new_step"] as? Int {
+        isCompleted = false
+        currentStepIndex = max(0, newStep - 1)
+        if let rid = sessionRecordId {
+          progressStore?.updateSession(
+            id: rid,
+            stepsCompleted: currentStepIndex,
+            status: .inProgress
+          )
+        }
+      }
+
+    case "get_reference_clip":
+      showPiP = true
+
+    case "go_to_step":
+      if let stepNumber = result["current_step"] as? Int {
+        isCompleted = false
+        currentStepIndex = max(0, stepNumber - 1)
+        if let rid = sessionRecordId {
+          progressStore?.updateSession(
+            id: rid,
+            stepsCompleted: currentStepIndex,
+            status: .inProgress
+          )
+        }
+      }
+
+    default:
+      break
+    }
+  }
+
+  private func syncGeminiAfterManualNavigation(
+    direction: StepNavigationDirection,
+    result: [String: Any]
+  ) async {
+    guard let geminiService else {
+      print("[Coaching] Manual step sync skipped: Gemini service unavailable")
+      return
+    }
+
+    let syncText = manualNavigationSyncText(direction: direction, result: result)
+
+    do {
+      try await geminiService.sendClientTextTurn(syncText)
+    } catch {
+      print("[Coaching] Manual step sync message failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func manualNavigationSyncText(
+    direction: StepNavigationDirection,
+    result: [String: Any]
+  ) -> String {
+    if let stepNumber = (result["current_step"] as? Int) ?? (result["new_step"] as? Int),
+       let title = result["step_title"] as? String {
+      return "I manually moved to step \(stepNumber), \(title). Continue coaching from the current step."
+    }
+
+    switch direction {
+    case .next:
+      return "I manually moved to the next step. Continue coaching from the current step."
+    case .previous:
+      return "I manually went back one step. Continue coaching from the current step."
+    }
   }
 }

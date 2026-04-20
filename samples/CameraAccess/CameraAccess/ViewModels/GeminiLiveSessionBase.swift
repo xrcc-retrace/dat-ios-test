@@ -98,6 +98,10 @@ class GeminiLiveSessionBase: ObservableObject {
   /// the iPhone camera-first layout redraws once the capture session comes
   /// up after permission grants.
   @Published var iPhonePreviewLayer: AVCaptureVideoPreviewLayer?
+  /// Latest interface orientation pushed by the view. Cached here so that
+  /// orientation updates arriving before the async camera start can be
+  /// replayed onto `iPhoneCamera` the moment it becomes available.
+  private var pendingPreviewOrientation: UIInterfaceOrientation?
   var lastVideoSendAt: Date?
   var isForwardingFrame = false
 
@@ -210,6 +214,14 @@ class GeminiLiveSessionBase: ObservableObject {
 
   func retryGemini() {
     Task { await reconnectWithResumption(reason: "user retry") }
+  }
+
+  /// Forward a new interface orientation to the iPhone capture preview
+  /// (glasses transport is a no-op). Keeps the Gemini-facing JPEG pipeline
+  /// portrait-normalized — only the on-screen preview rotates.
+  func setPreviewInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
+    pendingPreviewOrientation = orientation
+    iPhoneCamera?.setPreviewInterfaceOrientation(orientation)
   }
 
   // MARK: - Session lifecycle
@@ -496,6 +508,12 @@ class GeminiLiveSessionBase: ObservableObject {
         return
       }
       self.iPhoneCamera = camera
+      // Replay any orientation the view pushed before the async camera
+      // start finished — otherwise entering landscape-first leaves the
+      // preview stuck at 90°.
+      if let pending = self.pendingPreviewOrientation {
+        camera.setPreviewInterfaceOrientation(pending)
+      }
       // Publish the preview layer so the camera-first iPhone layout can
       // attach it as soon as the session is running. The layer composites
       // the same pixel stream the JPEG throttle drains — no extra capture.

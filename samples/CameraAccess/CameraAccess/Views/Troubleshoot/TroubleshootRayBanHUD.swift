@@ -11,7 +11,7 @@ import SwiftUI
 /// user is describing a broken device.
 ///
 /// **Frontend designer edits this file.** Drop HUD content into the
-/// `body` below. The host layout (`IPhoneCoachingLayout`) enforces three
+/// `body` below. The host layout (`IPhoneCoachingLayout`) enforces two
 /// invariants so you can't accidentally break the camera-first UX:
 ///
 /// 1. **Full-screen bounds.** The layout sizes this view to match the
@@ -23,10 +23,11 @@ import SwiftUI
 ///    must be visible through every pixel where you aren't actively
 ///    drawing HUD content. Individual shapes / pills / text may of
 ///    course be opaque.
-/// 3. **Hit-test pass-through by default.** The layout wraps this body
-///    in `.allowsHitTesting(false)` so drawer drags and future camera
-///    taps pass straight through. If a HUD element needs to accept
-///    touches, wrap it in `.allowsHitTesting(true)`.
+///
+/// HUD content is hit-testable. Keep interactive controls small and
+/// specifically placed; fill the rest of the surface with `Color.clear`
+/// so taps in empty zones still fall through to the drawer handle
+/// beneath.
 ///
 /// Available view-model state (all `@Published`, redraws on change):
 /// - `viewModel.activity: [ActivityEntry]` — user + AI transcripts, tool calls

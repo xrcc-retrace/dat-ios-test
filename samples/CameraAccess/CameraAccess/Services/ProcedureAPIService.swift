@@ -141,6 +141,39 @@ class ProcedureAPIService: ObservableObject {
     return try decoder.decode(Payload.self, from: data).summary
   }
 
+  func invokeLearnerToolCall(
+    sessionId: String,
+    toolName: String,
+    arguments: [String: Any]
+  ) async throws -> [String: Any] {
+    guard let url = URL(string: "\(serverBaseURL)/api/learner/session/\(sessionId)/tool-call") else {
+      throw APIError.invalidURL
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.timeoutInterval = 10
+    request.httpBody = try JSONSerialization.data(withJSONObject: [
+      "tool_name": toolName,
+      "arguments": arguments,
+    ])
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+
+    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      throw APIError.invalidResponse
+    }
+
+    if let inner = json["result"] as? [String: Any] {
+      return inner
+    }
+    return json
+  }
+
   // MARK: - Troubleshoot (diagnostic) session
 
   func startDiagnosticSession(voice: String) async throws -> DiagnosticSessionStartResponse {
@@ -250,11 +283,13 @@ class ProcedureAPIService: ObservableObject {
   enum APIError: LocalizedError {
     case invalidURL
     case serverError
+    case invalidResponse
 
     var errorDescription: String? {
       switch self {
       case .invalidURL: return "Invalid server URL"
       case .serverError: return "Server returned an error"
+      case .invalidResponse: return "Server returned an invalid response"
       }
     }
   }

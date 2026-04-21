@@ -85,6 +85,14 @@ struct ProcedureStepResponse: Codable, Identifiable {
     errorCriteria = try c.decodeIfPresent([String].self, forKey: .errorCriteria) ?? []
     clipUrl = try c.decodeIfPresent(String.self, forKey: .clipUrl)
   }
+
+  var hasAnyInsights: Bool {
+    !tips.isEmpty || !warnings.isEmpty || !errorCriteria.isEmpty
+  }
+
+  var insightCategoryCount: Int {
+    [tips, warnings, errorCriteria].filter { !$0.isEmpty }.count
+  }
 }
 
 // MARK: - List response (lighter model from GET /api/procedures)

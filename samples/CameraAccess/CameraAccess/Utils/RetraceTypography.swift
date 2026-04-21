@@ -16,8 +16,8 @@ extension Font {
     .custom(face.rawValue, size: size)
   }
 
-  static func inter(_ weight: InterFontWeight, size: CGFloat) -> Font {
-    Font(InterFontResolver.uiFont(weight: weight, size: size))
+  static func inter(_ weight: InterFontWeight, size: CGFloat, italic: Bool = false) -> Font {
+    Font(InterFontResolver.uiFont(weight: weight, size: size, italic: italic))
   }
 
   static let retraceDisplay = Font.retraceFace(.bold, size: 34)
@@ -54,9 +54,11 @@ private enum InterFontResolver {
   private static let fontName = "Inter-Regular"
   private static let opticalSizeMinimum: CGFloat = 14
 
-  static func uiFont(weight: InterFontWeight, size: CGFloat) -> UIFont {
+  static func uiFont(weight: InterFontWeight, size: CGFloat, italic: Bool) -> UIFont {
     guard let baseFont = UIFont(name: fontName, size: size) else {
-      return .systemFont(ofSize: size, weight: weight.fallback)
+      return italic
+        ? .italicSystemFont(ofSize: size)
+        : .systemFont(ofSize: size, weight: weight.fallback)
     }
 
     let axes = (CTFontCopyVariationAxes(baseFont as CTFont) as? [[CFString: Any]]) ?? []
@@ -67,6 +69,9 @@ private enum InterFontResolver {
     }
     if let axisID = axisIdentifier(containing: "optical", in: axes) {
       variations[axisID] = NSNumber(value: Float(max(size, opticalSizeMinimum)))
+    }
+    if let axisID = axisIdentifier(containing: "ital", in: axes) {
+      variations[axisID] = NSNumber(value: italic ? 1.0 : 0.0)
     }
 
     guard !variations.isEmpty else { return baseFont }

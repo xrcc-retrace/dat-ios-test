@@ -11,6 +11,7 @@ enum HUDControl: Hashable {
   case completionSavedWorkflows
   case completionTroubleshoot
   case completionOk
+  case insightsTab(InsightCategory)
 }
 
 enum HUDInteractionBehavior: Equatable {

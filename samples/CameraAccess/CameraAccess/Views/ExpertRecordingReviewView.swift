@@ -286,7 +286,7 @@ struct StepDetailView: View {
           }
 
           if !step.errorCriteria.isEmpty {
-            TagSection(title: "Observable Errors", items: step.errorCriteria, color: .appPrimary)
+            TagSection(title: "Red Flags", items: step.errorCriteria, color: .appPrimary)
           }
         }
         .padding(.leading, 32)

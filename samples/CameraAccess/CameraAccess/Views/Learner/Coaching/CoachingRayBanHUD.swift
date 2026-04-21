@@ -10,6 +10,8 @@ struct CoachingRayBanHUD: View {
   @State private var exitFlowState: ExitFlowState = .inactive
   @State private var stepCardPresentationState: StepCardPresentationState = .content
   @State private var stepCardTransitionID = UUID()
+  @State private var isStepDetailExpanded: Bool = false
+  @State private var pulseOpacity: CGFloat = 0
 
   private let holdTimer = Timer.publish(
     every: RayBanHUDLayoutTokens.exitHoldTimerInterval,
@@ -49,6 +51,9 @@ struct CoachingRayBanHUD: View {
         stepCardPresentationState = .content
       }
     }
+    .onChange(of: viewModel.stepJustCompletedTick) { _, _ in
+      triggerCompletionPulse()
+    }
     .onReceive(holdTimer) { _ in
       guard case .holding(let startedAt, _) = exitFlowState else { return }
 
@@ -84,18 +89,15 @@ struct CoachingRayBanHUD: View {
 
   private var bottomContentCluster: some View {
     VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.exitToPanelSpacing) {
-      HStack {
-        Spacer(minLength: 0)
-        exitPill
-      }
-
       activePanelStack
+
+      exitPill
     }
   }
 
   private var activePanelStack: some View {
     VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.stackSpacing) {
-      if viewModel.showPiP {
+      if viewModel.showPiP || isStepDetailExpanded {
         detailPanel
       }
 
@@ -115,6 +117,7 @@ struct CoachingRayBanHUD: View {
         cancelExitFlow()
       }
     }
+    .frame(maxWidth: .infinity, alignment: .center)
   }
 
   private var stepCard: some View {
@@ -122,11 +125,18 @@ struct CoachingRayBanHUD: View {
       mode: stepCardMode,
       horizontalOffset: stepCardOffset,
       onConfirm: {
-        viewModel.showPiP.toggle()
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+          isStepDetailExpanded.toggle()
+        }
       },
       onDragChanged: handleStepCardDragChanged,
       onDragEnded: handleStepCardDragEnded,
       isSwipeEnabled: canSwipeStepCard
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous)
+        .fill(Color.green.opacity(pulseOpacity))
+        .allowsHitTesting(false)
     )
   }
 
@@ -175,7 +185,8 @@ struct CoachingRayBanHUD: View {
       return .content(
         stepIndex: viewModel.currentStepIndex + 1,
         stepCount: stepCount,
-        step: viewModel.currentStep
+        step: viewModel.currentStep,
+        isExpanded: isStepDetailExpanded
       )
     case .loadingIncoming(_, let targetStepNumber):
       return .loading(stepIndex: targetStepNumber, stepCount: stepCount)
@@ -192,22 +203,46 @@ struct CoachingRayBanHUD: View {
   private var canSwipeStepCard: Bool {
     hoverCoordinator.hovered == .stepCard
       && exitFlowState.progress == nil
+      && !isStepDetailExpanded
       && viewModel.canPerformManualHUDNavigation
   }
 
   private var shouldShowScrim: Bool {
-    hoverCoordinator.hovered != nil || exitFlowState.progress != nil
+    hoverCoordinator.hovered != nil
+      || exitFlowState.progress != nil
+      || isStepDetailExpanded
   }
 
   private func handleScrimTap() {
     if exitFlowState.progress != nil {
       cancelExitFlow()
+    } else if isStepDetailExpanded {
+      hoverCoordinator.cancel()
+      withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+        isStepDetailExpanded = false
+      }
     } else if viewModel.hudStepTransitionState != .idle {
       return
     } else {
       hoverCoordinator.cancel()
       withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
         stepCardPresentationState = .content
+      }
+    }
+  }
+
+  private func triggerCompletionPulse() {
+    let duration = RayBanHUDLayoutTokens.completionPulseDuration
+    withAnimation(.easeInOut(duration: duration).repeatCount(2, autoreverses: true)) {
+      pulseOpacity = 0.35
+    }
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: UInt64(duration * 2 * 1_000_000_000))
+      pulseOpacity = 0
+      if isStepDetailExpanded {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+          isStepDetailExpanded = false
+        }
       }
     }
   }
@@ -363,6 +398,14 @@ enum RayBanHUDLayoutTokens {
   static let stepSwipeCommitDelayNanoseconds: UInt64 = 180_000_000
   static let exitHoldDuration: TimeInterval = 2.0
   static let exitHoldTimerInterval: TimeInterval = 1.0 / 30.0
+  /// Single knob for the compact step-card "Read more" truncation cutoff.
+  /// Tweak here to shrink or grow before the inline italic "Read more" kicks in.
+  static let stepDescriptionCharacterLimit: Int = 75
+  /// Single half-cycle of the green completion pulse. Full pulse = 2× this (autoreverse).
+  static let completionPulseDuration: Double = 0.70
+  /// Maximum width of the Exit workflow pill. Tweak here to widen or narrow
+  /// the pill — it caps at this value and hugs the step card width below it.
+  static let exitPillMaxWidth: CGFloat = 340
 }
 
 private struct RayBanHUDViewport {

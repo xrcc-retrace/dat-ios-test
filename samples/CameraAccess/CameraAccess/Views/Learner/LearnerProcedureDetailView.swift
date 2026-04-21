@@ -11,13 +11,24 @@ struct LearnerProcedureDetailView: View {
   @State private var presentedCoaching: CaptureTransport?
   @State private var showRegistrationSheet = false
   @State private var showGlassesInactiveSheet = false
-  @State private var showStartCoachingOptions = false
+  @State private var isStartCoachingExpanded = false
   @State private var coachingStartingStep: Int?
   @State private var resumeTransport: CaptureTransport = .iPhone
 
   var body: some View {
     RetraceScreen {
-      content
+      ZStack {
+        content
+
+        if showsStartCoachingDismissOverlay {
+          Color.black.opacity(0.001)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              collapseStartCoachingCTA()
+            }
+            .transition(.opacity)
+        }
+      }
     }
     .navigationBarTitleDisplayMode(.inline)
     .navigationTitle("Workflow")
@@ -50,21 +61,6 @@ struct LearnerProcedureDetailView: View {
       GlassesInactiveSheet(iPhoneAlternativeTitle: "Coach with iPhone instead") {
         presentedCoaching = .iPhone
       }
-    }
-    .confirmationDialog(
-      "Start coaching",
-      isPresented: $showStartCoachingOptions,
-      titleVisibility: .visible
-    ) {
-      Button("Coach with Glasses") {
-        launchCoaching(transport: .glasses, startingStep: nil)
-      }
-      Button("Coach with iPhone") {
-        launchCoaching(transport: .iPhone, startingStep: nil)
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("Choose the device you want to use for the coaching session.")
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if let procedure = viewModel.procedure {
@@ -196,14 +192,42 @@ struct LearnerProcedureDetailView: View {
 
   @ViewBuilder
   private var freshCTAs: some View {
-    CustomButton(
-      title: "Start coaching",
-      icon: "play.fill",
-      style: .primary,
-      isDisabled: false
-    ) {
-      showStartCoachingOptions = true
+    VStack(spacing: Spacing.md) {
+      if isStartCoachingExpanded {
+        CustomButton(
+          title: "Coach with Glasses",
+          icon: "eyeglasses",
+          style: .primary,
+          isDisabled: false
+        ) {
+          launchCoaching(transport: .glasses, startingStep: nil)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+
+        CustomButton(
+          title: "Coach with iPhone",
+          icon: "iphone",
+          style: .secondary,
+          isDisabled: false
+        ) {
+          launchCoaching(transport: .iPhone, startingStep: nil)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+      } else {
+        CustomButton(
+          title: "Start coaching",
+          icon: "play.fill",
+          style: .primary,
+          isDisabled: false
+        ) {
+          withAnimation(.easeInOut(duration: 0.2)) {
+            isStartCoachingExpanded = true
+          }
+        }
+        .transition(.opacity)
+      }
     }
+    .animation(.easeInOut(duration: 0.2), value: isStartCoachingExpanded)
   }
 
   @ViewBuilder
@@ -278,8 +302,19 @@ struct LearnerProcedureDetailView: View {
     .buttonStyle(.plain)
   }
 
+  private var showsStartCoachingDismissOverlay: Bool {
+    guard isStartCoachingExpanded, let procedure = viewModel.procedure else { return false }
+    return progressStore.inProgressSession(for: procedure.id) == nil
+  }
+
+  private func collapseStartCoachingCTA() {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      isStartCoachingExpanded = false
+    }
+  }
+
   private func launchCoaching(transport: CaptureTransport, startingStep: Int?) {
-    showStartCoachingOptions = false
+    isStartCoachingExpanded = false
     coachingStartingStep = startingStep
     switch transport {
     case .glasses:

@@ -65,6 +65,10 @@ class LocalProgressStore: ObservableObject {
     sessionHistory.first { $0.procedureId == procedureId && $0.status == .inProgress }
   }
 
+  func completedCount(for procedureId: String) -> Int {
+    sessionHistory.filter { $0.procedureId == procedureId && $0.status == .completed }.count
+  }
+
   var anyInProgressSession: SessionRecord? {
     sessionHistory.first { $0.status == .inProgress }
   }

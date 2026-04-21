@@ -207,7 +207,7 @@ struct ProcedureChapterDetailContent: View {
               }
             }
             .padding(Spacing.screenPadding)
-            .padding(.top, Spacing.xl)
+            .padding(.top, Spacing.md)
             .padding(.bottom, Spacing.jumbo)
             .frame(maxWidth: .infinity, alignment: .leading)
           }
@@ -227,13 +227,11 @@ struct ProcedureChapterDetailContent: View {
   }
 
   private var contentHeader: some View {
-    VStack(alignment: .leading, spacing: Spacing.xl) {
+    VStack(alignment: .leading, spacing: Spacing.lg) {
       VStack(alignment: .leading, spacing: Spacing.md) {
         Text(procedure.title)
           .font(.retraceTitle2)
           .foregroundColor(.textPrimary)
-
-        ProcedureActiveStepSummary(playerModel: playerModel)
 
         ViewThatFits(in: .horizontal) {
           HStack(spacing: Spacing.sm) {
@@ -363,6 +361,13 @@ struct ProcedureSourcePlayerCard: View {
     .frame(height: height)
     .background(Color.black)
     .clipped()
+    .overlay(alignment: .topTrailing) {
+      if playerModel.sourceVideoURL != nil {
+        ProcedureActiveStepSummary(playerModel: playerModel)
+          .padding(Spacing.lg)
+          .allowsHitTesting(false)
+      }
+    }
   }
 
   private var unavailableState: some View {
@@ -393,21 +398,23 @@ struct ProcedureActiveStepSummary: View {
   var body: some View {
     let summary = playerModel.activeStepSummary
 
-    HStack(alignment: .center, spacing: Spacing.md) {
+    HStack(alignment: .top, spacing: Spacing.sm) {
       Image(systemName: summary.icon)
         .font(.system(size: 12, weight: .semibold))
         .foregroundColor(summary.iconColor)
+        .padding(.top, 2)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(summary.title)
           .font(.retraceCaption1)
-          .foregroundColor(.textPrimary)
-          .lineLimit(1)
+          .foregroundColor(.white)
+          .lineLimit(2)
 
         if let subtitle = summary.subtitle {
           Text(subtitle)
             .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(.textTertiary)
+            .foregroundColor(.white.opacity(0.75))
+            .lineLimit(1)
         }
       }
 
@@ -415,8 +422,13 @@ struct ProcedureActiveStepSummary: View {
     }
     .padding(.horizontal, Spacing.md)
     .padding(.vertical, Spacing.sm)
-    .background(Color.surfaceBase)
-    .cornerRadius(Radius.md)
+    .frame(maxWidth: 230, alignment: .leading)
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Radius.md))
+    .overlay {
+      RoundedRectangle(cornerRadius: Radius.md)
+        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+    }
+    .shadow(color: .black.opacity(0.24), radius: 10, y: 4)
     .accessibilityIdentifier("procedure_active_step_summary")
   }
 }

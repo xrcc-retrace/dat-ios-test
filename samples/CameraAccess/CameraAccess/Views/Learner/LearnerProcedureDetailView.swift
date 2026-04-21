@@ -11,6 +11,7 @@ struct LearnerProcedureDetailView: View {
   @State private var presentedCoaching: CaptureTransport?
   @State private var showRegistrationSheet = false
   @State private var showGlassesInactiveSheet = false
+  @State private var showStartCoachingOptions = false
   @State private var coachingStartingStep: Int?
   @State private var resumeTransport: CaptureTransport = .iPhone
 
@@ -49,6 +50,21 @@ struct LearnerProcedureDetailView: View {
       GlassesInactiveSheet(iPhoneAlternativeTitle: "Coach with iPhone instead") {
         presentedCoaching = .iPhone
       }
+    }
+    .confirmationDialog(
+      "Start coaching",
+      isPresented: $showStartCoachingOptions,
+      titleVisibility: .visible
+    ) {
+      Button("Coach with Glasses") {
+        launchCoaching(transport: .glasses, startingStep: nil)
+      }
+      Button("Coach with iPhone") {
+        launchCoaching(transport: .iPhone, startingStep: nil)
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Choose the device you want to use for the coaching session.")
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if let procedure = viewModel.procedure {
@@ -180,32 +196,13 @@ struct LearnerProcedureDetailView: View {
 
   @ViewBuilder
   private var freshCTAs: some View {
-    VStack(spacing: Spacing.md) {
-      CustomButton(
-        title: "Coach with Glasses",
-        icon: "eyeglasses",
-        style: .primary,
-        isDisabled: false
-      ) {
-        if wearablesVM.registrationState != .registered {
-          showRegistrationSheet = true
-        } else if !wearablesVM.hasActiveDevice {
-          showGlassesInactiveSheet = true
-        } else {
-          coachingStartingStep = nil
-          presentedCoaching = .glasses
-        }
-      }
-
-      CustomButton(
-        title: "Coach with iPhone",
-        icon: "iphone",
-        style: .secondary,
-        isDisabled: false
-      ) {
-        coachingStartingStep = nil
-        presentedCoaching = .iPhone
-      }
+    CustomButton(
+      title: "Start coaching",
+      icon: "play.fill",
+      style: .primary,
+      isDisabled: false
+    ) {
+      showStartCoachingOptions = true
     }
   }
 
@@ -282,6 +279,7 @@ struct LearnerProcedureDetailView: View {
   }
 
   private func launchCoaching(transport: CaptureTransport, startingStep: Int?) {
+    showStartCoachingOptions = false
     coachingStartingStep = startingStep
     switch transport {
     case .glasses:

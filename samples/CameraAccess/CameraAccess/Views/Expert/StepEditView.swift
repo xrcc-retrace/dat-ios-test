@@ -121,9 +121,9 @@ struct StepEditView: View {
             placeholder: "Enter a warning"
           )
 
-          // Observable Errors (what the AI coach watches for to interject)
+          // Red Flags (what the AI coach watches for to interject)
           EditableStringList(
-            title: "Observable Errors",
+            title: "Red Flags",
             items: $errorCriteria,
             accentColor: .appPrimary,
             placeholder: "Describe a visible mistake the coach should catch"

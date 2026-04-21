@@ -2,8 +2,55 @@ import AVKit
 import SwiftUI
 
 enum RayBanHUDStepCardMode {
-  case content(stepIndex: Int, stepCount: Int, step: ProcedureStepResponse?)
+  case content(stepIndex: Int, stepCount: Int, step: ProcedureStepResponse?, isExpanded: Bool)
   case loading(stepIndex: Int?, stepCount: Int)
+}
+
+enum InsightCategory: String, CaseIterable, Hashable {
+  case tips
+  case warnings
+  case redFlags
+
+  var displayName: String {
+    switch self {
+    case .tips: return "Tips"
+    case .warnings: return "Warnings"
+    case .redFlags: return "Red Flags"
+    }
+  }
+
+  func items(for step: ProcedureStepResponse) -> [String] {
+    switch self {
+    case .tips: return step.tips
+    case .warnings: return step.warnings
+    case .redFlags: return step.errorCriteria
+    }
+  }
+}
+
+extension ProcedureStepResponse {
+  var populatedInsightCategories: [InsightCategory] {
+    InsightCategory.allCases.filter { !$0.items(for: self).isEmpty }
+  }
+}
+
+struct RayBanHUDInsightsChip: View {
+  var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: "lightbulb.fill")
+        .font(.system(size: 9, weight: .bold))
+      Text("INSIGHTS AVAILABLE")
+        .font(.inter(.bold, size: 10))
+        .tracking(1.0)
+    }
+    .foregroundStyle(Color.black.opacity(0.85))
+    .padding(.horizontal, 8)
+    .padding(.vertical, 3)
+    .background(
+      Capsule()
+        .fill(Color(red: 1.0, green: 0.76, blue: 0.11))
+    )
+  }
 }
 
 struct RayBanHUDExitPill: View {
@@ -15,16 +62,16 @@ struct RayBanHUDExitPill: View {
     HStack(spacing: 10) {
       Image(systemName: "rectangle.portrait.and.arrow.forward")
         .font(.system(size: 20, weight: .medium))
-        .frame(width: RayBanHUDLayoutTokens.iconFrame, height: RayBanHUDLayoutTokens.iconFrame)
 
       Text("Exit workflow")
         .font(.inter(.medium, size: 14))
-        .lineLimit(1)
     }
     .foregroundStyle(Color.white.opacity(0.98))
+    .frame(maxWidth: .infinity)
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 10)
+    .padding(.vertical, 12)
     .rayBanHUDPanel(shape: .capsule)
+    .frame(maxWidth: RayBanHUDLayoutTokens.exitPillMaxWidth)
     .hoverSelectable(.exitWorkflow, shape: .capsule, behavior: .selectOnly) {}
     .simultaneousGesture(
       DragGesture(minimumDistance: 0)
@@ -47,11 +94,12 @@ struct RayBanHUDStepCard: View {
   let onDragEnded: (DragGesture.Value) -> Void
   let isSwipeEnabled: Bool
 
+  @State private var selectedInsightCategory: InsightCategory?
+
   var body: some View {
     cardSurface
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(RayBanHUDLayoutTokens.contentPadding)
-      .frame(minHeight: RayBanHUDLayoutTokens.stepCardMinHeight, alignment: .center)
       .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
       .modifier(StepCardHoverModifier(isInteractive: isContentMode, onConfirm: onConfirm))
       .contentShape(RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous))
@@ -67,35 +115,21 @@ struct RayBanHUDStepCard: View {
             onDragEnded(value)
           }
       )
+      .onChange(of: stepIdentityKey) { _, _ in
+        selectedInsightCategory = nil
+      }
   }
 
   @ViewBuilder
   private var cardSurface: some View {
     switch mode {
-    case .content(let stepIndex, let stepCount, let step):
-      ScrollView(.vertical, showsIndicators: false) {
-        VStack(alignment: .leading, spacing: 2) {
-          Text("STEP \(stepIndex) OF \(stepCount)")
-            .font(.inter(.medium, size: 12))
-            .tracking(1.2)
-            .foregroundStyle(Color.white.opacity(0.9))
-
-          if let step {
-            Text(step.title)
-              .font(.inter(.bold, size: 20))
-              .foregroundStyle(Color.white.opacity(0.98))
-              .fixedSize(horizontal: false, vertical: true)
-
-            Text(step.description)
-              .font(.inter(.medium, size: 14))
-              .foregroundStyle(Color.white.opacity(0.96))
-              .lineSpacing(2)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .frame(height: RayBanHUDLayoutTokens.stepCardContentHeight)
+    case .content(let stepIndex, let stepCount, let step, let isExpanded):
+      contentSurface(
+        stepIndex: stepIndex,
+        stepCount: stepCount,
+        step: step,
+        isExpanded: isExpanded
+      )
 
     case .loading:
       VStack {
@@ -109,11 +143,162 @@ struct RayBanHUDStepCard: View {
     }
   }
 
+  @ViewBuilder
+  private func contentSurface(
+    stepIndex: Int,
+    stepCount: Int,
+    step: ProcedureStepResponse?,
+    isExpanded: Bool
+  ) -> some View {
+    let inner = VStack(alignment: .leading, spacing: isExpanded ? 10 : 2) {
+      HStack(spacing: 8) {
+        Text("STEP \(stepIndex) OF \(stepCount)")
+          .font(.inter(.medium, size: 12))
+          .tracking(1.2)
+          .foregroundStyle(Color.white.opacity(0.9))
+
+        if let step, step.hasAnyInsights, !isExpanded {
+          RayBanHUDInsightsChip()
+        }
+
+        Spacer(minLength: 0)
+      }
+
+      if let step {
+        Text(step.title)
+          .font(.inter(.bold, size: 20))
+          .foregroundStyle(Color.white.opacity(0.98))
+          .fixedSize(horizontal: false, vertical: true)
+
+        descriptionText(for: step, isExpanded: isExpanded)
+
+        if isExpanded, step.hasAnyInsights {
+          insightsSection(for: step)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+
+    inner
+  }
+
+  @ViewBuilder
+  private func descriptionText(for step: ProcedureStepResponse, isExpanded: Bool) -> some View {
+    if isExpanded {
+      Text(step.description)
+        .font(.inter(.medium, size: 18))
+        .foregroundStyle(Color.white.opacity(0.96))
+        .lineSpacing(2)
+        .fixedSize(horizontal: false, vertical: true)
+    } else {
+      compactDescription(step.description)
+        .foregroundStyle(Color.white.opacity(0.96))
+        .lineSpacing(2)
+        .lineLimit(2)
+        .truncationMode(.tail)
+    }
+  }
+
+  private func compactDescription(_ description: String) -> Text {
+    let limit = RayBanHUDLayoutTokens.stepDescriptionCharacterLimit
+    guard description.count > limit else {
+      return Text(description)
+    }
+    let cutoff = max(0, limit - 12)
+    let prefixRaw = String(description.prefix(cutoff))
+    let prefix: String
+    if let space = prefixRaw.lastIndex(of: " ") {
+      prefix = String(prefixRaw[..<space])
+    } else {
+      prefix = prefixRaw
+    }
+    return Text(prefix)
+      .font(.inter(.medium, size: 18))
+      + Text("… ")
+      .font(.inter(.medium, size: 18, italic: true))
+      + Text("Read more")
+      .font(.inter(.bold, size: 18, italic: true))
+  }
+
+  @ViewBuilder
+  private func insightsSection(for step: ProcedureStepResponse) -> some View {
+    let categories = step.populatedInsightCategories
+    let active = selectedInsightCategory ?? categories.first
+
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 6) {
+        Image(systemName: "lightbulb.fill")
+          .font(.system(size: 11, weight: .bold))
+          .foregroundStyle(Color(red: 1.0, green: 0.76, blue: 0.11))
+        Text("INSIGHTS")
+          .font(.inter(.bold, size: 11))
+          .tracking(1.2)
+          .foregroundStyle(Color.white.opacity(0.85))
+      }
+
+      if categories.count >= 2 {
+        insightsTabs(categories: categories, active: active)
+      } else if let single = categories.first {
+        Text(single.displayName)
+          .font(.inter(.bold, size: 14))
+          .foregroundStyle(Color.white.opacity(0.94))
+      }
+
+      if let active {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(Array(active.items(for: step).enumerated()), id: \.offset) { _, item in
+            HStack(alignment: .top, spacing: 6) {
+              Text("•")
+                .font(.inter(.medium, size: 14))
+                .foregroundStyle(Color.white.opacity(0.9))
+              Text(item)
+                .font(.inter(.medium, size: 14))
+                .foregroundStyle(Color.white.opacity(0.96))
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+        }
+      }
+    }
+    .padding(.top, 4)
+  }
+
+  @ViewBuilder
+  private func insightsTabs(categories: [InsightCategory], active: InsightCategory?) -> some View {
+    HStack(spacing: 6) {
+      ForEach(categories, id: \.self) { category in
+        let isActive = category == active
+        Text(category.displayName)
+          .font(.inter(.medium, size: 13))
+          .foregroundStyle(isActive ? Color.black.opacity(0.9) : Color.white.opacity(0.92))
+          .padding(.horizontal, 12)
+          .padding(.vertical, 6)
+          .background(
+            Capsule().fill(isActive ? Color.white.opacity(0.95) : Color.white.opacity(0.08))
+          )
+          .hoverSelectable(.insightsTab(category), shape: .capsule) {
+            selectedInsightCategory = category
+          }
+      }
+      Spacer(minLength: 0)
+    }
+  }
+
   private var isContentMode: Bool {
     if case .content = mode {
       return true
     }
     return false
+  }
+
+  private var stepIdentityKey: Int {
+    switch mode {
+    case .content(let stepIndex, _, _, _):
+      return stepIndex
+    case .loading(let stepIndex, _):
+      return stepIndex ?? -1
+    }
   }
 }
 

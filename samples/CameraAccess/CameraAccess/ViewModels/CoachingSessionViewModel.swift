@@ -32,6 +32,7 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   @Published var isCompleted = false
   @Published var showPiP = false
   @Published private(set) var hudStepTransitionState: HUDStepTransitionState = .idle
+  @Published private(set) var stepJustCompletedTick: Int = 0
 
   // MARK: - Inputs
 
@@ -396,15 +397,21 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
             status: .completed
           )
         }
+        stepJustCompletedTick &+= 1
       } else if let newStep = result["new_step"] as? Int {
+        let targetIndex = max(0, newStep - 1)
+        let didAdvance = targetIndex != currentStepIndex
         isCompleted = false
-        currentStepIndex = max(0, newStep - 1)
+        currentStepIndex = targetIndex
         if let rid = sessionRecordId {
           progressStore?.updateSession(
             id: rid,
             stepsCompleted: currentStepIndex,
             status: .inProgress
           )
+        }
+        if didAdvance {
+          stepJustCompletedTick &+= 1
         }
       }
 

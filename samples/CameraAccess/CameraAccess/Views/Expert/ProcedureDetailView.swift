@@ -1,35 +1,17 @@
-import AVKit
 import SwiftUI
 
 struct ProcedureDetailView: View {
   let procedureId: String
+
   @StateObject private var viewModel = ProcedureDetailViewModel()
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
     RetraceScreen {
-
-      if viewModel.isLoading && viewModel.procedure == nil {
-        ProgressView()
-          .scaleEffect(1.5)
-          .tint(.textPrimary)
-      } else if let procedure = viewModel.procedure {
-        procedureContent(procedure)
-      } else if let error = viewModel.errorMessage {
-        VStack(spacing: Spacing.lg) {
-          Image(systemName: "exclamationmark.triangle")
-            .font(.system(size: 36))
-            .foregroundColor(.textPrimary)
-          Text(error)
-            .font(.retraceCallout)
-            .foregroundColor(.textSecondary)
-            .multilineTextAlignment(.center)
-        }
-        .padding(Spacing.screenPadding)
-      }
+      content
     }
     .navigationBarTitleDisplayMode(.inline)
-    .navigationTitle(viewModel.procedure?.title ?? "")
+    .navigationTitle("Workflow")
     .retraceNavBar()
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -43,6 +25,7 @@ struct ProcedureDetailView: View {
               Label("Edit", systemImage: "pencil")
             }
           }
+
           Button(role: .destructive) {
             viewModel.showDeleteConfirmation = true
           } label: {
@@ -71,173 +54,93 @@ struct ProcedureDetailView: View {
     }
   }
 
-  // MARK: - Content
-
   @ViewBuilder
-  private func procedureContent(_ procedure: ProcedureResponse) -> some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: Spacing.screenPadding) {
-        // (See trailing modifiers below — `.frame(maxWidth: .infinity)` and
-        // `.scrollBounceBehavior(.basedOnSize, axes: .horizontal)` together
-        // forbid horizontal pan/bounce regardless of any inner intrinsic.)
-        // Header
-        VStack(alignment: .leading, spacing: Spacing.md) {
-          Text(procedure.title)
-            .font(.retraceTitle2)
-            .foregroundColor(.textPrimary)
-
-          Text(procedure.description)
-            .font(.retraceCallout)
-            .foregroundColor(.textSecondary)
-
-          HStack(spacing: Spacing.md) {
-            MetadataPill(icon: "clock", text: formatDuration(procedure.totalDuration))
-            MetadataPill(icon: "list.number", text: "\(procedure.steps.count) steps")
-            MetadataPill(icon: "calendar", text: formatDate(procedure.createdAt))
-          }
+  private var content: some View {
+    if viewModel.isLoading && viewModel.procedure == nil {
+      ProgressView()
+        .scaleEffect(1.5)
+        .tint(.textPrimary)
+    } else if let procedure = viewModel.procedure {
+      ProcedureChapterDetailContent(
+        procedure: procedure,
+        serverBaseURL: viewModel.serverBaseURL,
+        metrics: expertMetrics(for: procedure),
+        readMoreContent: expertReadMoreContent(for: procedure),
+        headerActionContent: EmptyView(),
+        expandedStepFooter: { step in
+          expertStepFooter(for: step)
         }
+      )
+    } else if let error = viewModel.errorMessage {
+      VStack(spacing: Spacing.lg) {
+        Image(systemName: "exclamationmark.triangle")
+          .font(.system(size: 36))
+          .foregroundColor(.textPrimary)
 
-        // Analytics stub
-        analyticsSection
-
-        // Steps
-        stepsSection(procedure)
-
-        // Source video
-        sourceVideoSection(procedure)
+        Text(error)
+          .font(.retraceCallout)
+          .foregroundColor(.textSecondary)
+          .multilineTextAlignment(.center)
       }
       .padding(Spacing.screenPadding)
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-  }
-
-  // MARK: - Analytics
-
-  private var analyticsSection: some View {
-    VStack(alignment: .leading, spacing: Spacing.lg) {
-      Text("ANALYTICS")
-        .font(.retraceOverline)
-        .tracking(0.5)
-        .foregroundColor(.textSecondary)
-
-      HStack(spacing: Spacing.lg) {
-        StatCard(value: "\u{2014}", label: "Learners Trained")
-        StatCard(value: "\u{2014}", label: "Completion Rate")
-        StatCard(value: "\u{2014}", label: "Avg. Time")
-      }
-
-      Text("Available with Learner Mode")
-        .font(.retraceCaption2)
-        .foregroundColor(.textTertiary)
     }
   }
 
-  // MARK: - Steps
+  private func expertMetrics(for procedure: ProcedureResponse) -> [ProcedureMetricItem] {
+    ProcedureMetricItem.workflowSummary(
+      duration: procedure.totalDuration,
+      stepCount: procedure.steps.count,
+      completionCount: placeholderCompletionCount
+    )
+  }
+
+  private var placeholderCompletionCount: Int {
+    // Placeholder until procedure-level analytics are available from the backend.
+    142
+  }
 
   @ViewBuilder
-  private func stepsSection(_ procedure: ProcedureResponse) -> some View {
-    VStack(alignment: .leading, spacing: Spacing.lg) {
-      HStack {
-        Text("STEPS")
-          .font(.retraceOverline)
-          .tracking(0.5)
-          .foregroundColor(.textSecondary)
-        Spacer()
-        Text("\(procedure.steps.count)")
-          .font(.retraceOverline)
-          .foregroundColor(.textSecondary)
-      }
+  private func expertReadMoreContent(for procedure: ProcedureResponse) -> some View {
+    VStack(alignment: .leading, spacing: Spacing.md) {
+      Divider()
+        .background(Color.borderSubtle)
 
-      ForEach(procedure.steps) { step in
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-          StepDetailView(
-            step: step,
-            isExpanded: viewModel.expandedStep == step.stepNumber,
-            serverBaseURL: viewModel.serverBaseURL
-          ) {
-            withAnimation(.easeInOut(duration: 0.25)) {
-              viewModel.toggleStep(step.stepNumber)
-            }
-          }
+      HStack(spacing: Spacing.md) {
+        MetadataPill(icon: "calendar", text: ProcedureDisplayFormat.date(procedure.createdAt))
 
-          if viewModel.expandedStep == step.stepNumber {
-            // Pencil lives in its own row, not inside an HStack with the
-            // Button-backed StepDetailView. Sharing a Button + NavigationLink
-            // in the same HStack made hit-testing fight and let intrinsic
-            // widths sum past the viewport.
-            HStack {
-              Spacer()
-              NavigationLink {
-                StepEditView(
-                  procedureId: procedureId,
-                  step: step
-                ) {
-                  Task { await viewModel.fetchProcedure(id: procedureId) }
-                }
-              } label: {
-                Label("Edit step", systemImage: "pencil")
-                  .font(.retraceSubheadline)
-                  .foregroundColor(.textPrimary)
-                  .padding(.horizontal, Spacing.md)
-                  .padding(.vertical, Spacing.sm)
-              }
-            }
-            .frame(maxWidth: .infinity)
-            .transition(.opacity)
-          }
+        if let status = procedure.status, !status.isEmpty {
+          MetadataPill(icon: "sparkles", text: status.capitalized)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
       }
-    }
-    .padding(Spacing.xl)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.surfaceBase)
-    .cornerRadius(Radius.md)
-  }
 
-  // MARK: - Source Video
+      Text("Use the overflow menu to edit the workflow, or jump into a step below to revise that section in place.")
+        .font(.retraceSubheadline)
+        .foregroundColor(.textSecondary)
+    }
+  }
 
   @ViewBuilder
-  private func sourceVideoSection(_ procedure: ProcedureResponse) -> some View {
-    VStack(alignment: .leading, spacing: Spacing.lg) {
-      Text("SOURCE RECORDING")
-        .font(.retraceOverline)
-        .tracking(0.5)
-        .foregroundColor(.textSecondary)
+  private func expertStepFooter(for step: ProcedureStepResponse) -> some View {
+    HStack {
+      Spacer()
 
-      // Server returns the upload's real filename (preserves original .mp4 / .mov
-      // extension). Fall back to the legacy `{id}.mp4` URL only for older servers
-      // that don't include `source_video` in the response.
-      let filename = procedure.sourceVideo ?? "\(procedure.id).mp4"
-      if let videoURL = URL(string: "\(viewModel.serverBaseURL)/api/uploads/\(filename)") {
-        StepClipPlayer(url: videoURL)
+      NavigationLink {
+        StepEditView(
+          procedureId: procedureId,
+          step: step
+        ) {
+          Task { await viewModel.fetchProcedure(id: procedureId) }
+        }
+      } label: {
+        Label("Edit step", systemImage: "pencil")
+          .font(.retraceSubheadline)
+          .foregroundColor(.textPrimary)
+          .padding(.horizontal, Spacing.md)
+          .padding(.vertical, Spacing.sm)
+          .background(Color.surfaceRaised)
+          .clipShape(Capsule())
       }
     }
-  }
-
-  // MARK: - Formatting
-
-  private func formatDuration(_ seconds: Double) -> String {
-    let mins = Int(seconds) / 60
-    let secs = Int(seconds) % 60
-    return String(format: "%d:%02d", mins, secs)
-  }
-
-  private func formatDate(_ isoString: String) -> String {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = formatter.date(from: isoString) {
-      let display = DateFormatter()
-      display.dateStyle = .medium
-      return display.string(from: date)
-    }
-    formatter.formatOptions = [.withInternetDateTime]
-    if let date = formatter.date(from: isoString) {
-      let display = DateFormatter()
-      display.dateStyle = .medium
-      return display.string(from: date)
-    }
-    return isoString
+    .frame(maxWidth: .infinity, alignment: .trailing)
   }
 }

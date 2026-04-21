@@ -5,7 +5,6 @@ class ProcedureDetailViewModel: ObservableObject {
   @Published var procedure: ProcedureResponse?
   @Published var isLoading = false
   @Published var errorMessage: String?
-  @Published var expandedStep: Int?
   @Published var showDeleteConfirmation = false
 
   private let api = ProcedureAPIService()
@@ -31,14 +30,6 @@ class ProcedureDetailViewModel: ObservableObject {
     } catch {
       errorMessage = error.localizedDescription
       return false
-    }
-  }
-
-  func toggleStep(_ stepNumber: Int) {
-    if expandedStep == stepNumber {
-      expandedStep = nil
-    } else {
-      expandedStep = stepNumber
     }
   }
 }

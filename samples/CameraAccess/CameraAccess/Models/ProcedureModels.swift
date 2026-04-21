@@ -48,6 +48,28 @@ struct ProcedureStepResponse: Codable, Identifiable {
     case clipUrl = "clip_url"
   }
 
+  init(
+    stepNumber: Int,
+    title: String,
+    description: String,
+    timestampStart: Double,
+    timestampEnd: Double,
+    tips: [String] = [],
+    warnings: [String] = [],
+    errorCriteria: [String] = [],
+    clipUrl: String? = nil
+  ) {
+    self.stepNumber = stepNumber
+    self.title = title
+    self.description = description
+    self.timestampStart = timestampStart
+    self.timestampEnd = timestampEnd
+    self.tips = tips
+    self.warnings = warnings
+    self.errorCriteria = errorCriteria
+    self.clipUrl = clipUrl
+  }
+
   // Custom decoder so old servers that predate the error_criteria column
   // don't break the client — missing / null field decodes to []. New
   // servers always emit a list (possibly empty).

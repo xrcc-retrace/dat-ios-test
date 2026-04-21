@@ -27,7 +27,7 @@ class ViewModelIntegrationTests: XCTestCase {
     // Pair mock device and set up camera kit
     let pairedMockDevice = MockDeviceKit.shared.pairRaybanMeta()
     mockDevice = pairedMockDevice
-    cameraKit = pairedMockDevice.getCameraKit()
+    cameraKit = pairedMockDevice.services.camera
 
     // Power on and unfold the device to make it available
     pairedMockDevice.powerOn()

@@ -79,14 +79,10 @@ struct LearnerProcedureDetailView: View {
       ProcedureChapterDetailContent(
         procedure: procedure,
         serverBaseURL: viewModel.serverBaseURL,
-        metrics: [
-          ProcedureMetricItem(icon: "clock", text: ProcedureDisplayFormat.timestamp(procedure.totalDuration)),
-          ProcedureMetricItem(icon: "list.number", text: "\(procedure.steps.count)"),
-          ProcedureMetricItem(icon: "checkmark.circle", text: "\(progressStore.completedCount(for: procedure.id))"),
-        ],
-        readMoreContent: AnyView(learnerReadMoreContent(for: procedure)),
-        headerActionContent: AnyView(saveButton(for: procedure)),
-        expandedStepFooter: { _ in AnyView(EmptyView()) }
+        metrics: learnerMetrics(for: procedure),
+        readMoreContent: learnerReadMoreContent(for: procedure),
+        headerActionContent: saveButton(for: procedure),
+        expandedStepFooter: { _ in EmptyView() }
       )
     } else if let error = viewModel.errorMessage {
       VStack(spacing: Spacing.lg) {
@@ -100,6 +96,14 @@ struct LearnerProcedureDetailView: View {
       }
       .padding(Spacing.screenPadding)
     }
+  }
+
+  private func learnerMetrics(for procedure: ProcedureResponse) -> [ProcedureMetricItem] {
+    ProcedureMetricItem.workflowSummary(
+      duration: procedure.totalDuration,
+      stepCount: procedure.steps.count,
+      completionCount: progressStore.completedCount(for: procedure.id)
+    )
   }
 
   @ViewBuilder
@@ -314,7 +318,7 @@ struct LearnerProcedureDetailView: View {
   }
 
   private func launchCoaching(transport: CaptureTransport, startingStep: Int?) {
-    isStartCoachingExpanded = false
+    collapseStartCoachingCTA()
     coachingStartingStep = startingStep
     switch transport {
     case .glasses:

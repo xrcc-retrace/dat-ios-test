@@ -37,6 +37,18 @@ final class ProcedureChapterPlayerModelTests: XCTestCase {
     XCTAssertEqual(active?.stepNumber, 3)
   }
 
+  func testActiveStepSortsUnorderedStepsForCallers() {
+    let steps = [
+      makeStep(number: 3, start: 24, end: 39),
+      makeStep(number: 1, start: 0, end: 12),
+      makeStep(number: 2, start: 12, end: 24),
+    ]
+
+    let active = ProcedureChapterPlayerModel.activeStep(at: 18, steps: steps)
+
+    XCTAssertEqual(active?.stepNumber, 2)
+  }
+
   func testSourceVideoURLUsesServerProvidedFilename() {
     let procedure = makeProcedure(sourceVideo: "custom.mov")
 
@@ -89,6 +101,26 @@ final class ProcedureChapterPlayerModelTests: XCTestCase {
 
     XCTAssertEqual(preview.collapsedText, "This summary has enough words that the limit lands inside… ")
     XCTAssertTrue(preview.isTruncatable)
+  }
+
+  func testOrderedStepsSortByTimestampStart() {
+    let procedure = ProcedureResponse(
+      id: "procedure-123",
+      title: "Procedure",
+      description: "Description",
+      steps: [
+        makeStep(number: 3, start: 24, end: 39),
+        makeStep(number: 1, start: 0, end: 12),
+        makeStep(number: 2, start: 12, end: 24),
+      ],
+      totalDuration: 39,
+      createdAt: "2026-04-21T12:00:00Z",
+      status: nil,
+      errorMessage: nil,
+      sourceVideo: nil
+    )
+
+    XCTAssertEqual(procedure.orderedSteps.map(\.stepNumber), [1, 2, 3])
   }
 
   private func makeProcedure(sourceVideo: String?) -> ProcedureResponse {

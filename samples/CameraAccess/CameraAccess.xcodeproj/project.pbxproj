@@ -23,6 +23,9 @@
 		30154EA485163A5A0F6EFA7B /* ExpertRecordingHUDViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9C849A9B99F92F1549ECD93 /* ExpertRecordingHUDViewModel.swift */; };
 		30BADC1B68D5C32FCEAE57DA /* IPhoneCoachingLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A67325F7AF6CB6EC53E2F6D /* IPhoneCoachingLayout.swift */; };
 		312C4D5894EA98F086F012B2 /* ProcedureDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ECA46CD88AA357E8B876D68 /* ProcedureDetailViewModel.swift */; };
+		A9D0B6E1F23C4A5B67890129 /* ProcedureChapterPlayerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D0B6E1F23C4A5B6789012C /* ProcedureChapterPlayerModel.swift */; };
+		A9D0B6E1F23C4A5B6789012A /* ProcedureChapterDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D0B6E1F23C4A5B6789012D /* ProcedureChapterDetailContent.swift */; };
+		A9D0B6E1F23C4A5B6789012B /* ProcedureStepContentViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D0B6E1F23C4A5B6789012E /* ProcedureStepContentViews.swift */; };
 		346A4BD3822DB564BFB451F0 /* DiagnosticModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6C4A9CAA8A6B6DB9FF8505 /* DiagnosticModels.swift */; };
 		34F240439F7EFE03260221FF /* StepEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6774179B49818FB9612C61E /* StepEditView.swift */; };
 		36374B0DA8333BE5B83AB0C2 /* TroubleshootSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E849158079F4E5CBC2DD31 /* TroubleshootSessionView.swift */; };
@@ -202,6 +205,9 @@
 		731A4EA49C2D88F60F8FF5AB /* ProcedureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureModels.swift; path = CameraAccess/Models/ProcedureModels.swift; sourceTree = SOURCE_ROOT; };
 		74A24F39AC3FBF21EED9B635 /* CoachingSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CoachingSessionView.swift; path = CameraAccess/Views/Learner/Coaching/CoachingSessionView.swift; sourceTree = SOURCE_ROOT; };
 		7ECA46CD88AA357E8B876D68 /* ProcedureDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureDetailViewModel.swift; path = CameraAccess/ViewModels/ProcedureDetailViewModel.swift; sourceTree = SOURCE_ROOT; };
+		A9D0B6E1F23C4A5B6789012C /* ProcedureChapterPlayerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureChapterPlayerModel.swift; path = CameraAccess/ViewModels/ProcedureChapterPlayerModel.swift; sourceTree = SOURCE_ROOT; };
+		A9D0B6E1F23C4A5B6789012D /* ProcedureChapterDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureChapterDetailContent.swift; path = CameraAccess/Views/Components/ProcedureChapterDetailContent.swift; sourceTree = SOURCE_ROOT; };
+		A9D0B6E1F23C4A5B6789012E /* ProcedureStepContentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureStepContentViews.swift; path = CameraAccess/Views/Components/ProcedureStepContentViews.swift; sourceTree = SOURCE_ROOT; };
 		82304CA0A9A380B5EB3BFAEA /* LearnerProcedureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LearnerProcedureDetailView.swift; path = CameraAccess/Views/Learner/LearnerProcedureDetailView.swift; sourceTree = SOURCE_ROOT; };
 		8A67325F7AF6CB6EC53E2F6D /* IPhoneCoachingLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IPhoneCoachingLayout.swift; path = CameraAccess/Views/Learner/Coaching/IPhoneCoachingLayout.swift; sourceTree = SOURCE_ROOT; };
 		8F2D237F2E856711002D0588 /* DebugMenuViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugMenuViewModel.swift; sourceTree = "<group>"; };
@@ -353,6 +359,7 @@
 				5D424E4BA44D0156B45D29B0 /* CoachingSessionViewModel.swift */,
 				DCFE420BBC04BE5574B2C3DD /* DiscoverViewModel.swift */,
 				7ECA46CD88AA357E8B876D68 /* ProcedureDetailViewModel.swift */,
+				A9D0B6E1F23C4A5B6789012C /* ProcedureChapterPlayerModel.swift */,
 				39E042E4AC27537C599E1532 /* WorkflowListViewModel.swift */,
 				C06C456A852E3B95EE5276D9 /* CategoryChip.swift */,
 				AA5555555555555555555555 /* SoundWaveView.swift */,
@@ -360,6 +367,8 @@
 				A9274EEE92DABFFE4A474DCB /* EditableStringList.swift */,
 				6F13449B876DE9D2EA5DF77D /* MetadataPill.swift */,
 				607149ADAC868392CEA214B7 /* ProcedureCardView.swift */,
+				A9D0B6E1F23C4A5B6789012D /* ProcedureChapterDetailContent.swift */,
+				A9D0B6E1F23C4A5B6789012E /* ProcedureStepContentViews.swift */,
 				E77749B79943BF9F41098144 /* StatCard.swift */,
 				2F8148589A75E2214DB6FF49 /* StepProgressBar.swift */,
 				948E4153AE26C2C238229983 /* ExpertTabView.swift */,
@@ -749,6 +758,7 @@
 				7A7745B6AC3E22919F80AAF0 /* CoachingSessionViewModel.swift in Sources */,
 				E6AB428FBE783D6C8A13CBC1 /* DiscoverViewModel.swift in Sources */,
 				312C4D5894EA98F086F012B2 /* ProcedureDetailViewModel.swift in Sources */,
+				A9D0B6E1F23C4A5B67890129 /* ProcedureChapterPlayerModel.swift in Sources */,
 				A0E547C58FF5989932C14DDC /* WorkflowListViewModel.swift in Sources */,
 				0E2B467EAC3577ACBC15E8E8 /* CategoryChip.swift in Sources */,
 				BB1111111111111111111111 /* RetraceColors.swift in Sources */,
@@ -759,6 +769,8 @@
 				E34E4BC09C89508937F72845 /* EditableStringList.swift in Sources */,
 				51C242D4BF959C022764AC33 /* MetadataPill.swift in Sources */,
 				44A54FBC8816981749777AA4 /* ProcedureCardView.swift in Sources */,
+				A9D0B6E1F23C4A5B6789012A /* ProcedureChapterDetailContent.swift in Sources */,
+				A9D0B6E1F23C4A5B6789012B /* ProcedureStepContentViews.swift in Sources */,
 				1EF74E91AB192886D219EE59 /* StatCard.swift in Sources */,
 				EDB84E7B961EB7B6DF6AF651 /* StepProgressBar.swift in Sources */,
 				883743AFA338E286CB815334 /* ExpertTabView.swift in Sources */,

@@ -192,7 +192,7 @@ struct ServerSettingsView: View {
           Text(mode.displayName)
             .font(.retraceCallout)
             .fontWeight(isSelected ? .semibold : .medium)
-            .foregroundColor(isSelected ? .backgroundPrimary : .textSecondary)
+            .foregroundColor(isSelected ? .backgroundPrimary : .textPrimary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.xs)
             .background(

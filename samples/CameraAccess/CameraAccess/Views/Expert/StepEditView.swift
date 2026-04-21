@@ -145,7 +145,7 @@ struct StepEditView: View {
     .toolbar {
       ToolbarItem(placement: .topBarLeading) {
         Button("Cancel") { dismiss() }
-          .foregroundColor(.textSecondary)
+          .foregroundColor(.textPrimary)
       }
       ToolbarItem(placement: .topBarTrailing) {
         Button("Save") {

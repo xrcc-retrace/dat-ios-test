@@ -30,7 +30,7 @@ struct RecordTabView: View {
           onExit()
         } label: {
           Image(systemName: "chevron.backward")
-            .foregroundColor(.textSecondary)
+            .foregroundColor(.textPrimary)
         }
       }
     }

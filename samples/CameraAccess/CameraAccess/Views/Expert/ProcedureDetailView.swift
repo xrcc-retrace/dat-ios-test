@@ -33,7 +33,7 @@ struct ProcedureDetailView: View {
           }
         } label: {
           Image(systemName: "ellipsis.circle")
-            .foregroundColor(.textSecondary)
+            .foregroundColor(.textPrimary)
         }
       }
     }

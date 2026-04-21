@@ -17,7 +17,7 @@ struct RegistrationPromptSheet: View {
         .toolbar {
           ToolbarItem(placement: .topBarLeading) {
             Button("Cancel") { dismiss() }
-              .foregroundColor(.textSecondary)
+              .foregroundColor(.textPrimary)
           }
         }
         .retraceNavBar()

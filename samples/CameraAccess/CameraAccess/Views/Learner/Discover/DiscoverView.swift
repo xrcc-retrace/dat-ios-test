@@ -49,7 +49,7 @@ struct DiscoverView: View {
           onExit()
         } label: {
           Image(systemName: "chevron.backward")
-            .foregroundColor(.textSecondary)
+            .foregroundColor(.textPrimary)
         }
       }
     }

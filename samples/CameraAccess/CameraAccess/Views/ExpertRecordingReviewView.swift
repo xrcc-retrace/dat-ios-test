@@ -122,10 +122,11 @@ struct ExpertRecordingReviewView: View {
       }
       .navigationTitle("Review")
       .navigationBarTitleDisplayMode(.inline)
+      .retraceNavBar()
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button("Close") { onDismiss() }
-            .foregroundColor(.textSecondary)
+            .foregroundColor(.textPrimary)
         }
       }
       .onAppear {

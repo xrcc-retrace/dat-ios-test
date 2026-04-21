@@ -128,7 +128,7 @@ struct ModeSelectionView: View {
             ServerSettingsView(wearablesVM: wearablesVM)
           } label: {
             Image(systemName: "gearshape")
-              .foregroundColor(.textSecondary)
+              .foregroundColor(.textPrimary)
           }
         }
       }

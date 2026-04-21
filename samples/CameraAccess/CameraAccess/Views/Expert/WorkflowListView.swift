@@ -26,7 +26,7 @@ struct WorkflowListView: View {
           onExit()
         } label: {
           Image(systemName: "chevron.backward")
-            .foregroundColor(.textSecondary)
+            .foregroundColor(.textPrimary)
         }
       }
       ToolbarItem(placement: .topBarTrailing) {
@@ -34,7 +34,7 @@ struct WorkflowListView: View {
           ServerSettingsView(wearablesVM: wearablesVM)
         } label: {
           Image(systemName: "gearshape")
-            .foregroundColor(.textSecondary)
+            .foregroundColor(.textPrimary)
         }
       }
     }

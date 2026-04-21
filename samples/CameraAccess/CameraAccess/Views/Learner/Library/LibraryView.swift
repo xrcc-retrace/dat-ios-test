@@ -51,13 +51,13 @@ struct LibraryView: View {
             isEditing = false
             selectedIDs.removeAll()
           }
-          .foregroundColor(.textSecondary)
+          .foregroundColor(.textPrimary)
         } else {
           Button {
             onExit()
           } label: {
             Image(systemName: "chevron.backward")
-              .foregroundColor(.textSecondary)
+              .foregroundColor(.textPrimary)
           }
         }
       }
@@ -86,7 +86,7 @@ struct LibraryView: View {
               .disabled(progressStore.sessionHistory.isEmpty)
             } label: {
               Image(systemName: "ellipsis.circle")
-                .foregroundColor(.textSecondary)
+                .foregroundColor(.textPrimary)
             }
           }
         }

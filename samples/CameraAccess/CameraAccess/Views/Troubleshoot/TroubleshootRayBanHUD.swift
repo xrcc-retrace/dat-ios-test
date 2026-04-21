@@ -39,12 +39,17 @@ import SwiftUI
 /// - `viewModel.isMuted: Bool`, `viewModel.isAISpeaking: Bool`
 /// - `viewModel.geminiConnectionState` — `.connecting / .connected / .error / .disconnected`
 /// - `viewModel.voiceStatus: String` — short human-readable ("Listening", "Muted", …)
+/// - `viewModel.latestHandFrame`, `viewModel.recentPinchDragEvents` — hand
+///   tracking state; drives the landmark overlay + pinch event log below.
 struct TroubleshootRayBanHUD: View {
   @ObservedObject var viewModel: DiagnosticSessionViewModel
 
   var body: some View {
-    // Designer fills this in. Camera renders through the whole surface
-    // until HUD content is added.
-    EmptyView()
+    ZStack {
+      // Single shared gesture-debug stack — composes the landmark overlay
+      // + event log with identical placement across Coaching, Expert, and
+      // Troubleshoot HUDs. See HandGestureDebugStack.swift.
+      HandGestureDebugStack(provider: viewModel)
+    }
   }
 }

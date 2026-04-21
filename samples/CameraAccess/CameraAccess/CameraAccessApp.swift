@@ -36,6 +36,8 @@ struct CameraAccessApp: App {
   @StateObject private var wearablesViewModel: WearablesViewModel
 
   init() {
+    RetraceNavBarAppearance.install()
+
     do {
       try Wearables.configure()
     } catch {

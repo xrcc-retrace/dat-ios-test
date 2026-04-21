@@ -32,6 +32,21 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   let uploadService: UploadService
   let camera = IPhoneCameraCapture()
 
+  /// State layer behind the Expert HUD — tip rotation, audio meter
+  /// smoothing, transcript, mic-source. Bound to the audio manager +
+  /// transcriber in `init`.
+  let hudViewModel = ExpertRecordingHUDViewModel()
+
+  /// On-device speech recognizer for the HUD's rolling transcript card.
+  /// Started when recording begins, stopped when it ends.
+  let speechTranscriber = SpeechTranscriber()
+
+  /// MediaPipe hand-landmark service. Shares the same `HandTrackingConfig`
+  /// gate as the Learner Coaching path — model file bundled → available.
+  /// Owned here so the lifecycle matches the camera's. Mirrors
+  /// `GeminiLiveSessionBase.handLandmarkerService`.
+  private var handLandmarkerService: HandLandmarkerService?
+
   private var recordingManagerCancellable: AnyCancellable?
 
   init(uploadService: UploadService) {
@@ -45,6 +60,12 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
     recordingManagerCancellable = manager.objectWillChange
       .receive(on: RunLoop.main)
       .sink { [weak self] _ in self?.objectWillChange.send() }
+
+    hudViewModel.bind(
+      audioSessionManager: audioSessionManager,
+      speechTranscriber: speechTranscriber
+    )
+    hudViewModel.startTipRotation()
   }
 
   var previewLayer: AVCaptureVideoPreviewLayer {
@@ -86,12 +107,51 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       }
     }
 
+    startHandTrackingIfAvailable()
+
     do {
       try await camera.start()
       isPreviewLive = camera.isRunning
     } catch {
       surfaceError("Could not start iPhone camera: \(error.localizedDescription)")
     }
+  }
+
+  /// Spin up the MediaPipe hand landmarker and wire the camera's secondary
+  /// BGRA output into it. Feeds each detection into the HUD view model,
+  /// which handles both the landmark-overlay publish and the gesture
+  /// recognizer. No-op when `HandTrackingConfig.isAvailable` is false
+  /// (model file not bundled, previews, etc.) so the rest of the pipeline
+  /// runs unchanged on devices without the `.task` asset.
+  private func startHandTrackingIfAvailable() {
+    guard HandTrackingConfig.isAvailable else {
+      print("[Expert] Hand tracking unavailable — model not bundled")
+      return
+    }
+
+    // Fresh recognizer state + cleared debug log per camera session so no
+    // stale TRACKING state carries over from a prior recording view.
+    hudViewModel.resetHandTracking()
+
+    let service = HandLandmarkerService()
+    do {
+      try service.start()
+    } catch {
+      print("[Expert] Hand tracking disabled: \(error.localizedDescription)")
+      return
+    }
+
+    service.onResult = { [weak self] frame in
+      Task { @MainActor in
+        self?.hudViewModel.ingestHandFrame(frame)
+      }
+    }
+    handLandmarkerService = service
+
+    camera.onHandSampleBuffer = { [weak service] sampleBuffer in
+      service?.submit(sampleBuffer: sampleBuffer)
+    }
+    print("[Expert] Hand tracking started — pinch-drag recognizer armed")
   }
 
   /// Start the mp4 writer + audio tap. Video frames are already arriving from
@@ -106,7 +166,16 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       return
     }
     Task { [weak self] in
-      await self?.recordingManager.startRecording()
+      guard let self else { return }
+      await self.recordingManager.startRecording()
+      // Bring up the on-device transcriber AFTER the writer is armed — the
+      // mic tap is live at that point. Install it as the *secondary* audio
+      // consumer so the writer can never be starved by a slow speech
+      // callback.
+      await self.speechTranscriber.start()
+      self.audioSessionManager.installSecondaryAudioConsumer { [weak self] buffer, _ in
+        self?.speechTranscriber.append(buffer)
+      }
     }
   }
 
@@ -114,6 +183,10 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   func stopRecording() {
     Task { [weak self] in
       guard let self else { return }
+      // Tear down transcription first so late buffers can't land in a
+      // recognizer whose session is about to close.
+      self.audioSessionManager.removeSecondaryAudioConsumer()
+      self.speechTranscriber.stop()
       _ = await self.recordingManager.stopRecording()
       // `recordingManager.recordingURL` is set before `stopRecording` returns.
       if self.recordingManager.recordingURL != nil {
@@ -130,7 +203,14 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   func teardown() {
     camera.stop()
     camera.onSampleBuffer = nil
+    camera.onHandSampleBuffer = nil
+    handLandmarkerService?.stop()
+    handLandmarkerService = nil
+    hudViewModel.resetHandTracking()
     isPreviewLive = false
+    audioSessionManager.removeSecondaryAudioConsumer()
+    speechTranscriber.stop()
+    hudViewModel.stopTipRotation()
   }
 
   // MARK: - Error surfacing

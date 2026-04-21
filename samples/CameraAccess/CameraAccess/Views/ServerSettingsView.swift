@@ -1,10 +1,21 @@
-import SwiftUI
 import MWDATCore
+import SwiftUI
 
 struct ServerSettingsView: View {
   @ObservedObject private var discovery = BonjourDiscovery.shared
+  @ObservedObject private var endpoint = ServerEndpoint.shared
   @ObservedObject private var wearablesVM: WearablesViewModel
   @Environment(\.dismiss) private var dismiss
+
+  @State private var healthState: HealthState = .idle
+  @State private var lastRoundTripMs: Int?
+
+  enum HealthState: Equatable {
+    case idle
+    case checking
+    case ok
+    case fail(String)
+  }
 
   init(wearablesVM: WearablesViewModel) {
     self.wearablesVM = wearablesVM
@@ -26,7 +37,7 @@ struct ServerSettingsView: View {
     .retraceNavBar()
   }
 
-  // MARK: - Glasses section
+  // MARK: - Glasses section (unchanged)
 
   @ViewBuilder
   private var glassesSection: some View {
@@ -80,46 +91,70 @@ struct ServerSettingsView: View {
 
   @ViewBuilder
   private var serverSection: some View {
-    VStack(spacing: Spacing.md) {
-      VStack(spacing: Spacing.md) {
-        Image(systemName: "server.rack")
-          .font(.system(size: 40))
-          .foregroundColor(.textPrimary)
-        Text("Server Connection")
-          .font(.retraceTitle2)
-          .fontWeight(.bold)
-          .foregroundColor(.textPrimary)
-        Text("Retrace finds your server automatically on the local network.")
-          .font(.retraceCallout)
-          .foregroundColor(.textSecondary)
-          .multilineTextAlignment(.center)
-      }
-      .padding(.top, Spacing.xl)
+    VStack(alignment: .leading, spacing: Spacing.md) {
+      Text("Server")
+        .font(.retraceOverline)
+        .tracking(0.5)
+        .foregroundColor(.textSecondary)
+        .textCase(.uppercase)
 
-      serverStatusTile
+      activeEndpointTile
+
+      modePicker
+
+      if endpoint.mode == .custom {
+        customURLField
+      }
+
+      if endpoint.mode == .auto || endpoint.mode == .local {
+        CustomButton(
+          title: discovery.isSearching ? "Rescanning…" : "Rescan Bonjour",
+          style: .secondary,
+          isDisabled: discovery.isSearching
+        ) {
+          discovery.rescan()
+        }
+      }
 
       CustomButton(
-        title: "Rescan",
+        title: healthState == .checking ? "Checking…" : "Test connection",
         style: .secondary,
-        isDisabled: false
+        isDisabled: healthState == .checking
       ) {
-        discovery.rescan()
+        Task { await runHealthCheck() }
       }
     }
+    .padding(.top, Spacing.xl)
   }
 
   @ViewBuilder
-  private var serverStatusTile: some View {
+  private var activeEndpointTile: some View {
     HStack(alignment: .center, spacing: Spacing.md) {
-      leadingIndicator
+      Circle()
+        .fill(statusDotColor)
+        .frame(width: 10, height: 10)
       VStack(alignment: .leading, spacing: Spacing.xxs) {
-        Text(serverStatusLabel)
-          .font(.retraceCallout)
-          .foregroundColor(.textPrimary)
-        if let url = discovery.discoveredURL {
-          Text(url)
-            .font(.system(size: 13, design: .monospaced))
-            .foregroundColor(.textSecondary)
+        HStack(spacing: Spacing.sm) {
+          Text(endpoint.activeTier.displayName)
+            .font(.retraceCallout)
+            .fontWeight(.semibold)
+            .foregroundColor(.textPrimary)
+          if let ms = lastRoundTripMs, healthState == .ok {
+            Text("· \(ms) ms")
+              .font(.retraceCaption1)
+              .foregroundColor(.textSecondary)
+          }
+          Spacer()
+        }
+        Text(endpoint.resolvedBaseURL)
+          .font(.system(size: 13, design: .monospaced))
+          .foregroundColor(.textSecondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        if case .fail(let reason) = healthState {
+          Text(reason)
+            .font(.retraceCaption1)
+            .foregroundColor(.orange)
         }
       }
       Spacer()
@@ -129,38 +164,100 @@ struct ServerSettingsView: View {
     .cornerRadius(Radius.md)
   }
 
+  private var statusDotColor: Color {
+    switch healthState {
+    case .ok: return .green
+    case .fail: return .orange
+    case .checking: return .yellow
+    case .idle:
+      switch endpoint.activeTier {
+      case .bonjour, .cloud, .custom: return .textPrimary
+      case .fallback: return .textTertiary
+      }
+    }
+  }
+
   @ViewBuilder
-  private var leadingIndicator: some View {
-    if discovery.discoveredURL == nil && discovery.isSearching {
-      ProgressView()
-        .tint(.textPrimary)
-    } else {
-      Circle()
-        .fill(serverStatusColor)
-        .frame(width: 10, height: 10)
+  private var modePicker: some View {
+    HStack(spacing: 0) {
+      ForEach(ServerEndpoint.Mode.allCases) { mode in
+        let isSelected = endpoint.mode == mode
+        Button {
+          if endpoint.mode != mode {
+            endpoint.mode = mode
+            healthState = .idle
+            lastRoundTripMs = nil
+          }
+        } label: {
+          Text(mode.displayName)
+            .font(.retraceCallout)
+            .fontWeight(isSelected ? .semibold : .medium)
+            .foregroundColor(isSelected ? .backgroundPrimary : .textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.xs)
+            .background(
+              RoundedRectangle(cornerRadius: Radius.sm)
+                .fill(isSelected ? Color.textPrimary : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+      }
+    }
+    .padding(Radius.xs)
+    .background(Color.surfaceBase)
+    .cornerRadius(Radius.md)
+  }
+
+  @ViewBuilder
+  private var customURLField: some View {
+    VStack(alignment: .leading, spacing: Spacing.xs) {
+      TextField("https://example.com:8000", text: $endpoint.manualURL)
+        .textFieldStyle(.roundedBorder)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .keyboardType(.URL)
+        .font(.system(size: 14, design: .monospaced))
+        .onChange(of: endpoint.manualURL) { _, _ in
+          healthState = .idle
+          lastRoundTripMs = nil
+        }
+      if !endpoint.manualURL.isEmpty && !endpoint.isManualURLValid {
+        Text("Enter an http:// or https:// URL with a host.")
+          .font(.retraceCaption1)
+          .foregroundColor(.orange)
+      }
     }
   }
 
-  private var serverStatusColor: Color {
-    if discovery.discoveredURL != nil {
-      switch discovery.isReachable {
-      case .some(true): return .green
-      case .some(false): return .orange
-      case .none: return .yellow
-      }
-    }
-    return .textTertiary
-  }
+  // MARK: - Health check
 
-  private var serverStatusLabel: String {
-    if discovery.discoveredURL != nil {
-      switch discovery.isReachable {
-      case .some(true): return "Connected"
-      case .some(false): return "Unreachable"
-      case .none: return "Checking…"
-      }
+  private func runHealthCheck() async {
+    healthState = .checking
+    lastRoundTripMs = nil
+
+    guard let url = URL(string: "\(endpoint.resolvedBaseURL)/health") else {
+      healthState = .fail("Invalid URL")
+      return
     }
-    if discovery.isSearching { return "Searching for server…" }
-    return "Not connected"
+
+    var req = URLRequest(url: url)
+    req.timeoutInterval = 5
+
+    let start = Date()
+    do {
+      let (_, response) = try await URLSession.shared.data(for: req)
+      let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+      if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+        lastRoundTripMs = elapsed
+        healthState = .ok
+      } else {
+        let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+        healthState = .fail("Server responded with \(code)")
+      }
+    } catch {
+      healthState = .fail(error.localizedDescription)
+    }
   }
 }

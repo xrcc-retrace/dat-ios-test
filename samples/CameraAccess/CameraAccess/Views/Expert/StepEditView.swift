@@ -3,6 +3,7 @@ import SwiftUI
 struct StepEditView: View {
   let procedureId: String
   let step: ProcedureStepResponse
+  let localSaveHandler: ((ProcedureStepResponse) -> Void)?
   let onSaved: () -> Void
 
   @Environment(\.dismiss) private var dismiss
@@ -16,9 +17,15 @@ struct StepEditView: View {
 
   private let api = ProcedureAPIService()
 
-  init(procedureId: String, step: ProcedureStepResponse, onSaved: @escaping () -> Void) {
+  init(
+    procedureId: String,
+    step: ProcedureStepResponse,
+    localSaveHandler: ((ProcedureStepResponse) -> Void)? = nil,
+    onSaved: @escaping () -> Void = {}
+  ) {
     self.procedureId = procedureId
     self.step = step
+    self.localSaveHandler = localSaveHandler
     self.onSaved = onSaved
     self._title = State(initialValue: step.title)
     self._description = State(initialValue: step.description)
@@ -164,6 +171,26 @@ struct StepEditView: View {
     let cleanTips = tips.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     let cleanWarnings = warnings.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     let cleanErrorCriteria = errorCriteria.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    if let localSaveHandler {
+      // Review-stage path: merge edits into the parent's local state, no API call.
+      // Server commit is deferred to the review screen's Confirm button.
+      let updated = ProcedureStepResponse(
+        stepNumber: step.stepNumber,
+        title: title,
+        description: description,
+        timestampStart: step.timestampStart,
+        timestampEnd: step.timestampEnd,
+        tips: cleanTips,
+        warnings: cleanWarnings,
+        errorCriteria: cleanErrorCriteria,
+        clipUrl: step.clipUrl
+      )
+      localSaveHandler(updated)
+      isSaving = false
+      dismiss()
+      return
+    }
 
     let update = StepUpdateRequest(
       title: title != step.title ? title : nil,

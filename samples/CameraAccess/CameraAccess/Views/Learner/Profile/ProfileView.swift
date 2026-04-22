@@ -5,6 +5,7 @@ struct ProfileView: View {
   let onExit: () -> Void
   @AppStorage("geminiVoice") private var geminiVoice = "Puck"
   @AppStorage("autoAdvanceEnabled") private var autoAdvanceEnabled = true
+  @AppStorage(OnboardingContainerView.completionKey) private var onboardingCompleted = true
 
   var body: some View {
     RetraceScreen {
@@ -153,6 +154,36 @@ struct ProfileView: View {
                   .tint(.textPrimary)
               }
             }
+          }
+
+          // Help section — replay onboarding
+          settingsSection(title: "HELP") {
+            Button {
+              onboardingCompleted = false
+            } label: {
+              HStack {
+                Image(systemName: "sparkles")
+                  .font(.system(size: 20))
+                  .foregroundColor(.textPrimary)
+                  .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                  Text("Start onboarding")
+                    .font(.retraceBody)
+                    .foregroundColor(.textPrimary)
+                  Text("Replay the intro tour from the first screen.")
+                    .font(.retraceCaption1)
+                    .foregroundColor(.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                  .font(.retraceSubheadline)
+                  .foregroundColor(.textTertiary)
+              }
+            }
+            .buttonStyle(.plain)
           }
 
           // About

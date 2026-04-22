@@ -134,12 +134,6 @@ class GeminiLiveSessionBase: ObservableObject {
   var indexPinchReleaseThreshold: Float {
     PinchDragRecognizer.Config().indexReleaseThreshold
   }
-  var middlePinchContactThreshold: Float {
-    PinchDragRecognizer.Config().middleContactThreshold
-  }
-  var middlePinchReleaseThreshold: Float {
-    PinchDragRecognizer.Config().middleReleaseThreshold
-  }
 
   /// Orientation start-gate bounds, surfaced so the debug overlay renders
   /// the same check the recognizer applies. Keep in sync if the recognizer's
@@ -152,6 +146,20 @@ class GeminiLiveSessionBase: ObservableObject {
   }
   var gateHandSizeMin: Float {
     PinchDragRecognizer.Config().gateHandSizeMin
+  }
+
+  /// True while a deferred `.select` is still inside its double-tap
+  /// window. Surfaces the recognizer's internal state so the overlay can
+  /// show the "TAP 1/2" chip.
+  var pendingSelectActive: Bool {
+    pinchDragRecognizer.debugState.pendingSelectActive
+  }
+
+  /// Quadrant the thumb is currently occupying relative to the pinch
+  /// start, or nil while idle / inside the center dead zone. Drives the
+  /// cross-UI's lit box.
+  var currentHighlightQuadrant: PinchDragQuadrant? {
+    pinchDragRecognizer.debugState.currentHighlightQuadrant
   }
 
   /// Thumb position at the most recent pinch start. Read-through from the

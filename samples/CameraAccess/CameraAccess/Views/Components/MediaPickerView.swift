@@ -32,7 +32,12 @@ struct MediaPickerView: UIViewControllerRepresentable {
     switch mode {
     case .video:
       picker.mediaTypes = ["public.movie"]
-      picker.videoExportPreset = AVAssetExportPresetHEVCHighestQuality
+      // Pass-through: return the source asset's file URL unchanged. Any
+      // in-process transcode (e.g. HEVCHighestQuality) triggers the PHAsset
+      // read path and requires NSPhotoLibraryUsageDescription, and the
+      // server re-encodes to H.264+AAC per step anyway, so transcoding
+      // here is wasted work that also slows the picker on long videos.
+      picker.videoExportPreset = AVAssetExportPresetPassthrough
     case .image:
       picker.mediaTypes = ["public.image"]
     }

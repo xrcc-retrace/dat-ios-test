@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Temporary debug overlay that visualizes `PinchDragRecognizer`'s state.
 ///
-/// Shows three landmarks — `thumbTip`, `indexTip`, `middleTip` — plus two
-/// live distance lines connecting the thumb to each fingertip. Each line's
-/// color flips green when the recognizer's pinch gate for that finger
-/// passes (both 2D and z within threshold); red / gray otherwise.
+/// Shows two landmarks — `thumbTip`, `indexTip` — plus a live distance
+/// line connecting them. The line flips green when the pinch-contact
+/// gate passes (2D distance under `indexContactThreshold`); red / thin
+/// otherwise.
 ///
 /// Persistent START / END markers show where the thumb was at the most
 /// recent pinch begin / release, with a dashed line between them so the
@@ -14,14 +14,13 @@ import SwiftUI
 /// Coordinate mapping is linear over the overlay's bounds — there's no
 /// aspect-fill correction for the camera preview beneath, so dots may
 /// sit slightly offset from the physical hand. Relative geometry (which
-/// pair is pinched, drag direction) is preserved, which is what matters
-/// for debugging.
+/// direction the drag went, whether the pinch fired) is preserved, which
+/// is what matters for debugging.
 ///
 /// Remove once gesture → action wiring lands.
 struct HandLandmarkDebugOverlay: View {
   let frame: HandLandmarkFrame?
   let indexContactThreshold: Float
-  let middleContactThreshold: Float
   /// Orientation start-gate bounds. The overlay uses these to render a
   /// POSE OK / POSE OFF chip — matches the gate the recognizer itself
   /// applies at IDLE → pinching transitions. Both palm-facing-Z AND
@@ -29,6 +28,10 @@ struct HandLandmarkDebugOverlay: View {
   let gatePalmFacingZMin: Float
   let gatePalmFacingZMax: Float
   let gateHandSizeMin: Float
+  /// True while the recognizer is holding a deferred `.select` waiting
+  /// for a possible second tap. Renders a TAP 1/2 chip so users can see
+  /// the double-tap window is open.
+  let pendingSelectActive: Bool
   let contactStartNormalized: CGPoint?
   let contactEndNormalized: CGPoint?
 
@@ -38,29 +41,15 @@ struct HandLandmarkDebugOverlay: View {
       ZStack {
         if let frame = frame,
            let thumbTip = frame.thumbTip,
-           let indexTip = frame.indexTip,
-           let middleTip = frame.middleTip {
+           let indexTip = frame.indexTip {
 
           let thumbPt = point(x: thumbTip.x, y: thumbTip.y, in: size)
           let indexPt = point(x: indexTip.x, y: indexTip.y, in: size)
-          let middlePt = point(x: middleTip.x, y: middleTip.y, in: size)
 
           // Pinch detection is 2D only — z is too noisy from MediaPipe
           // to be useful, so we skip computing it entirely.
           let indexDist2D = distance2D(thumbTip, indexTip)
-          let indexPasses = indexDist2D < indexContactThreshold
-
-          let middleDist2D = distance2D(thumbTip, middleTip)
-          let middlePasses = middleDist2D < middleContactThreshold
-
-          // Mirror the recognizer's "closer pinch wins" rule so the
-          // status chip reflects the actual FSM state. Each line stays
-          // colored independently (both may be "in contact" visually),
-          // but only one pinch is the deliberate gesture.
-          let indexPinched = indexPasses &&
-            (!middlePasses || indexDist2D <= middleDist2D)
-          let middlePinched = middlePasses &&
-            (!indexPasses || middleDist2D < indexDist2D)
+          let indexPinched = indexDist2D < indexContactThreshold
 
           // Thumb ↔ indexTip line.
           Path { path in
@@ -70,16 +59,6 @@ struct HandLandmarkDebugOverlay: View {
           .stroke(
             indexPinched ? Color.green : Color.red.opacity(0.4),
             style: StrokeStyle(lineWidth: indexPinched ? 3 : 1.5, lineCap: .round)
-          )
-
-          // Thumb ↔ middleTip line.
-          Path { path in
-            path.move(to: thumbPt)
-            path.addLine(to: middlePt)
-          }
-          .stroke(
-            middlePinched ? Color.cyan : Color.gray.opacity(0.4),
-            style: StrokeStyle(lineWidth: middlePinched ? 3 : 1.5, lineCap: .round)
           )
 
           // Persistent contact-start marker (yellow).
@@ -109,26 +88,15 @@ struct HandLandmarkDebugOverlay: View {
 
           // Landmark dots + labels.
           landmarkDot(at: indexPt, color: .cyan, label: "INDEX")
-          landmarkDot(at: middlePt, color: .mint, label: "MIDDLE")
-          liveThumbDot(at: thumbPt, pinched: indexPinched || middlePinched)
+          liveThumbDot(at: thumbPt, pinched: indexPinched)
             .shadow(
-              color: (indexPinched || middlePinched)
-                ? .green.opacity(0.8)
-                : .red.opacity(0.8),
+              color: indexPinched ? .green.opacity(0.8) : .red.opacity(0.8),
               radius: 6
             )
 
-          // Status badge — which pinch (if any) + live distances + gates.
-          let activeLabel: String = {
-            if indexPinched { return "INDEX PINCH" }
-            if middlePinched { return "MIDDLE PINCH" }
-            return "IDLE"
-          }()
-          let activeColor: Color = {
-            if indexPinched { return .green }
-            if middlePinched { return .cyan }
-            return .gray
-          }()
+          // Status badge — pinch engagement + pose gate + optional TAP 1/2.
+          let activeLabel: String = indexPinched ? "INDEX PINCH" : "IDLE"
+          let activeColor: Color = indexPinched ? .green : .gray
 
           // Orientation gate evaluation — mirrors the check inside
           // PinchDragRecognizer. Used for the POSE OK / POSE OFF chip.
@@ -160,6 +128,18 @@ struct HandLandmarkDebugOverlay: View {
                   .font(.system(size: 12, weight: .bold, design: .monospaced))
                   .foregroundStyle(.white)
               }
+              // Double-tap window chip — only visible while a deferred
+              // `.select` is still waiting.
+              if pendingSelectActive {
+                HStack(spacing: 6) {
+                  Circle()
+                    .fill(Color.orange)
+                    .frame(width: 10, height: 10)
+                  Text("TAP 1/2")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white)
+                }
+              }
             }
             HStack(spacing: 10) {
               HStack(spacing: 4) {
@@ -170,17 +150,8 @@ struct HandLandmarkDebugOverlay: View {
                   .font(.system(size: 9, design: .monospaced))
                   .foregroundStyle(.white.opacity(0.85))
               }
-              HStack(spacing: 4) {
-                Circle()
-                  .fill(middleDist2D < middleContactThreshold ? Color.cyan : Color.gray)
-                  .frame(width: 5, height: 5)
-                Text(String(format: "MID %.2f", middleDist2D))
-                  .font(.system(size: 9, design: .monospaced))
-                  .foregroundStyle(.white.opacity(0.85))
-              }
             }
-            Text(String(format: "th IDX<%.2f  MID<%.2f",
-                        indexContactThreshold, middleContactThreshold))
+            Text(String(format: "th IDX<%.2f", indexContactThreshold))
               .font(.system(size: 8, design: .monospaced))
               .foregroundStyle(.white.opacity(0.5))
           }

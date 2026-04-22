@@ -22,6 +22,7 @@ struct MainAppView: View {
   @ObservedObject private var viewModel: WearablesViewModel
   @ObservedObject private var discovery = BonjourDiscovery.shared
   @State private var showConnectedToast = false
+  @AppStorage(OnboardingContainerView.completionKey) private var onboardingCompleted = false
 
   init(wearables: WearablesInterface, viewModel: WearablesViewModel) {
     self.wearables = wearables
@@ -64,6 +65,18 @@ struct MainAppView: View {
           showConnectedToast = false
         }
       }
+    }
+    .fullScreenCover(isPresented: Binding(
+      get: { !onboardingCompleted },
+      set: { presented in
+        if !presented { onboardingCompleted = true }
+      }
+    )) {
+      OnboardingContainerView(
+        wearables: wearables,
+        wearablesVM: viewModel,
+        onComplete: { onboardingCompleted = true }
+      )
     }
   }
 }

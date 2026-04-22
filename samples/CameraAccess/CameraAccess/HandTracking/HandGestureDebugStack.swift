@@ -13,17 +13,23 @@ protocol HandGestureDebugProvider: ObservableObject {
   var latestHandFrame: HandLandmarkFrame? { get }
   var recentPinchDragEvents: [PinchDragLogEntry] { get }
 
-  // Pinch thresholds (identical in all three VMs — pulled from
-  // `PinchDragRecognizer.Config()`). 2D only — pinch z-gating was
-  // removed; MediaPipe's fingertip depth is too noisy to use as a
-  // contact gate.
+  // Pinch threshold (pulled from `PinchDragRecognizer.Config()`).
+  // 2D only — pinch z-gating was removed; MediaPipe's fingertip depth
+  // is too noisy to use as a contact gate.
   var indexPinchContactThreshold: Float { get }
-  var middlePinchContactThreshold: Float { get }
 
   // Orientation gate — drives the POSE OK / POSE OFF chip.
   var gatePalmFacingZMin: Float { get }
   var gatePalmFacingZMax: Float { get }
   var gateHandSizeMin: Float { get }
+
+  /// True while the recognizer is holding a deferred `.select` waiting
+  /// for a possible second tap. Drives the overlay's "TAP 1/2" chip.
+  var pendingSelectActive: Bool { get }
+
+  /// Quadrant the thumb currently occupies, or nil while idle / in the
+  /// center dead zone. Drives the cross-UI's lit box.
+  var currentHighlightQuadrant: PinchDragQuadrant? { get }
 
   // Persistent pinch-trajectory markers.
   var lastContactStartPosition: CGPoint? { get }
@@ -53,19 +59,26 @@ struct HandGestureDebugStack<Provider: HandGestureDebugProvider>: View {
         HandLandmarkDebugOverlay(
           frame: provider.latestHandFrame,
           indexContactThreshold: provider.indexPinchContactThreshold,
-          middleContactThreshold: provider.middlePinchContactThreshold,
           gatePalmFacingZMin: provider.gatePalmFacingZMin,
           gatePalmFacingZMax: provider.gatePalmFacingZMax,
           gateHandSizeMin: provider.gateHandSizeMin,
+          pendingSelectActive: provider.pendingSelectActive,
           contactStartNormalized: provider.lastContactStartPosition,
           contactEndNormalized: provider.lastContactReleasePosition
         )
 
-        // Event feed anchored top-center at 25% screen height — clear of
-        // the notch, clear of the primary HUD controls at the bottom.
-        MicroGestureDebugLog(entries: provider.recentPinchDragEvents)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-          .padding(.top, geometry.size.height * 0.25)
+        // Cross-UI + event feed, stacked top-center. Cross sits just
+        // above the log so the highlighting signal and the committed-
+        // event history read as one unit. Anchoring at 18% of screen
+        // height keeps both clear of the notch.
+        VStack(spacing: 10) {
+          PinchDragCrossUI(
+            currentHighlightQuadrant: provider.currentHighlightQuadrant
+          )
+          MicroGestureDebugLog(entries: provider.recentPinchDragEvents)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, geometry.size.height * 0.18)
       }
     }
     .allowsHitTesting(false)

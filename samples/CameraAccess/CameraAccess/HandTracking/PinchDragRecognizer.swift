@@ -1,15 +1,58 @@
 import CoreGraphics
 import Foundation
 
-/// Discrete events emitted by `PinchDragRecognizer`. Six cases covering
-/// quick pinch (select), four directional drags, and a back gesture.
+/// The four directional quadrants used by `PinchDragRecognizer`. Each is
+/// chosen by the classic diagonal split — `|Δx| ≥ |Δy|` selects a
+/// horizontal quadrant, otherwise vertical, and sign picks the direction.
+/// A thumb inside `selectRadius` of its start position is in no quadrant
+/// (center dead zone).
+enum PinchDragQuadrant: Equatable {
+  case left, right, up, down
+}
+
+/// Discrete events emitted by `PinchDragRecognizer`. Two families:
+///
+///   - **Terminal**: fire on release (or double-tap emission) and commit
+///     a gesture. `.select`, `.cancel`, `.left`, `.right`, `.up`, `.down`,
+///     `.back`.
+///   - **Highlight**: fire mid-pinch as the thumb enters a new quadrant,
+///     giving the UI a chance to pre-light the button the user is about
+///     to select. One emit per quadrant entry, not per frame.
 enum PinchDragEvent: Equatable {
-  case select   // quick thumb+index pinch, released with minimal drag
-  case left     // thumb+index pinch, dragged left in image, released
+  case select   // pinch released inside selectRadius, never drifted out
+  case cancel   // pinch drifted out of selectRadius then back in — an abort
+  case left     // pinch dragged left in image, released in the left quadrant
   case right    // ... drag right
-  case up       // ... drag up (image y-down convention → negative Δy)
+  case up       // ... drag up (image y-down → negative Δy)
   case down     // ... drag down (positive Δy)
-  case back     // quick thumb+middle pinch, released briefly
+  case back     // two quick taps near the same spot
+
+  case highlightLeft
+  case highlightRight
+  case highlightUp
+  case highlightDown
+
+  /// The quadrant this event represents, if any. Nil for `.select`,
+  /// `.cancel`, `.back`.
+  var quadrant: PinchDragQuadrant? {
+    switch self {
+    case .left, .highlightLeft:   return .left
+    case .right, .highlightRight: return .right
+    case .up, .highlightUp:       return .up
+    case .down, .highlightDown:   return .down
+    case .select, .cancel, .back: return nil
+    }
+  }
+
+  /// True for events that commit a gesture (cause state transitions in
+  /// the consumer). False for mid-pinch highlights.
+  var isTerminal: Bool {
+    switch self {
+    case .select, .cancel, .left, .right, .up, .down, .back: return true
+    case .highlightLeft, .highlightRight, .highlightUp, .highlightDown:
+      return false
+    }
+  }
 }
 
 /// One entry in the recent-gesture log. Each emit carries a fresh UUID so
@@ -27,122 +70,83 @@ struct PinchDragLogEntry: Equatable, Identifiable {
 }
 
 /// State machine that converts a `HandLandmarkFrame` stream into discrete
-/// `PinchDragEvent` values using a pinch-drag-release model:
+/// `PinchDragEvent` values using a single pinch pair (thumb + index):
 ///
-///   IDLE → (thumb+index pinch detected) → INDEX_PINCHING → (release)
-///     → classify delta in image plane:
-///       - |delta| < selectRadius → .select
-///       - else 4-quadrant by |Δx| vs |Δy|, sign gives L/R/U/D
+///   IDLE → (contact detected, gate pass, not in cooldown) → PINCHING
+///     ├─ (still pinched, thumb enters new quadrant) → emit `.highlight*`
+///     └─ (released) → classify:
+///       - magnitude < selectRadius, never drifted out → defer `.select`
+///         (or emit `.back` on double-tap candidate)
+///       - magnitude < selectRadius, has drifted out → `.cancel`
+///       - else → direction event (`.left/.right/.up/.down`)
 ///
-///   IDLE → (thumb+middle pinch detected) → MIDDLE_PINCHING → (release)
-///     → .back (only if duration ≤ tapMaxDurationMs; otherwise drop)
+/// Highlights fire exactly once per quadrant entry, giving the cross-UI
+/// a chance to light the corresponding button before commit. Returning
+/// to the center dead zone does not fire an event, but it does allow a
+/// later re-entry into the same quadrant to fire again.
 ///
-/// Contact detection uses 3D Euclidean distance (x, y, z) so that thumb
-/// and fingertip passing in front of each other without touching doesn't
-/// false-positive. Per-target hysteresis thresholds on both 2D and z.
+/// `.back` fires when two `.select`-sized pinches happen within
+/// `doubleTapMaxGapMs` and within `doubleTapMaxDrift` of each other. If
+/// the second tap drifts out and back, it becomes `.cancel` instead of
+/// `.back` — the double-tap gesture is aborted by any drift.
 ///
 /// Pure value type. No MediaPipe / AVFoundation / SwiftUI imports. Drive
 /// from any queue. Injectable clock for deterministic tests.
 struct PinchDragRecognizer {
   struct Config {
     // Pinch detection is 2D-only. MediaPipe's z estimate for fingertips
-    // is too noisy to use as a contact gate without false negatives
-    // (esp. middle, where the finger extends past a curled index and
-    // depth diverges). Orientation still gates on `palmFacingZ` — that
-    // signal comes from wrist/MCP landmarks which are more stable.
-
-    // Index pinch — select + 4 directional drags.
-    // 0.04 ≈ 29 px on a 720-wide frame. Release at 0.05 gives a small
-    // hysteresis gap (0.01 ≈ 7 px) that's still above the ~0.002 jitter
-    // floor, so pinches don't flicker but release feels responsive.
+    // is too noisy to use as a contact gate without false negatives.
+    // Orientation still gates on `palmFacingZ` — that signal comes from
+    // wrist/MCP landmarks which are more stable.
     var indexContactThreshold: Float = 0.04
     var indexReleaseThreshold: Float = 0.05
 
-    // Middle pinch — back. 2D thresholds identical to index; the winner
-    // between index and middle is picked by whichever finger pair is
-    // physically closer at the moment of contact.
-    var middleContactThreshold: Float = 0.04
-    var middleReleaseThreshold: Float = 0.05
-
-    /// On index-pinch release, if |drag| is below this, emit `.select`
-    /// instead of a directional event. Normalized image units (0.05 ≈
-    /// 36 px on a 720-wide frame, roughly 4 mm of thumb travel at arm's
-    /// length — larger than typical camera shake / hand tremor, smaller
-    /// than a deliberate swipe).
-    ///
-    /// Higher → more tolerance for accidental drift during a quick pinch;
-    /// small thumb wobble while releasing still emits `.select`.
-    /// Lower → strict select; any drift gets classified as a direction.
+    /// Center "dead zone" radius, in normalized image units. Drift
+    /// below this is treated as zero (no quadrant highlights, release
+    /// commits as `.select` or `.cancel` depending on whether the pinch
+    /// ever left this zone). 0.05 ≈ 36 px on a 720-wide frame.
     var selectRadius: Float = 0.05
 
-    /// On middle-pinch release, drag magnitude must be at or below this
-    /// to emit `.back`. Same units as `selectRadius`. Beyond this the
-    /// release is treated as unintentional (the user didn't mean a crisp
-    /// back tap) and silently dropped. Mirrors `selectRadius` so both
-    /// tap-style gestures share the same drift tolerance.
-    var backDragTolerance: Float = 0.05
+    /// Max gap between the first tap's release and the second tap's
+    /// contact start for the pair to qualify as a double-tap. Beyond
+    /// this, the first tap commits as a plain `.select`.
+    var doubleTapMaxGapMs: Int = 300
 
-    /// On middle-pinch release, emit `.back` only if the pinch duration
-    /// was at or below this. Longer contacts are treated as accidental
-    /// grabs and silently dropped.
-    var tapMaxDurationMs: Int = 400
+    /// Max thumb-position drift between first tap's release and second
+    /// tap's start for the pair to qualify as double-tap.
+    var doubleTapMaxDrift: Float = 0.06
 
     /// Post-emit lockout — suppresses event storms during physical
-    /// settle-time between gestures. Lowered from 350 ms so rapid
-    /// intentional double-swipes (e.g. two fast rights to jump two
-    /// cards) both fire.
+    /// settle-time between gestures. Applies only at IDLE → pinching
+    /// transitions; highlights mid-gesture are never cooldown-gated.
     var postEmitCooldownMs: Int = 250
 
     // MARK: - Orientation start-gate
-    //
-    // The recognizer only enters a pinch state when the hand is in a
-    // deliberate "ready pose" — this rejects accidental pinches that
-    // happen while the user is doing unrelated hands-on work. The gate
-    // applies ONLY at IDLE → pinching transitions; once tracking is
-    // active, the hand can rotate / resize freely without losing the
-    // gesture.
-    //
-    // Gate is an AND of two conditions: the palm must be roughly
-    // edge-on to the camera (Meta XR-style grasp pose, thumb side
-    // visible) AND the hand must be close enough to produce reliable
-    // landmarks.
 
-    /// Minimum `HandOrientation.palmFacingZ` for gate pass. `palmFacingZ`
-    /// is the z-component of the unit palm normal, in [-1, +1]:
-    ///   -1 → palm toward camera, 0 → edge-on, +1 → back toward camera.
-    /// Default range [-0.5, +0.5] accepts the ~edge-on poses while
-    /// rejecting palm-fully-facing and back-fully-facing.
     var gatePalmFacingZMin: Float = -0.5
-
-    /// Upper bound on `HandOrientation.palmFacingZ` for gate pass.
     var gatePalmFacingZMax: Float = 0.5
-
-    /// Minimum `HandOrientation.handSize` for gate pass — rejects frames
-    /// where MediaPipe has lost the hand (common when it shrinks to the
-    /// edge of frame, often accompanied by a handedness misflip).
     var gateHandSizeMin: Float = 0.10
-
-    /// Test / debug escape hatch. When true, the IDLE case skips the
-    /// gate entirely and any frame with a close-enough pinch qualifies.
     var gateDisabled: Bool = false
 
-    /// Missing-frame tolerance during tracking. Brief (≤ this many)
-    /// frames with no hand are absorbed; longer drops reset to IDLE.
     var maxMissingFramesDuringPinching: Int = 4
-
-    /// Abandoned-hold timeout — a pinch held longer than this is
-    /// discarded without emit.
     var maxPinchDurationMs: Int = 4000
   }
 
   /// Read-only snapshot for debug overlays.
   struct DebugSnapshot: Equatable {
-    enum FSM: Equatable { case idle, indexPinching, middlePinching }
+    enum FSM: Equatable { case idle, indexPinching }
     let fsm: FSM
     let inCooldown: Bool
     let trackingDurationMs: Int
     let latestIndexDistance: Float?
-    let latestMiddleDistance: Float?
+    let pendingSelectActive: Bool
+    /// Quadrant the thumb is currently occupying (nil while idle, in the
+    /// center dead zone, or not tracking). Drives the cross-UI's lit box.
+    let currentHighlightQuadrant: PinchDragQuadrant?
+    /// True once the thumb has drifted out of `selectRadius` during the
+    /// current pinch — the release will commit `.cancel` rather than
+    /// `.select` if the user returns to center.
+    let hasDriftedOutDuringPinch: Bool
   }
 
   // MARK: - State
@@ -150,7 +154,6 @@ struct PinchDragRecognizer {
   private enum FSMState {
     case idle
     case indexPinching(TrackingContext)
-    case middlePinching(TrackingContext)
   }
 
   private struct TrackingContext {
@@ -160,25 +163,33 @@ struct PinchDragRecognizer {
     var latestTimestampMs: Int
     var missingFrameRun: Int
     var latestContactDistance2D: Float
+    let isDoubleTapCandidate: Bool
+    /// Last quadrant for which a `.highlight*` was emitted (nil means the
+    /// thumb is in the center dead zone or no highlight has fired yet).
+    /// A transition to a different value triggers the next emit.
+    var lastHighlightedQuadrant: PinchDragQuadrant?
+    /// Sticky flag — true once the thumb has ever crossed outside
+    /// `selectRadius` during this pinch. Drives the `.cancel` vs
+    /// `.select` decision on release.
+    var hasEverExitedSelectRadius: Bool
   }
 
   private struct PinchMeasurement {
     let distance2D: Float
   }
 
+  private struct PendingSelect {
+    let releaseTime: Date
+    let position: CGPoint
+  }
+
   private let config: Config
   private let now: () -> Date
   private var state: FSMState = .idle
   private var lastEmitAt: Date?
+  private var pendingSelect: PendingSelect?
 
-  /// Thumb position recorded on the most recent IDLE → *Pinching
-  /// transition. Persists across IDLE so the debug overlay can show
-  /// "here's where the pinch started."
   private(set) var lastContactStartPosition: CGPoint?
-
-  /// Thumb position recorded on the most recent *Pinching → IDLE
-  /// transition (release, abort, or timeout). Persists until the next
-  /// contact begins.
   private(set) var lastContactReleasePosition: CGPoint?
 
   // MARK: - Init
@@ -190,26 +201,37 @@ struct PinchDragRecognizer {
 
   // MARK: - Public API
 
-  /// Consume one frame. Returns a non-nil event when the FSM fires on
-  /// release; nil for every intermediate frame and for cooldown-suppressed
-  /// emits.
+  /// Consume one frame. Returns a non-nil event when:
+  ///   - the FSM fires on release,
+  ///   - a deferred `.select` commits because its double-tap window
+  ///     expired, or
+  ///   - the thumb enters a new quadrant mid-pinch.
+  /// Returns nil for intermediate frames and for cooldown-suppressed emits.
   mutating func ingest(_ frame: HandLandmarkFrame) -> PinchDragEvent? {
-    // Global post-emit cooldown — all state transitions frozen.
-    if let lastEmitAt {
-      let elapsedMs = Int(now().timeIntervalSince(lastEmitAt) * 1000)
-      if elapsedMs < config.postEmitCooldownMs {
-        return nil
+    // 1. Deferred `.select` fire. Runs OUTSIDE cooldown — we already
+    //    held this one for the full `doubleTapMaxGapMs`, committing now.
+    if let ps = pendingSelect {
+      let elapsedMs = Int(now().timeIntervalSince(ps.releaseTime) * 1000)
+      if elapsedMs >= config.doubleTapMaxGapMs {
+        pendingSelect = nil
+        lastEmitAt = now()
+        return .select
       }
     }
 
-    let indexM = pinchMeasurement(frame: frame, finger: .index)
-    let middleM = pinchMeasurement(frame: frame, finger: .middle)
+    let indexM = pinchMeasurement(frame: frame)
 
     switch state {
     case .idle:
-      // Orientation start-gate. Only applied at IDLE → pinching; once
-      // tracking is active, rotation doesn't matter per design spec.
-      // AND of two conditions: palm edge-on AND hand big enough.
+      // Cooldown gates only IDLE → pinching transitions. Mid-gesture
+      // highlights must not be blocked by a previous emit's cooldown.
+      if let lastEmitAt {
+        let elapsedMs = Int(now().timeIntervalSince(lastEmitAt) * 1000)
+        if elapsedMs < config.postEmitCooldownMs {
+          return nil
+        }
+      }
+
       if !config.gateDisabled {
         guard let orient = frame.orientation else { return nil }
         if orient.palmFacingZ < config.gatePalmFacingZMin ||
@@ -219,88 +241,45 @@ struct PinchDragRecognizer {
         }
       }
 
-      // Pick the closer of the two pinches when both qualify. When the
-      // user deliberately pinches middle, their index tip is often
-      // anatomically close to the thumb too — a hardcoded "index wins"
-      // priority would always steal the gesture. Smallest 2D distance
-      // wins; if both are equidistant, index wins as tiebreaker.
       let indexPasses = indexM.map {
         $0.distance2D < config.indexContactThreshold
       } ?? false
-      let middlePasses = middleM.map {
-        $0.distance2D < config.middleContactThreshold
-      } ?? false
-
-      enum Winner { case index, middle }
-      let winner: Winner? = {
-        switch (indexPasses, middlePasses) {
-        case (true, true):
-          return indexM!.distance2D <= middleM!.distance2D ? .index : .middle
-        case (true, false): return .index
-        case (false, true): return .middle
-        case (false, false): return nil
-        }
-      }()
-
-      guard let winner, let thumb = frame.thumbTip else { return nil }
+      guard indexPasses, let m = indexM, let thumb = frame.thumbTip else {
+        return nil
+      }
       let startPt = CGPoint(x: CGFloat(thumb.x), y: CGFloat(thumb.y))
-      let ctxM = (winner == .index) ? indexM! : middleM!
+
+      var isDoubleTap = false
+      if let ps = pendingSelect {
+        let elapsedMs = Int(now().timeIntervalSince(ps.releaseTime) * 1000)
+        if elapsedMs <= config.doubleTapMaxGapMs {
+          let dx = Float(startPt.x - ps.position.x)
+          let dy = Float(startPt.y - ps.position.y)
+          let drift = (dx * dx + dy * dy).squareRoot()
+          if drift <= config.doubleTapMaxDrift {
+            isDoubleTap = true
+          }
+        }
+        pendingSelect = nil
+      }
+
       let ctx = TrackingContext(
         startTimestampMs: frame.timestampMs,
         startThumbPosition: startPt,
         latestThumbPosition: startPt,
         latestTimestampMs: frame.timestampMs,
         missingFrameRun: 0,
-        latestContactDistance2D: ctxM.distance2D
+        latestContactDistance2D: m.distance2D,
+        isDoubleTapCandidate: isDoubleTap,
+        lastHighlightedQuadrant: nil,
+        hasEverExitedSelectRadius: false
       )
-      state = (winner == .index) ? .indexPinching(ctx) : .middlePinching(ctx)
+      state = .indexPinching(ctx)
       lastContactStartPosition = startPt
       lastContactReleasePosition = nil
       return nil
 
     case .indexPinching(var ctx):
-      // Abandoned-hold timeout.
-      if frame.timestampMs - ctx.startTimestampMs > config.maxPinchDurationMs {
-        lastContactReleasePosition = ctx.latestThumbPosition
-        state = .idle
-        return nil
-      }
-
-      // Hand lost — tolerate brief gaps.
-      if frame.isEmpty {
-        ctx.missingFrameRun += 1
-        if ctx.missingFrameRun > config.maxMissingFramesDuringPinching {
-          lastContactReleasePosition = ctx.latestThumbPosition
-          state = .idle
-          return nil
-        }
-        state = .indexPinching(ctx)
-        return nil
-      }
-      ctx.missingFrameRun = 0
-
-      // Contact still closed? 2D only — z gating removed (too noisy).
-      let m = indexM
-      let stillIn2D = (m?.distance2D ?? .infinity) <= config.indexReleaseThreshold
-      if stillIn2D, let m {
-        if let thumb = frame.thumbTip {
-          ctx.latestThumbPosition = CGPoint(x: CGFloat(thumb.x), y: CGFloat(thumb.y))
-        }
-        ctx.latestTimestampMs = frame.timestampMs
-        ctx.latestContactDistance2D = m.distance2D
-        state = .indexPinching(ctx)
-        return nil
-      }
-
-      // Release — classify drag → .select / .left / .right / .up / .down.
-      lastContactReleasePosition = ctx.latestThumbPosition
-      let event = classifyIndexRelease(ctx: ctx)
-      state = .idle
-      lastEmitAt = now()
-      return event
-
-    case .middlePinching(var ctx):
-      // Abandoned-hold timeout.
       if frame.timestampMs - ctx.startTimestampMs > config.maxPinchDurationMs {
         lastContactReleasePosition = ctx.latestThumbPosition
         state = .idle
@@ -314,39 +293,72 @@ struct PinchDragRecognizer {
           state = .idle
           return nil
         }
-        state = .middlePinching(ctx)
+        state = .indexPinching(ctx)
         return nil
       }
       ctx.missingFrameRun = 0
 
-      let m = middleM
-      let stillIn2D = (m?.distance2D ?? .infinity) <= config.middleReleaseThreshold
-      if stillIn2D, let m {
+      let stillIn2D = (indexM?.distance2D ?? .infinity) <= config.indexReleaseThreshold
+      if stillIn2D, let m = indexM {
         if let thumb = frame.thumbTip {
           ctx.latestThumbPosition = CGPoint(x: CGFloat(thumb.x), y: CGFloat(thumb.y))
         }
         ctx.latestTimestampMs = frame.timestampMs
         ctx.latestContactDistance2D = m.distance2D
-        state = .middlePinching(ctx)
-        return nil
+
+        // Quadrant highlight emission.
+        let currentQuadrant = quadrant(for: ctx)
+        if currentQuadrant != nil {
+          ctx.hasEverExitedSelectRadius = true
+        }
+        var highlight: PinchDragEvent? = nil
+        if currentQuadrant != ctx.lastHighlightedQuadrant {
+          ctx.lastHighlightedQuadrant = currentQuadrant
+          if let q = currentQuadrant {
+            highlight = highlightEvent(for: q)
+          }
+          // Center re-entry emits nothing — the cross-UI reads the
+          // quadrant directly from `debugState.currentHighlightQuadrant`
+          // for that transition.
+        }
+
+        state = .indexPinching(ctx)
+        return highlight
       }
 
-      // Release — emit .back only when BOTH gates pass:
-      //   1. Duration is a quick tap (not an accidental grab).
-      //   2. Drag magnitude is within backDragTolerance — small tremor
-      //      from camera/hand motion is absorbed; a deliberate sweep
-      //      during middle pinch is treated as unintentional and dropped.
+      // Release — classify and route.
       lastContactReleasePosition = ctx.latestThumbPosition
-      let duration = ctx.latestTimestampMs - ctx.startTimestampMs
-      let dxBack = Float(ctx.latestThumbPosition.x - ctx.startThumbPosition.x)
-      let dyBack = Float(ctx.latestThumbPosition.y - ctx.startThumbPosition.y)
-      let dragBack = (dxBack * dxBack + dyBack * dyBack).squareRoot()
+      let classified = classifyRelease(ctx: ctx)
       state = .idle
-      if duration <= config.tapMaxDurationMs && dragBack <= config.backDragTolerance {
+
+      switch classified {
+      case .select:
+        if ctx.isDoubleTapCandidate {
+          // Clean double-tap → .back
+          lastEmitAt = now()
+          return .back
+        } else {
+          // First tap — defer for possible double-tap
+          pendingSelect = PendingSelect(
+            releaseTime: now(),
+            position: ctx.latestThumbPosition
+          )
+          return nil
+        }
+      case .cancel:
+        // Cancel always emits immediately, even inside a double-tap
+        // window. Drifting out aborts the double-tap attempt too.
         lastEmitAt = now()
-        return .back
+        return .cancel
+      case .left, .right, .up, .down:
+        // Direction — if this was a double-tap candidate, the pending
+        // first select is swallowed (not emitted alongside the direction).
+        lastEmitAt = now()
+        return classified
+      default:
+        // Unreachable; classifyRelease only returns the above.
+        return nil
       }
-      return nil
     }
   }
 
@@ -355,6 +367,11 @@ struct PinchDragRecognizer {
       guard let lastEmitAt else { return false }
       return Int(now().timeIntervalSince(lastEmitAt) * 1000) < config.postEmitCooldownMs
     }()
+    let pendingActive: Bool = {
+      guard let ps = pendingSelect else { return false }
+      let elapsedMs = Int(now().timeIntervalSince(ps.releaseTime) * 1000)
+      return elapsedMs < config.doubleTapMaxGapMs
+    }()
     switch state {
     case .idle:
       return DebugSnapshot(
@@ -362,7 +379,9 @@ struct PinchDragRecognizer {
         inCooldown: cooldown,
         trackingDurationMs: 0,
         latestIndexDistance: nil,
-        latestMiddleDistance: nil
+        pendingSelectActive: pendingActive,
+        currentHighlightQuadrant: nil,
+        hasDriftedOutDuringPinch: false
       )
     case .indexPinching(let ctx):
       return DebugSnapshot(
@@ -370,50 +389,63 @@ struct PinchDragRecognizer {
         inCooldown: false,
         trackingDurationMs: ctx.latestTimestampMs - ctx.startTimestampMs,
         latestIndexDistance: ctx.latestContactDistance2D,
-        latestMiddleDistance: nil
-      )
-    case .middlePinching(let ctx):
-      return DebugSnapshot(
-        fsm: .middlePinching,
-        inCooldown: false,
-        trackingDurationMs: ctx.latestTimestampMs - ctx.startTimestampMs,
-        latestIndexDistance: nil,
-        latestMiddleDistance: ctx.latestContactDistance2D
+        pendingSelectActive: pendingActive,
+        currentHighlightQuadrant: ctx.lastHighlightedQuadrant,
+        hasDriftedOutDuringPinch: ctx.hasEverExitedSelectRadius
       )
     }
   }
 
   // MARK: - Private helpers
 
-  private enum PinchTarget { case index, middle }
-
-  private func pinchMeasurement(frame: HandLandmarkFrame, finger: PinchTarget) -> PinchMeasurement? {
-    guard let thumb = frame.thumbTip else { return nil }
-    let other: HandLandmark2D?
-    switch finger {
-    case .index: other = frame.indexTip
-    case .middle: other = frame.middleTip
+  private func pinchMeasurement(frame: HandLandmarkFrame) -> PinchMeasurement? {
+    guard let thumb = frame.thumbTip, let index = frame.indexTip else {
+      return nil
     }
-    guard let other else { return nil }
-    let dx = thumb.x - other.x
-    let dy = thumb.y - other.y
+    let dx = thumb.x - index.x
+    let dy = thumb.y - index.y
     let dist2D = (dx * dx + dy * dy).squareRoot()
     return PinchMeasurement(distance2D: dist2D)
   }
 
-  private func classifyIndexRelease(ctx: TrackingContext) -> PinchDragEvent {
+  /// Quadrant the thumb currently occupies relative to the pinch-start
+  /// position, or nil if inside `selectRadius`. Horizontal wins on an
+  /// exact diagonal tie, same rule as the release classifier.
+  private func quadrant(for ctx: TrackingContext) -> PinchDragQuadrant? {
+    let dx = Float(ctx.latestThumbPosition.x - ctx.startThumbPosition.x)
+    let dy = Float(ctx.latestThumbPosition.y - ctx.startThumbPosition.y)
+    let magnitude = (dx * dx + dy * dy).squareRoot()
+    if magnitude < config.selectRadius { return nil }
+    if abs(dx) >= abs(dy) {
+      return dx > 0 ? .right : .left
+    } else {
+      return dy > 0 ? .down : .up
+    }
+  }
+
+  private func highlightEvent(for q: PinchDragQuadrant) -> PinchDragEvent {
+    switch q {
+    case .left: return .highlightLeft
+    case .right: return .highlightRight
+    case .up: return .highlightUp
+    case .down: return .highlightDown
+    }
+  }
+
+  private func classifyRelease(ctx: TrackingContext) -> PinchDragEvent {
     let dx = Float(ctx.latestThumbPosition.x - ctx.startThumbPosition.x)
     let dy = Float(ctx.latestThumbPosition.y - ctx.startThumbPosition.y)
     let magnitude = (dx * dx + dy * dy).squareRoot()
 
     if magnitude < config.selectRadius {
-      return .select
+      // Inside the center dead zone on release. Did the thumb ever leave
+      // it during this pinch? If yes → user aborted, emit `.cancel`.
+      // If no → clean tap, emit `.select`.
+      return ctx.hasEverExitedSelectRadius ? .cancel : .select
     }
-    // Diagonal decision boundary. Horizontal wins on exact tie.
     if abs(dx) >= abs(dy) {
       return dx > 0 ? .right : .left
     } else {
-      // Image y-down: positive dy = thumb moved down on screen.
       return dy > 0 ? .down : .up
     }
   }

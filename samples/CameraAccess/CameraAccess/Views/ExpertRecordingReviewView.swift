@@ -8,7 +8,6 @@ struct ExpertRecordingReviewView: View {
   var onAcknowledgeResult: (() -> Void)? = nil
 
   @State private var fileSize: String = ""
-  @State private var hasAcknowledgedResult: Bool = false
 
   var body: some View {
     NavigationStack {
@@ -69,11 +68,6 @@ struct ExpertRecordingReviewView: View {
                 .padding(.horizontal)
             }
 
-            // Result — gated behind the acknowledgement tap so it doesn't pop in unannounced.
-            if let result = uploadService.uploadResult, hasAcknowledgedResult {
-              ProcedureSummaryView(procedure: result, serverBaseURL: uploadService.serverBaseURL)
-            }
-
             Spacer(minLength: 20)
 
             // Action buttons
@@ -98,23 +92,20 @@ struct ExpertRecordingReviewView: View {
                   onDismiss()
                 }
               }
-            } else if uploadService.uploadResult != nil {
-              if hasAcknowledgedResult {
-                CustomButton(
-                  title: "Done",
-                  style: .primary,
-                  isDisabled: false
-                ) {
-                  onDismiss()
-                }
-              } else {
-                AcknowledgeResultButton {
-                  withAnimation(.easeInOut(duration: 0.25)) {
-                    hasAcknowledgedResult = true
+            } else if let result = uploadService.uploadResult {
+              NavigationLink {
+                ProcedureReviewView(
+                  initialProcedure: result,
+                  serverBaseURL: uploadService.serverBaseURL,
+                  onConfirmed: {
+                    onAcknowledgeResult?()
+                    onDismiss()
                   }
-                  onAcknowledgeResult?()
-                }
+                )
+              } label: {
+                ReviewWorkflowButtonLabel()
               }
+              .buttonStyle(ScaleButtonStyle())
             }
           }
           .padding(Spacing.screenPadding)
@@ -174,77 +165,25 @@ struct InfoItem: View {
   }
 }
 
-struct ProcedureSummaryView: View {
-  let procedure: ProcedureResponse
-  let serverBaseURL: String
+// MARK: - Review Workflow Button Label
 
-  @State private var expandedStep: Int?
-
+struct ReviewWorkflowButtonLabel: View {
   var body: some View {
-    VStack(alignment: .leading, spacing: Spacing.lg) {
-      HStack {
-        Image(systemName: "checkmark.circle.fill")
-          .foregroundColor(.semanticSuccess)
-        Text("Procedure Generated")
-          .font(.retraceHeadline)
-          .foregroundColor(.textPrimary)
-      }
-
-      Text(procedure.title)
-        .font(.retraceFace(.bold, size: 18))
-        .foregroundColor(.textPrimary)
-
-      Text(procedure.description)
-        .font(.retraceCallout)
-        .foregroundColor(.textSecondary)
-
-      Divider().background(Color.borderSubtle)
-
-      Text("\(procedure.steps.count) Steps")
-        .font(.retraceFace(.semibold, size: 16))
-        .foregroundColor(.textSecondary)
-
-      ForEach(procedure.steps, id: \.stepNumber) { step in
-        StepDetailView(
-          step: step,
-          isExpanded: expandedStep == step.stepNumber,
-          serverBaseURL: serverBaseURL
-        ) {
-          withAnimation(.easeInOut(duration: 0.25)) {
-            if expandedStep == step.stepNumber {
-              expandedStep = nil
-            } else {
-              expandedStep = step.stepNumber
-            }
-          }
-        }
-      }
+    HStack(spacing: Spacing.sm) {
+      Image(systemName: "checkmark.circle.fill")
+        .font(.retraceHeadline)
+      Text("Review workflow")
+        .font(.retraceFace(.semibold, size: 17))
+      Spacer(minLength: Spacing.xs)
+      Image(systemName: "chevron.right")
+        .font(.retraceSubheadline)
+        .fontWeight(.semibold)
     }
-    .padding(Spacing.xl)
-    .background(Color.surfaceBase)
-    .cornerRadius(Radius.md)
-  }
-}
-
-// MARK: - Acknowledge Result Button
-
-struct AcknowledgeResultButton: View {
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: Spacing.sm) {
-        Image(systemName: "checkmark.circle.fill")
-          .font(.retraceHeadline)
-        Text("Everything is processed")
-          .font(.retraceFace(.semibold, size: 17))
-      }
-      .foregroundColor(.white)
-      .frame(maxWidth: .infinity)
-      .frame(height: 52)
-      .background(Color.semanticSuccess)
-      .cornerRadius(Radius.full)
-    }
-    .buttonStyle(ScaleButtonStyle())
+    .foregroundColor(.white)
+    .padding(.horizontal, Spacing.xl)
+    .frame(maxWidth: .infinity)
+    .frame(height: 52)
+    .background(Color.semanticSuccess)
+    .cornerRadius(Radius.full)
   }
 }

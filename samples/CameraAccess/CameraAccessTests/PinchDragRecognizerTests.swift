@@ -14,22 +14,15 @@ final class PinchDragRecognizerTests: XCTestCase {
 
   // MARK: - Frame builder
   //
-  // Place indexTip at (0.5, 0.5), middleTip at (0.55, 0.5), thumbTip
-  // wherever the test wants. When thumbTip is close to indexTip → index
-  // pinch. Close to middleTip → middle pinch. Keep z = 0 everywhere so
-  // the z-gate is trivially satisfied in tests (it's exercised separately).
+  // Place indexTip at (0.5, 0.5), thumbTip wherever the test wants. When
+  // thumbTip is close to indexTip → pinch qualifies. Wrist + indexMCP +
+  // pinkyMCP are chosen so the orientation gate lands palmFacingZ near 0.4
+  // (canonical edge-on pose) with handSize ~0.18. Tests that want to
+  // exercise the gate itself pass explicit overrides.
 
   private func frame(
     thumbX: Float, thumbY: Float, thumbZ: Float = 0,
     indexX: Float = 0.5, indexY: Float = 0.5, indexZ: Float = 0,
-    middleX: Float = 0.55, middleY: Float = 0.5, middleZ: Float = 0,
-    // Wrist + indexMCP + middleMCP + pinkyMCP positions are chosen so
-    // the `HandOrientation` computes handSize ~0.18 AND palmFacingZ in
-    // the [-0.5, +0.5] gate range. The trick: indexMCP and pinkyMCP are
-    // offset in z (opposite signs) so the 3D palm normal has large x/y
-    // components and a small z, landing palmFacingZ near 0.4 — the
-    // canonical Meta XR-style edge-on pose. Tests that want to exercise
-    // the gate itself pass explicit override values.
     wristX: Float = 0.55, wristY: Float = 0.80, wristZ: Float = 0,
     indexMCPX: Float = 0.50, indexMCPY: Float = 0.55, indexMCPZ: Float = -0.10,
     middleMCPX: Float = 0.45, middleMCPY: Float = 0.65, middleMCPZ: Float = 0,
@@ -47,7 +40,6 @@ final class PinchDragRecognizerTests: XCTestCase {
     pts[6] = HandLandmark2D(x: 0.5, y: 0.52, z: 0)                           // indexPIP
     pts[8] = HandLandmark2D(x: indexX, y: indexY, z: indexZ)                 // indexTip
     pts[9] = HandLandmark2D(x: middleMCPX, y: middleMCPY, z: middleMCPZ)     // middleMCP
-    pts[12] = HandLandmark2D(x: middleX, y: middleY, z: middleZ)             // middleTip
     pts[17] = HandLandmark2D(x: pinkyMCPX, y: pinkyMCPY, z: pinkyMCPZ)       // pinkyMCP
     return HandLandmarkFrame(landmarks: pts, handedness: "Right", timestampMs: timestampMs)
   }
@@ -64,41 +56,58 @@ final class PinchDragRecognizerTests: XCTestCase {
     )
   }
 
-  /// Thumb on middleTip → middle pinch.
-  private func middlePinchFrame(timestampMs: Int) -> HandLandmarkFrame {
-    frame(thumbX: 0.55, thumbY: 0.5, timestampMs: timestampMs)
-  }
-
-  /// Thumb far from both fingers → released.
+  /// Thumb far from indexTip → released.
   private func releasedFrame(timestampMs: Int) -> HandLandmarkFrame {
     frame(thumbX: 0.85, thumbY: 0.5, timestampMs: timestampMs)
   }
 
-  // MARK: - Tests
+  // MARK: - Single tap (.select with deferred commit)
 
-  func test_indexPinchNoDrag_emitsSelect() {
+  func test_singleTap_deferredSelectFires_afterWindow() {
     var r = PinchDragRecognizer(now: clockSource)
     var ts = 0
+
+    // Pinch begin + hold + release. Release itself returns nil because
+    // the .select is being held for a possible double-tap.
     XCTAssertNil(r.ingest(indexPinchFrame(timestampMs: ts)))
     ts = 80; advance(ms: 80)
     XCTAssertNil(r.ingest(indexPinchFrame(timestampMs: ts)))
     ts = 120; advance(ms: 40)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)),
+                 "Release should defer, not emit .select immediately")
+
+    // Just past the window — next ingest should commit the deferred .select.
+    advance(ms: 301)
+    ts += 301
     XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .select)
   }
+
+  func test_singleTap_selectDoesNotFire_insideWindow() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 100; advance(ms: 100)
+    _ = r.ingest(releasedFrame(timestampMs: ts))
+
+    // Within the 300 ms window, no subsequent ingest should fire .select.
+    advance(ms: 150); ts += 150
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+
+    // pendingSelect should still be live per the debug snapshot.
+    XCTAssertTrue(r.debugState.pendingSelectActive)
+  }
+
+  // MARK: - Directional drags (emit immediately, not deferred)
 
   func test_indexPinchDragRight_emitsRight() {
     var r = PinchDragRecognizer(now: clockSource)
     var ts = 0
     _ = r.ingest(indexPinchFrame(timestampMs: ts))
     ts = 100; advance(ms: 100)
-    // Thumb moves +x by 0.08 while still pinched (indexTip moves with it
-    // to keep distance small).
-    var f = indexPinchFrame(thumbOffset: CGPoint(x: 0.08, y: 0), timestampMs: ts)
-    // Move indexTip along with thumb so pinch distance stays < release threshold.
-    f = frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts)
-    _ = r.ingest(f)
+    // Thumb + indexTip both move to (0.58, 0.5) so the pinch stays closed.
+    let held = frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts)
+    _ = r.ingest(held)
     ts = 200; advance(ms: 100)
-    // Release — thumb stays at 0.58, fingers spread away.
     let release = frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.9, indexY: 0.5, timestampMs: ts)
     XCTAssertEqual(r.ingest(release), .right)
   }
@@ -119,7 +128,6 @@ final class PinchDragRecognizerTests: XCTestCase {
     var ts = 0
     _ = r.ingest(indexPinchFrame(timestampMs: ts))
     ts = 100; advance(ms: 100)
-    // Thumb moves up (negative y in image coords).
     _ = r.ingest(frame(thumbX: 0.5, thumbY: 0.42, indexX: 0.5, indexY: 0.42, timestampMs: ts))
     ts = 200; advance(ms: 100)
     let release = frame(thumbX: 0.5, thumbY: 0.42, indexX: 0.9, indexY: 0.42, timestampMs: ts)
@@ -137,43 +145,7 @@ final class PinchDragRecognizerTests: XCTestCase {
     XCTAssertEqual(r.ingest(release), .down)
   }
 
-  func test_middlePinchBrief_emitsBack() {
-    var r = PinchDragRecognizer(now: clockSource)
-    var ts = 0
-    _ = r.ingest(middlePinchFrame(timestampMs: ts))
-    ts = 100; advance(ms: 100)
-    _ = r.ingest(middlePinchFrame(timestampMs: ts))
-    ts = 150; advance(ms: 50)
-    let release = releasedFrame(timestampMs: ts)
-    XCTAssertEqual(r.ingest(release), .back)
-  }
-
-  func test_middlePinchLongHold_noEmit() {
-    var r = PinchDragRecognizer(now: clockSource)
-    var ts = 0
-    _ = r.ingest(middlePinchFrame(timestampMs: ts))
-    // Hold for 500 ms — longer than tapMaxDurationMs (400).
-    ts = 500; advance(ms: 500)
-    _ = r.ingest(middlePinchFrame(timestampMs: ts))
-    ts = 520; advance(ms: 20)
-    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
-  }
-
-  func test_indexPriorityWhenBothQualify() {
-    // Construct a frame where thumb is close to BOTH fingers. Index
-    // should win.
-    var r = PinchDragRecognizer(now: clockSource)
-    // thumb at (0.52, 0.5); indexTip at (0.50, 0.5), middleTip at (0.53, 0.5).
-    // distance to index = 0.02, distance to middle = 0.01 — both under threshold.
-    // Index priority means we enter .indexPinching.
-    let f = frame(thumbX: 0.52, thumbY: 0.5, indexX: 0.50, indexY: 0.5,
-                  middleX: 0.53, middleY: 0.5, timestampMs: 0)
-    _ = r.ingest(f)
-    XCTAssertEqual(r.debugState.fsm, .indexPinching)
-  }
-
   func test_ambiguousDiagonal_horizontalWins() {
-    // Equal |dx| = |dy|. Horizontal wins the tie per config.
     var r = PinchDragRecognizer(now: clockSource)
     var ts = 0
     _ = r.ingest(indexPinchFrame(timestampMs: ts))
@@ -185,27 +157,134 @@ final class PinchDragRecognizerTests: XCTestCase {
     XCTAssertEqual(r.ingest(release), .right)
   }
 
-  func test_cooldown_suppressesSecondEvent() {
+  // MARK: - Double-tap → .back
+
+  func test_doubleTap_emitsBack_notTwoSelects() {
     var r = PinchDragRecognizer(now: clockSource)
-
-    // First gesture: quick select.
     var ts = 0
-    _ = r.ingest(indexPinchFrame(timestampMs: ts))
-    ts = 100; advance(ms: 100)
-    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .select)
 
-    // Second attempted within cooldown (350 ms).
-    ts = 200; advance(ms: 100)
-    XCTAssertNil(r.ingest(indexPinchFrame(timestampMs: ts)))
-    ts = 300; advance(ms: 100)
+    // Tap 1: begin + release. Deferred .select, no emit yet.
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 80; advance(ms: 80)
     XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
 
-    // After cooldown — fresh gesture fires.
-    advance(ms: 300); ts = 600
+    // Tap 2: begin within the 300 ms window at the same spot → double-tap
+    // candidate. Release with minimal drag → .back.
+    ts = 180; advance(ms: 100)
     _ = r.ingest(indexPinchFrame(timestampMs: ts))
-    ts = 700; advance(ms: 100)
+    ts = 230; advance(ms: 50)
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .back)
+
+    // pendingSelect must be cleared — no stray .select leaking out later.
+    advance(ms: 500); ts += 500
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+  }
+
+  func test_doubleTap_windowExpired_emitsTwoSelects() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+
+    // Tap 1.
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 80; advance(ms: 80)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+
+    // Wait past the window — deferred .select commits on the next ingest.
+    advance(ms: 400); ts += 400
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .select,
+                   "Deferred .select should commit once the double-tap window closes")
+
+    // Wait past the post-emit cooldown before the next attempt.
+    advance(ms: 260); ts += 260
+
+    // Tap 2 — independent gesture, own deferred .select.
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    advance(ms: 80); ts += 80
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+    advance(ms: 310); ts += 310
     XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .select)
   }
+
+  func test_doubleTap_driftTooLarge_suppressesFirstSelect() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+
+    // Tap 1 at (0.5, 0.5).
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 80; advance(ms: 80)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+
+    // Tap 2 at (0.7, 0.5) — 0.2 away, well over doubleTapMaxDrift (0.06).
+    // Within the 300 ms window, so pendingSelect is consumed (second pinch
+    // starting cancels it), but isDoubleTapCandidate = false. The first
+    // .select is silently dropped; the second tap starts fresh.
+    ts = 180; advance(ms: 100)
+    let secondTap = frame(thumbX: 0.7, thumbY: 0.5, indexX: 0.7, indexY: 0.5, timestampMs: ts)
+    _ = r.ingest(secondTap)
+    ts = 220; advance(ms: 40)
+    let secondRelease = frame(thumbX: 0.7, thumbY: 0.5, indexX: 0.95, indexY: 0.5, timestampMs: ts)
+    XCTAssertNil(r.ingest(secondRelease),
+                 "Second tap releases as deferred .select — no immediate emit")
+
+    // Second tap's deferred .select commits after its own window.
+    advance(ms: 310); ts += 310
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .select)
+  }
+
+  func test_doubleTap_secondPinchIsDrag_emitsOnlyDirection() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+
+    // Tap 1.
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 80; advance(ms: 80)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+
+    // Tap 2 starts nearby but the user drags right before releasing →
+    // emit .right, suppress the pending .select.
+    ts = 180; advance(ms: 100)
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 230; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.6, thumbY: 0.5, indexX: 0.6, indexY: 0.5, timestampMs: ts))
+    ts = 280; advance(ms: 50)
+    let release = frame(thumbX: 0.6, thumbY: 0.5, indexX: 0.95, indexY: 0.5, timestampMs: ts)
+    XCTAssertEqual(r.ingest(release), .right)
+
+    // No stray .select after — the suppressed first tap shouldn't leak.
+    advance(ms: 500); ts += 500
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+  }
+
+  // MARK: - Cooldown
+
+  func test_cooldown_suppressesPinchAfterDirection() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+
+    // First gesture: drag right (immediate emit).
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 100; advance(ms: 100)
+    _ = r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts))
+    ts = 200; advance(ms: 100)
+    let release = frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.9, indexY: 0.5, timestampMs: ts)
+    XCTAssertEqual(r.ingest(release), .right)
+
+    // Within cooldown (250 ms). Attempt another pinch — should be ignored.
+    ts = 300; advance(ms: 100)
+    XCTAssertNil(r.ingest(indexPinchFrame(timestampMs: ts)))
+    XCTAssertEqual(r.debugState.fsm, .idle, "Cooldown should block new pinch transitions")
+
+    // After cooldown, fresh gesture fires.
+    advance(ms: 300); ts += 300
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    advance(ms: 100); ts += 100
+    _ = r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts))
+    advance(ms: 100); ts += 100
+    let release2 = frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.9, indexY: 0.5, timestampMs: ts)
+    XCTAssertEqual(r.ingest(release2), .right)
+  }
+
+  // MARK: - Error paths
 
   func test_handLostMidPinch_resetsToIdle() {
     var r = PinchDragRecognizer(now: clockSource)
@@ -218,7 +297,6 @@ final class PinchDragRecognizerTests: XCTestCase {
       _ = r.ingest(frame(thumbX: 0, thumbY: 0, timestampMs: ts, handPresent: false))
     }
 
-    // Release should not emit — we've already reset.
     ts += 100; advance(ms: 100)
     XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
     XCTAssertEqual(r.debugState.fsm, .idle)
@@ -234,11 +312,13 @@ final class PinchDragRecognizerTests: XCTestCase {
     XCTAssertEqual(r.debugState.fsm, .idle)
   }
 
+  // MARK: - Orientation gate
+
   func test_orientationGate_rejectsPinchWithPalmFacingCamera() {
     var r = PinchDragRecognizer(now: clockSource)
-    // Flat-palm-facing-camera pose: indexMCP and pinkyMCP at the same
-    // z as the wrist. 3D palm normal collapses to pure ±z → palmFacingZ
-    // ≈ ±1, far outside the default [-0.5, +0.5] gate.
+    // Flat-palm-facing-camera pose: indexMCP and pinkyMCP at the same z as
+    // the wrist. 3D palm normal collapses to pure ±z → palmFacingZ ≈ ±1,
+    // far outside the default [-0.5, +0.5] gate.
     let f = frame(
       thumbX: 0.5, thumbY: 0.5,
       indexMCPX: 0.50, indexMCPY: 0.55, indexMCPZ: 0,
@@ -252,9 +332,6 @@ final class PinchDragRecognizerTests: XCTestCase {
 
   func test_orientationGate_rejectsPinchWithTooSmallHand() {
     var r = PinchDragRecognizer(now: clockSource)
-    // Hand way too small (hand far from camera / MediaPipe losing the hand).
-    // Use the edge-on z offsets so palmFacingZ passes, but shrink the
-    // wrist→middleMCP distance so handSize falls below 0.10.
     let f = frame(
       thumbX: 0.5, thumbY: 0.5,
       wristX: 0.505, wristY: 0.805,
@@ -271,8 +348,6 @@ final class PinchDragRecognizerTests: XCTestCase {
     var cfg = PinchDragRecognizer.Config()
     cfg.gateDisabled = true
     var r = PinchDragRecognizer(config: cfg, now: clockSource)
-    // Same palm-facing-camera frame as above; with gate off, pinch
-    // should engage.
     let f = frame(
       thumbX: 0.5, thumbY: 0.5,
       indexMCPX: 0.50, indexMCPY: 0.55, indexMCPZ: 0,
@@ -284,16 +359,14 @@ final class PinchDragRecognizerTests: XCTestCase {
   }
 
   func test_orientationGate_allowsReleaseRegardlessOfPose() {
-    // Gate is IDLE→pinching only. Once engaged, changing pose during
-    // the drag must NOT kill the gesture.
+    // Gate is IDLE→pinching only. Once engaged, changing pose during the
+    // drag must NOT kill the gesture.
     var r = PinchDragRecognizer(now: clockSource)
     var ts = 0
 
-    // Start in valid pose → pinch engages.
     _ = r.ingest(indexPinchFrame(timestampMs: ts))
     XCTAssertEqual(r.debugState.fsm, .indexPinching)
 
-    // Mid-drag, rotate palm to face camera (palmFacingZ ≈ ±1, out of gate).
     ts = 100; advance(ms: 100)
     let midFrame = frame(
       thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5,
@@ -304,7 +377,6 @@ final class PinchDragRecognizerTests: XCTestCase {
     _ = r.ingest(midFrame)
     XCTAssertEqual(r.debugState.fsm, .indexPinching, "Mid-drag pose change must not reset tracking")
 
-    // Release still classifies normally — no gate applied at release.
     ts = 200; advance(ms: 100)
     let release = frame(
       thumbX: 0.58, thumbY: 0.5, indexX: 0.9, indexY: 0.5,
@@ -315,6 +387,8 @@ final class PinchDragRecognizerTests: XCTestCase {
     XCTAssertEqual(r.ingest(release), .right,
                    "Release classifier ignores orientation; direction still fires")
   }
+
+  // MARK: - Debug exposure
 
   func test_contactStartEndPositions_persistAcrossRelease() {
     var r = PinchDragRecognizer(now: clockSource)
@@ -331,7 +405,203 @@ final class PinchDragRecognizerTests: XCTestCase {
 
     XCTAssertNotNil(r.lastContactStartPosition)
     XCTAssertNotNil(r.lastContactReleasePosition)
-    // End should have moved from start.
     XCTAssertNotEqual(r.lastContactStartPosition, r.lastContactReleasePosition)
+  }
+
+  // MARK: - Highlights (mid-pinch quadrant pre-fire)
+
+  func test_highlight_firesOnQuadrantEntry() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+
+    // Pinch engages — thumb at center.
+    XCTAssertNil(r.ingest(indexPinchFrame(timestampMs: ts)))
+
+    // Drag thumb into the right quadrant while keeping contact. dx=0.08
+    // is well over selectRadius (0.05).
+    ts = 50; advance(ms: 50)
+    let right = frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts)
+    XCTAssertEqual(r.ingest(right), .highlightRight)
+  }
+
+  func test_highlight_noRepeatsInSameQuadrant() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+
+    ts = 50; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts))
+
+    // Still in the right quadrant — no second highlight.
+    ts = 100; advance(ms: 50)
+    XCTAssertNil(r.ingest(frame(thumbX: 0.60, thumbY: 0.5, indexX: 0.60, indexY: 0.5, timestampMs: ts)))
+
+    ts = 150; advance(ms: 50)
+    XCTAssertNil(r.ingest(frame(thumbX: 0.62, thumbY: 0.5, indexX: 0.62, indexY: 0.5, timestampMs: ts)))
+  }
+
+  func test_highlight_firesOnQuadrantChange() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+
+    // Right quadrant first.
+    ts = 50; advance(ms: 50)
+    XCTAssertEqual(
+      r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts)),
+      .highlightRight
+    )
+
+    // Cross to down (|dy|=0.08 > |dx|=0).
+    ts = 100; advance(ms: 50)
+    XCTAssertEqual(
+      r.ingest(frame(thumbX: 0.5, thumbY: 0.58, indexX: 0.5, indexY: 0.58, timestampMs: ts)),
+      .highlightDown
+    )
+
+    // Cross to left.
+    ts = 150; advance(ms: 50)
+    XCTAssertEqual(
+      r.ingest(frame(thumbX: 0.42, thumbY: 0.5, indexX: 0.42, indexY: 0.5, timestampMs: ts)),
+      .highlightLeft
+    )
+
+    // Cross to up.
+    ts = 200; advance(ms: 50)
+    XCTAssertEqual(
+      r.ingest(frame(thumbX: 0.5, thumbY: 0.42, indexX: 0.5, indexY: 0.42, timestampMs: ts)),
+      .highlightUp
+    )
+  }
+
+  func test_highlight_firesAgainWhenRevisitingQuadrant() {
+    // Enter right, come back to center (no emit), re-enter right → emit again.
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+
+    ts = 50; advance(ms: 50)
+    XCTAssertEqual(
+      r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts)),
+      .highlightRight
+    )
+
+    // Return to center — within selectRadius — no emit, but re-primes.
+    ts = 100; advance(ms: 50)
+    XCTAssertNil(
+      r.ingest(frame(thumbX: 0.5, thumbY: 0.5, indexX: 0.5, indexY: 0.5, timestampMs: ts))
+    )
+
+    // Re-enter right — emit again.
+    ts = 150; advance(ms: 50)
+    XCTAssertEqual(
+      r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts)),
+      .highlightRight
+    )
+  }
+
+  func test_debugState_reflectsCurrentQuadrant() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    XCTAssertNil(r.debugState.currentHighlightQuadrant, "Center → nil")
+
+    ts = 50; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.5, thumbY: 0.58, indexX: 0.5, indexY: 0.58, timestampMs: ts))
+    XCTAssertEqual(r.debugState.currentHighlightQuadrant, .down)
+  }
+
+  // MARK: - Cancel (drift out and back)
+
+  func test_cancel_emittedAfterDriftOutAndBack() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+
+    // Drift into right quadrant.
+    ts = 50; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts))
+
+    // Return to center.
+    ts = 100; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.5, thumbY: 0.5, indexX: 0.5, indexY: 0.5, timestampMs: ts))
+
+    // Release at center — should be .cancel, not .select (not deferred).
+    ts = 150; advance(ms: 50)
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .cancel)
+  }
+
+  func test_cancel_firesImmediately_notDeferred() {
+    // Unlike .select, .cancel does not pay the double-tap latency penalty.
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 50; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts))
+    ts = 100; advance(ms: 50)
+    _ = r.ingest(frame(thumbX: 0.5, thumbY: 0.5, indexX: 0.5, indexY: 0.5, timestampMs: ts))
+    ts = 150; advance(ms: 50)
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .cancel)
+    XCTAssertFalse(r.debugState.pendingSelectActive,
+                   "Cancel must not set a pendingSelect; it's not a tap")
+  }
+
+  func test_cancel_overridesBackOnDoubleTapDrift() {
+    // Tap 1: clean select inside dead zone.
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 80; advance(ms: 80)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+
+    // Tap 2: starts near same spot — would normally be double-tap candidate.
+    // But user drifts out and back → release-classifier returns .cancel, not
+    // .select, so FSM emits .cancel instead of .back.
+    ts = 180; advance(ms: 100)
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 220; advance(ms: 40)
+    _ = r.ingest(frame(thumbX: 0.58, thumbY: 0.5, indexX: 0.58, indexY: 0.5, timestampMs: ts))
+    ts = 260; advance(ms: 40)
+    _ = r.ingest(frame(thumbX: 0.5, thumbY: 0.5, indexX: 0.5, indexY: 0.5, timestampMs: ts))
+    ts = 300; advance(ms: 40)
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .cancel)
+  }
+
+  func test_select_stillEmits_whenNoDriftEverHappened() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+
+    // Multiple held frames, all within selectRadius — hasEverExitedSelectRadius
+    // stays false.
+    ts = 50; advance(ms: 50)
+    _ = r.ingest(indexPinchFrame(thumbOffset: CGPoint(x: 0.02, y: 0), timestampMs: ts))
+    ts = 100; advance(ms: 50)
+    _ = r.ingest(indexPinchFrame(thumbOffset: CGPoint(x: -0.02, y: 0.01), timestampMs: ts))
+
+    // Release inside dead zone → deferred .select.
+    ts = 150; advance(ms: 50)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+
+    // After window — fires as .select (not .cancel).
+    advance(ms: 310); ts += 310
+    XCTAssertEqual(r.ingest(releasedFrame(timestampMs: ts)), .select)
+  }
+
+  // MARK: - Debug exposure (double-tap window)
+
+  func test_pendingSelectActive_flipsFalseAfterCommit() {
+    var r = PinchDragRecognizer(now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+    ts = 100; advance(ms: 100)
+    _ = r.ingest(releasedFrame(timestampMs: ts))
+
+    XCTAssertTrue(r.debugState.pendingSelectActive, "Should be live inside window")
+
+    advance(ms: 310); ts += 310
+    _ = r.ingest(releasedFrame(timestampMs: ts))  // commits the deferred .select
+    XCTAssertFalse(r.debugState.pendingSelectActive,
+                   "Should clear once the deferred .select has committed")
   }
 }

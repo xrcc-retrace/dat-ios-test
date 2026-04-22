@@ -67,22 +67,40 @@ struct RecordTabView: View {
           await MainActor.run {
             selectedVideoURL = url
             selectedVideoDuration = seconds
-            showMediaPicker = false
-            showReview = true
+            // Sheet dismissal is driven by picker.dismiss(animated:true)
+            // inside the coordinator — no need to flip the binding here.
           }
         }
       }
     }
-    .fullScreenCover(isPresented: $showReview) {
+    // Symmetric gates: the review opens exactly once, whichever event arrives
+    // last. Needed because the picker calls picker.dismiss(animated:true)
+    // synchronously from the coordinator while the duration-loading Task runs
+    // on its own clock — either can finish first, and relying on onDismiss
+    // alone loses the late arrival and leaves the user on a blank screen.
+    .onChange(of: showMediaPicker) { _, isShowing in
+      if !isShowing, selectedVideoURL != nil, !showReview {
+        showReview = true
+      }
+    }
+    .onChange(of: selectedVideoURL) { _, newURL in
+      if newURL != nil, !showMediaPicker, !showReview {
+        showReview = true
+      }
+    }
+    .fullScreenCover(
+      isPresented: $showReview,
+      onDismiss: {
+        selectedVideoURL = nil
+        selectedVideoDuration = 0
+      }
+    ) {
       if let url = selectedVideoURL {
         ExpertRecordingReviewView(
           recordingURL: url,
           duration: selectedVideoDuration,
           uploadService: uploadService,
-          onDismiss: {
-            selectedVideoURL = nil
-            showReview = false
-          },
+          onDismiss: { showReview = false },
           onAcknowledgeResult: handleProcedureAcknowledged
         )
       }

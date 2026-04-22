@@ -77,22 +77,32 @@ private extension PinchDragEvent {
   var displayName: String {
     switch self {
     case .select: return "Select"
+    case .cancel: return "Cancel"
     case .left: return "Left"
     case .right: return "Right"
     case .up: return "Up"
     case .down: return "Down"
     case .back: return "Back"
+    case .highlightLeft: return "Hi ◀"
+    case .highlightRight: return "Hi ▶"
+    case .highlightUp: return "Hi ▲"
+    case .highlightDown: return "Hi ▼"
     }
   }
 
   var symbolName: String {
     switch self {
     case .select: return "hand.tap.fill"
+    case .cancel: return "xmark.circle.fill"
     case .left: return "arrow.left"
     case .right: return "arrow.right"
     case .up: return "arrow.up"
     case .down: return "arrow.down"
     case .back: return "arrow.uturn.backward"
+    case .highlightLeft: return "chevron.left"
+    case .highlightRight: return "chevron.right"
+    case .highlightUp: return "chevron.up"
+    case .highlightDown: return "chevron.down"
     }
   }
 }

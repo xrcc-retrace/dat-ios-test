@@ -98,9 +98,6 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   var indexPinchContactThreshold: Float {
     PinchDragRecognizer.Config().indexContactThreshold
   }
-  var middlePinchContactThreshold: Float {
-    PinchDragRecognizer.Config().middleContactThreshold
-  }
   var gatePalmFacingZMin: Float {
     PinchDragRecognizer.Config().gatePalmFacingZMin
   }
@@ -109,6 +106,12 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   }
   var gateHandSizeMin: Float {
     PinchDragRecognizer.Config().gateHandSizeMin
+  }
+  var pendingSelectActive: Bool {
+    pinchDragRecognizer.debugState.pendingSelectActive
+  }
+  var currentHighlightQuadrant: PinchDragQuadrant? {
+    pinchDragRecognizer.debugState.currentHighlightQuadrant
   }
   var lastContactStartPosition: CGPoint? {
     pinchDragRecognizer.lastContactStartPosition
@@ -249,16 +252,18 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
     }
 
     // Natural mapping — pinch-right advances the tip carousel (same
-    // direction as a physical right-swipe); pinch-left retreats. The
-    // other events (.select / .up / .down / .back) stay in the log
-    // without firing any action; we deliberately don't wire destructive
-    // actions to gestures (e.g. .back → stop recording would be too easy
-    // to trigger accidentally — the hold-to-confirm pill exists for that
-    // specifically).
+    // direction as a physical right-swipe); pinch-left retreats. Every
+    // other event (including highlights, select, cancel, and back) stays
+    // in the log without firing any action; we deliberately don't wire
+    // destructive actions to gestures (e.g. .back → stop recording
+    // would be too easy to trigger accidentally — the hold-to-confirm
+    // pill exists for that specifically).
     switch event {
     case .right: advanceTip()
     case .left: retreatTip()
-    case .select, .up, .down, .back: break
+    case .select, .cancel, .up, .down, .back,
+         .highlightLeft, .highlightRight, .highlightUp, .highlightDown:
+      break
     }
   }
 

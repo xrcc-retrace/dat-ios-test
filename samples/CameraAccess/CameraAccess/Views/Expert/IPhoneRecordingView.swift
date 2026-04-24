@@ -128,41 +128,42 @@ struct IPhoneRecordingView: View {
         .tint(.textPrimary)
     }
 
-    // Close button (top-left)
-    VStack {
-      HStack {
-        Button {
-          dismiss()
-        } label: {
-          Image(systemName: "xmark")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundColor(.textPrimary)
-            .frame(width: 36, height: 36)
-            .glassPanel(cornerRadius: Radius.full)
-        }
-        .padding(.leading, 20)
-        .padding(.top, 20)
-        Spacer()
-      }
-      Spacer()
-    }
-
-    // Pre-recording cluster: toggle bundle + Start CTA. Hides the moment
-    // recording begins — the HUD takes over the stop affordance.
+    // Pre-recording chrome: close button + toggle bundle + Start CTA. Hides
+    // the moment recording begins — the HUD takes over the stop affordance.
     if !viewModel.recordingManager.isRecording {
-      VStack(spacing: 12) {
-        Spacer()
-        IPhonePreRecordingToggleCluster(
-          showGestureDebug: $showGestureDebug,
-          landscapeOutput: $landscapeOutput,
-          isDisabled: viewModel.recordingManager.isStarting
-        )
-        IPhoneStartRecordingButton(
-          viewModel: viewModel,
-          landscapeOutput: landscapeOutput
-        )
+      ZStack {
+        VStack {
+          HStack {
+            Button {
+              dismiss()
+            } label: {
+              Image(systemName: "xmark")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.textPrimary)
+                .frame(width: 36, height: 36)
+                .glassPanel(cornerRadius: Radius.full)
+            }
+            .padding(.leading, 20)
+            .padding(.top, 20)
+            Spacer()
+          }
+          Spacer()
+        }
+
+        VStack(spacing: 12) {
+          Spacer()
+          IPhonePreRecordingToggleCluster(
+            showGestureDebug: $showGestureDebug,
+            landscapeOutput: $landscapeOutput,
+            isDisabled: viewModel.recordingManager.isStarting
+          )
+          IPhoneStartRecordingButton(
+            viewModel: viewModel,
+            landscapeOutput: landscapeOutput
+          )
+        }
+        .padding(.all, 24)
       }
-      .padding(.all, 24)
     }
   }
 

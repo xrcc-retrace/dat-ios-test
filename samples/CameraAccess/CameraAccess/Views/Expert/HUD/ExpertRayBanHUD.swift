@@ -19,6 +19,7 @@ import SwiftUI
 struct ExpertRayBanHUD: View {
   @ObservedObject var recordingManager: ExpertRecordingManager
   @ObservedObject var hud: ExpertRecordingHUDViewModel
+  let showGestureDebug: Bool
   let onStop: () -> Void
 
   @StateObject private var hoverCoordinator = HUDHoverCoordinator()
@@ -62,7 +63,11 @@ struct ExpertRayBanHUD: View {
         // Single shared gesture-debug stack — composes the landmark
         // overlay + event log with identical placement across Coaching,
         // Expert, and Troubleshoot HUDs. See HandGestureDebugStack.swift.
-        HandGestureDebugStack(provider: hud)
+        // Hidden by default; re-enabled via the Gesture debug toggle in
+        // the pre-recording chrome so demo footage stays clean.
+        if showGestureDebug {
+          HandGestureDebugStack(provider: hud)
+        }
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
     }

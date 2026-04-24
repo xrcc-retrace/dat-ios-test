@@ -33,9 +33,14 @@ class ExpertRecordingManager: ObservableObject {
   /// timer every 5 s for the `[Recording] fps window` log.
   private var appendsInWindow: Int = 0
 
-  // Video config matching DAT SDK StreamingResolution.high at 30fps
-  private let videoWidth = 720
-  private let videoHeight = 1280
+  // Video config matching DAT SDK StreamingResolution.high at 30fps.
+  // Portrait is the historical default (glasses + iPhone expert portrait).
+  // Landscape is used when the iPhone expert toggles "Landscape output"
+  // — capture-output rotation is flipped in the same step (see
+  // `IPhoneCameraCapture.setCaptureLandscapeOutput`) so frames arrive
+  // already oriented landscape-right before they hit the writer.
+  static let portraitSize: (width: Int, height: Int) = (720, 1280)
+  static let landscapeSize: (width: Int, height: Int) = (1280, 720)
 
   init(audioSessionManager: AudioSessionManager) {
     self.audioSessionManager = audioSessionManager
@@ -43,7 +48,10 @@ class ExpertRecordingManager: ObservableObject {
 
   // MARK: - Recording Control
 
-  func startRecording() async {
+  func startRecording(
+    width: Int = ExpertRecordingManager.portraitSize.width,
+    height: Int = ExpertRecordingManager.portraitSize.height
+  ) async {
     guard !isRecording, !isStarting else { return }
     isStarting = true
     defer { isStarting = false }
@@ -55,8 +63,8 @@ class ExpertRecordingManager: ObservableObject {
     // init, writer input creation, and startWriting(). These are all
     // documented thread-safe and collectively account for ~100 ms of the
     // old freeze.
-    let writerVideoWidth = videoWidth
-    let writerVideoHeight = videoHeight
+    let writerVideoWidth = width
+    let writerVideoHeight = height
 
     let built: (writer: AVAssetWriter, video: AVAssetWriterInput, audio: AVAssetWriterInput)? =
       await Task.detached(priority: .userInitiated) {

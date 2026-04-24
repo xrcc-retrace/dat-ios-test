@@ -4,6 +4,7 @@ struct CoachingRayBanHUD: View {
   @ObservedObject var viewModel: CoachingSessionViewModel
   let stepCount: Int
   let clipURL: URL?
+  let showGestureDebug: Bool
   let onExit: () -> Void
 
   @StateObject private var hoverCoordinator = HUDHoverCoordinator()
@@ -44,7 +45,11 @@ struct CoachingRayBanHUD: View {
         // Single shared gesture-debug stack — composes the landmark
         // overlay + event log with identical placement across Coaching,
         // Expert, and Troubleshoot HUDs. See HandGestureDebugStack.swift.
-        HandGestureDebugStack(provider: viewModel)
+        // Hidden by default; re-enabled via the Debug toggle in the
+        // coaching drawer's controls bar so demo footage stays clean.
+        if showGestureDebug {
+          HandGestureDebugStack(provider: viewModel)
+        }
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
     }

@@ -23,6 +23,9 @@ struct CoachingSessionView: View {
   // `.onAppear` from `resolveInterfaceOrientation()` so the session
   // preserves whatever orientation the phone is already in.
   @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
+  // Gesture-debug overlay hidden by default — demo footage stays clean.
+  // Flipped from the controls bar Debug button. Resets per session.
+  @State private var showGestureDebug: Bool = false
 
   init(
     procedure: ProcedureResponse,
@@ -63,6 +66,7 @@ struct CoachingSessionView: View {
               viewModel: viewModel,
               stepCount: procedure.steps.count,
               clipURL: currentStepClipURL,
+              showGestureDebug: showGestureDebug,
               onExit: {
                 viewModel.endSession(progressStore: progressStore)
                 dismiss()
@@ -377,6 +381,20 @@ struct CoachingSessionView: View {
       .contentShape(Rectangle())
       .onTapGesture {
         viewModel.showPiP.toggle()
+      }
+
+      VStack(spacing: Spacing.xs) {
+        Image(systemName: showGestureDebug ? "ladybug.fill" : "ladybug")
+          .font(.system(size: 20))
+          .foregroundColor(showGestureDebug ? .appPrimary : .textPrimary)
+        Text("Debug")
+          .font(.system(size: 10))
+          .foregroundColor(.textSecondary)
+      }
+      .frame(maxWidth: .infinity)
+      .contentShape(Rectangle())
+      .onTapGesture {
+        showGestureDebug.toggle()
       }
     }
     .padding(.vertical, Spacing.lg)

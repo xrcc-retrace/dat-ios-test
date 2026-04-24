@@ -136,6 +136,36 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     }
   }
 
+  /// Lock both the capture output and the preview to landscape-right (0°) or
+  /// portrait (90°). Drives the iPhone expert "Landscape output" toggle —
+  /// flipping this before `ExpertRecordingManager.startRecording(width:height:)`
+  /// is how we produce 1280×720 landscape MP4s instead of the 720×1280 portrait
+  /// default. Preview rotation also locks, so the user sees exactly the framing
+  /// that will be written.
+  ///
+  /// Intentional behavior: when enabled, we pin to `landscapeRight` regardless
+  /// of which way the phone is physically held — the recording doesn't follow
+  /// device rotation. When disabled, the caller is responsible for restoring
+  /// the preview to the current device orientation via
+  /// `setPreviewInterfaceOrientation(_:)`.
+  func setCaptureLandscapeOutput(_ enabled: Bool) {
+    let angle: CGFloat = enabled ? 0 : 90
+
+    if let connection = videoOutput.connection(with: .video),
+       connection.isVideoRotationAngleSupported(angle) {
+      connection.videoRotationAngle = angle
+    }
+    if let handConnection = handVideoOutput.connection(with: .video),
+       handConnection.isVideoRotationAngleSupported(angle) {
+      handConnection.videoRotationAngle = angle
+    }
+    if enabled,
+       let previewConnection = previewLayer.connection,
+       previewConnection.isVideoRotationAngleSupported(angle) {
+      previewConnection.videoRotationAngle = angle
+    }
+  }
+
   // MARK: - Internals
 
   private func configureIfNeeded() throws {

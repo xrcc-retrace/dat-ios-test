@@ -160,14 +160,22 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   /// that the AVAssetWriter + audio session setup can run off the main
   /// thread; we fire-and-forget the Task here — the manager flips
   /// `isStarting` / `isRecording` published flags as it progresses.
-  func startRecording() {
+  ///
+  /// `landscape` picks the writer dimensions (1280×720 landscape vs 720×1280
+  /// portrait). The caller must have already flipped
+  /// `camera.setCaptureLandscapeOutput(_:)` so frames arrive at the matching
+  /// rotation before the writer sees them.
+  func startRecording(landscape: Bool) {
     guard isPreviewLive else {
       surfaceError("Camera isn't ready yet.")
       return
     }
+    let size = landscape
+      ? ExpertRecordingManager.landscapeSize
+      : ExpertRecordingManager.portraitSize
     Task { [weak self] in
       guard let self else { return }
-      await self.recordingManager.startRecording()
+      await self.recordingManager.startRecording(width: size.width, height: size.height)
       // Bring up the on-device transcriber AFTER the writer is armed — the
       // mic tap is live at that point. Install it as the *secondary* audio
       // consumer so the writer can never be starved by a slow speech

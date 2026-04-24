@@ -67,6 +67,7 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
   )
   private let handFrameDelegate = FrameDelegate()
   private var isConfigured = false
+  private var prefersLandscapeOutput = false
 
   override init() {
     self.previewLayer = AVCaptureVideoPreviewLayer(session: session)
@@ -149,6 +150,11 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
   /// the preview to the current device orientation via
   /// `setPreviewInterfaceOrientation(_:)`.
   func setCaptureLandscapeOutput(_ enabled: Bool) {
+    prefersLandscapeOutput = enabled
+    applyCaptureRotation(enabled: enabled)
+  }
+
+  private func applyCaptureRotation(enabled: Bool) {
     let angle: CGFloat = enabled ? 0 : 90
 
     if let connection = videoOutput.connection(with: .video),
@@ -284,6 +290,11 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
        previewConnection.isVideoRotationAngleSupported(90) {
       previewConnection.videoRotationAngle = 90
     }
+
+    // Reapply any output orientation the view requested before async camera
+    // configuration finished, so the first recording matches the current UI
+    // toggle state.
+    applyCaptureRotation(enabled: prefersLandscapeOutput)
 
     // Standalone .builtInUltraWideCamera is already addressing the ultra-wide
     // lens directly — no zoom change needed. For .builtInDualWideCamera

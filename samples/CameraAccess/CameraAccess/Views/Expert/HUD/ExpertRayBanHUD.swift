@@ -6,11 +6,10 @@ import SwiftUI
 /// needs during narration capture.
 ///
 /// Contents, top-to-bottom within the square:
-///   [top-center]     recording status chip   (only while recording)
-///   [top-trailing]   mic-source badge        (always visible)
+///   [top-trailing]   mic-source badge        (pre-recording only)
 ///   [bottom cluster]
-///     ├─ stop-recording pill       (only while recording; hover-to-confirm)
-///     ├─ rolling transcript card   (only while recording + available)
+///     ├─ recording chip + stop pill row  (only while recording)
+///     ├─ rolling transcript card         (local-gated; hidden by default)
 ///     └─ narration tip card        (always visible; swipe to cycle)
 ///
 /// When the user holds the stop pill, the entire cluster is replaced by
@@ -19,10 +18,12 @@ import SwiftUI
 struct ExpertRayBanHUD: View {
   @ObservedObject var recordingManager: ExpertRecordingManager
   @ObservedObject var hud: ExpertRecordingHUDViewModel
+  let showGestureDebug: Bool
   let onStop: () -> Void
 
   @StateObject private var hoverCoordinator = HUDHoverCoordinator()
   @State private var stopFlowState: StopFlowState = .inactive
+  @State private var showTranscriptCard: Bool = false
   @State private var tipCardOffset: CGFloat = 0
 
   private let holdTimer = Timer.publish(
@@ -62,7 +63,11 @@ struct ExpertRayBanHUD: View {
         // Single shared gesture-debug stack — composes the landmark
         // overlay + event log with identical placement across Coaching,
         // Expert, and Troubleshoot HUDs. See HandGestureDebugStack.swift.
-        HandGestureDebugStack(provider: hud)
+        // Hidden by default; re-enabled via the Gesture debug toggle in
+        // the pre-recording chrome so demo footage stays clean.
+        if showGestureDebug {
+          HandGestureDebugStack(provider: hud)
+        }
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
     }
@@ -84,29 +89,19 @@ struct ExpertRayBanHUD: View {
 
   @ViewBuilder
   private func topOverlay(in geometry: GeometryProxy) -> some View {
-    VStack(spacing: RayBanHUDLayoutTokens.stackSpacing) {
-      if recordingManager.isRecording {
-        ExpertHUDRecordingStatusChip(
-          duration: recordingManager.recordingDuration,
-          audioPeak: hud.smoothedAudioPeak,
-          isRecording: true
-        )
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .top)
-    .padding(.top, RayBanHUDLayoutTokens.viewportInset + 36)
-
     // Mic-source badge pinned top-trailing. We rely on RetraceScreen's
     // containing ZStack for absolute positioning; the badge gets its own
     // frame so the top-center recording chip isn't affected.
-    HStack {
-      Spacer(minLength: 0)
-      ExpertHUDMicSourceBadge(micSource: hud.micSource)
+    if !recordingManager.isRecording {
+      HStack {
+        Spacer(minLength: 0)
+        ExpertHUDMicSourceBadge(micSource: hud.micSource)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+      .padding(.top, RayBanHUDLayoutTokens.viewportInset + 36)
+      .padding(.trailing, RayBanHUDLayoutTokens.viewportInset)
+      .allowsHitTesting(false)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-    .padding(.top, RayBanHUDLayoutTokens.viewportInset + 36)
-    .padding(.trailing, RayBanHUDLayoutTokens.viewportInset)
-    .allowsHitTesting(false)
   }
 
   // MARK: - Square content
@@ -132,14 +127,20 @@ struct ExpertRayBanHUD: View {
   private var bottomContentCluster: some View {
     VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.exitToPanelSpacing) {
       if recordingManager.isRecording {
-        HStack {
+        HStack(alignment: .bottom, spacing: 0) {
+          ExpertHUDRecordingStatusChip(
+            duration: recordingManager.recordingDuration,
+            audioPeak: hud.smoothedAudioPeak,
+            isRecording: true
+          )
           Spacer(minLength: 0)
           stopPill
         }
+        .frame(maxWidth: .infinity)
       }
 
       VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.stackSpacing) {
-        if recordingManager.isRecording, hud.transcriptAvailable {
+        if showTranscriptCard, recordingManager.isRecording, hud.transcriptAvailable {
           ExpertHUDRollingTranscriptCard(segments: hud.transcript)
         }
 

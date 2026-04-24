@@ -1,9 +1,15 @@
 import SwiftUI
 
+enum CoachingRayBanHUDLayoutMode: Equatable {
+  case fixedBottomCluster
+  case scrollableViewport
+}
+
 struct CoachingRayBanHUD: View {
   @ObservedObject var viewModel: CoachingSessionViewModel
   let stepCount: Int
   let clipURL: URL?
+  let layoutMode: CoachingRayBanHUDLayoutMode
   let showGestureDebug: Bool
   let onExit: () -> Void
 
@@ -32,15 +38,7 @@ struct CoachingRayBanHUD: View {
             .ignoresSafeArea()
         }
 
-        squareContent
-          .frame(width: viewport.squareSide, height: viewport.squareSide)
-          .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: viewport.alignment
-          )
-          .padding(.trailing, viewport.trailingInset)
-          .padding(.bottom, viewport.bottomInset)
+        squareViewportContent(viewport: viewport)
 
         // Single shared gesture-debug stack — composes the landmark
         // overlay + event log with identical placement across Coaching,
@@ -80,20 +78,51 @@ struct CoachingRayBanHUD: View {
   }
 
   @ViewBuilder
-  private var squareContent: some View {
+  private func squareViewportContent(viewport: RayBanHUDViewport) -> some View {
+    Group {
+      if layoutMode == .scrollableViewport {
+        squareContent(for: viewport)
+          .frame(width: viewport.squareSide, height: viewport.squareSide)
+          .clipped(antialiased: true)
+      } else {
+        squareContent(for: viewport)
+          .frame(width: viewport.squareSide, height: viewport.squareSide)
+      }
+    }
+    .frame(
+      maxWidth: .infinity,
+      maxHeight: .infinity,
+      alignment: viewport.alignment
+    )
+    .padding(.trailing, viewport.trailingInset)
+    .padding(.bottom, viewport.bottomInset)
+  }
+
+  @ViewBuilder
+  private func squareContent(for viewport: RayBanHUDViewport) -> some View {
     if viewModel.isCompleted {
       completionContent
     } else if let progress = exitFlowState.progress {
       exitOverlay(progress: progress)
     } else {
-      primaryContent
+      primaryContent(for: viewport)
     }
   }
 
-  private var primaryContent: some View {
-    VStack(alignment: .trailing, spacing: 0) {
-      Spacer(minLength: 0)
-      bottomContentCluster
+  @ViewBuilder
+  private func primaryContent(for viewport: RayBanHUDViewport) -> some View {
+    switch layoutMode {
+    case .fixedBottomCluster:
+      VStack(alignment: .trailing, spacing: 0) {
+        Spacer(minLength: 0)
+        bottomContentCluster
+      }
+    case .scrollableViewport:
+      if shouldCenterCollapsedLandscapeContent(in: viewport) {
+        centeredCollapsedLandscapeContent
+      } else {
+        scrollingViewportContent
+      }
     }
   }
 
@@ -103,6 +132,27 @@ struct CoachingRayBanHUD: View {
 
       exitPill
     }
+  }
+
+  private var scrollingViewportContent: some View {
+    ScrollView(.vertical, showsIndicators: false) {
+      VStack(alignment: .trailing, spacing: RayBanHUDLayoutTokens.exitToPanelSpacing) {
+        activePanelStack
+        exitPill
+      }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .padding(.vertical, RayBanHUDLayoutTokens.contentPadding)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+  }
+
+  private var centeredCollapsedLandscapeContent: some View {
+    VStack(alignment: .trailing, spacing: 0) {
+      Spacer(minLength: 0)
+      bottomContentCluster
+      Spacer(minLength: 0)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
   }
 
   private var activePanelStack: some View {
@@ -215,6 +265,13 @@ struct CoachingRayBanHUD: View {
       && exitFlowState.progress == nil
       && !isStepDetailExpanded
       && viewModel.canPerformManualHUDNavigation
+  }
+
+  private func shouldCenterCollapsedLandscapeContent(in viewport: RayBanHUDViewport) -> Bool {
+    layoutMode == .scrollableViewport
+      && viewport.isLandscape
+      && !viewModel.showPiP
+      && !isStepDetailExpanded
   }
 
   private var shouldShowScrim: Bool {
@@ -419,6 +476,7 @@ enum RayBanHUDLayoutTokens {
 }
 
 private struct RayBanHUDViewport {
+  let isLandscape: Bool
   let squareSide: CGFloat
   let alignment: Alignment
   let trailingInset: CGFloat
@@ -426,6 +484,7 @@ private struct RayBanHUDViewport {
 
   init(size: CGSize) {
     let isLandscape = size.width > size.height
+    self.isLandscape = isLandscape
     let shortEdge = min(size.width, size.height)
 
     squareSide = max(0, shortEdge - (RayBanHUDLayoutTokens.viewportInset * 2))

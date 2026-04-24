@@ -66,6 +66,7 @@ struct CoachingSessionView: View {
               viewModel: viewModel,
               stepCount: procedure.steps.count,
               clipURL: currentStepClipURL,
+              layoutMode: .scrollableViewport,
               showGestureDebug: showGestureDebug,
               onExit: {
                 viewModel.endSession(progressStore: progressStore)

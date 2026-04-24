@@ -124,6 +124,13 @@ class WearablesViewModel: ObservableObject {
     }
   }
 
+  /// Human-readable name for a paired device (falls back to the raw identifier
+  /// string if the SDK can't resolve it, e.g. the device is paired but out of
+  /// range).
+  func displayName(for deviceId: DeviceIdentifier) -> String {
+    wearables.deviceForIdentifier(deviceId)?.nameOrId() ?? String(describing: deviceId)
+  }
+
   func connectGlasses() {
     guard registrationState != .registering else { return }
     Task { @MainActor in

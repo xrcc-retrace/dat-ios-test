@@ -13,10 +13,11 @@ protocol HandGestureDebugProvider: ObservableObject {
   var latestHandFrame: HandLandmarkFrame? { get }
   var recentPinchDragEvents: [PinchDragLogEntry] { get }
 
-  // Pinch threshold (pulled from `PinchDragRecognizer.Config()`).
-  // 2D only — pinch z-gating was removed; MediaPipe's fingertip depth
-  // is too noisy to use as a contact gate.
-  var indexPinchContactThreshold: Float { get }
+  // Pinch contact threshold (pulled from `PinchDragRecognizer.Config()`),
+  // expressed as `thumb-index distance ÷ handSize` — scale-invariant
+  // against camera distance. 2D only; pinch z-gating was removed
+  // because MediaPipe's fingertip depth is too noisy to gate on.
+  var indexPinchContactRatio: Float { get }
 
   // Orientation gate — drives the POSE OK / POSE OFF chip.
   var gatePalmFacingZMin: Float { get }
@@ -58,7 +59,7 @@ struct HandGestureDebugStack<Provider: HandGestureDebugProvider>: View {
         // don't obscure the dots.
         HandLandmarkDebugOverlay(
           frame: provider.latestHandFrame,
-          indexContactThreshold: provider.indexPinchContactThreshold,
+          indexContactRatio: provider.indexPinchContactRatio,
           gatePalmFacingZMin: provider.gatePalmFacingZMin,
           gatePalmFacingZMax: provider.gatePalmFacingZMax,
           gateHandSizeMin: provider.gateHandSizeMin,

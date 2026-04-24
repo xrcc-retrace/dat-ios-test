@@ -1,32 +1,17 @@
 import MWDATCore
 import SwiftUI
 
+// MARK: - Combined screen (used by ModeSelectionView's gear icon)
+
 struct ServerSettingsView: View {
-  @ObservedObject private var discovery = BonjourDiscovery.shared
-  @ObservedObject private var endpoint = ServerEndpoint.shared
-  @ObservedObject private var wearablesVM: WearablesViewModel
-  @Environment(\.dismiss) private var dismiss
-
-  @State private var healthState: HealthState = .idle
-  @State private var lastRoundTripMs: Int?
-
-  enum HealthState: Equatable {
-    case idle
-    case checking
-    case ok
-    case fail(String)
-  }
-
-  init(wearablesVM: WearablesViewModel) {
-    self.wearablesVM = wearablesVM
-  }
+  @ObservedObject var wearablesVM: WearablesViewModel
 
   var body: some View {
     RetraceScreen {
       ScrollView {
         VStack(spacing: Spacing.screenPadding) {
-          glassesSection
-          serverSection
+          GlassesSettingsSection(wearablesVM: wearablesVM)
+          ServerSettingsSection()
           Spacer(minLength: 40)
         }
         .padding(Spacing.screenPadding)
@@ -36,11 +21,14 @@ struct ServerSettingsView: View {
     .navigationBarTitleDisplayMode(.inline)
     .retraceNavBar()
   }
+}
 
-  // MARK: - Glasses section (unchanged)
+// MARK: - Glasses section (reusable)
 
-  @ViewBuilder
-  private var glassesSection: some View {
+struct GlassesSettingsSection: View {
+  @ObservedObject var wearablesVM: WearablesViewModel
+
+  var body: some View {
     VStack(alignment: .leading, spacing: Spacing.md) {
       Text("Glasses")
         .font(.retraceOverline)
@@ -50,9 +38,9 @@ struct ServerSettingsView: View {
 
       HStack(spacing: Spacing.md) {
         Circle()
-          .fill(glassesStatusColor)
+          .fill(statusColor)
           .frame(width: 10, height: 10)
-        Text(glassesStatusLabel)
+        Text(statusLabel)
           .font(.retraceCallout)
           .foregroundColor(.textPrimary)
         Spacer()
@@ -77,20 +65,34 @@ struct ServerSettingsView: View {
     .padding(.top, Spacing.xl)
   }
 
-  private var glassesStatusColor: Color {
+  private var statusColor: Color {
     if wearablesVM.registrationState == .registering { return .yellow }
     return wearablesVM.hasActiveDevice ? .green : .textTertiary
   }
 
-  private var glassesStatusLabel: String {
+  private var statusLabel: String {
     if wearablesVM.registrationState == .registering { return "Connecting…" }
     return wearablesVM.hasActiveDevice ? "Connected" : "Not connected"
   }
+}
 
-  // MARK: - Server section
+// MARK: - Server section (reusable)
 
-  @ViewBuilder
-  private var serverSection: some View {
+struct ServerSettingsSection: View {
+  @ObservedObject private var discovery = BonjourDiscovery.shared
+  @ObservedObject private var endpoint = ServerEndpoint.shared
+
+  @State private var healthState: HealthState = .idle
+  @State private var lastRoundTripMs: Int?
+
+  enum HealthState: Equatable {
+    case idle
+    case checking
+    case ok
+    case fail(String)
+  }
+
+  var body: some View {
     VStack(alignment: .leading, spacing: Spacing.md) {
       Text("Server")
         .font(.retraceOverline)
@@ -230,8 +232,6 @@ struct ServerSettingsView: View {
       }
     }
   }
-
-  // MARK: - Health check
 
   private func runHealthCheck() async {
     healthState = .checking

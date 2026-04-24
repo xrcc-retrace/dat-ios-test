@@ -55,34 +55,42 @@ struct ProfileView: View {
 
           // Device section
           settingsSection(title: "DEVICE") {
-            let isConnected = wearablesVM.hasActiveDevice
-            HStack(spacing: Spacing.lg) {
-              Image(systemName: "eyeglasses")
-                .font(.system(size: 20))
-                .foregroundColor(.textPrimary)
-                .frame(width: 32)
-
-              VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text("Smart Glasses")
-                  .font(.retraceFace(.medium, size: 17))
+            NavigationLink {
+              GlassesSettingsView(wearablesVM: wearablesVM)
+            } label: {
+              let isConnected = wearablesVM.hasActiveDevice
+              HStack(spacing: Spacing.lg) {
+                Image(systemName: "eyeglasses")
+                  .font(.system(size: 20))
                   .foregroundColor(.textPrimary)
-                Text(isConnected ? "Connected" : "Not connected")
+                  .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                  Text("Smart Glasses")
+                    .font(.retraceFace(.medium, size: 17))
+                    .foregroundColor(.textPrimary)
+                  Text(isConnected ? "Connected" : "Not connected")
+                    .font(.retraceSubheadline)
+                    .foregroundColor(isConnected ? .semanticSuccess : .textTertiary)
+                }
+
+                Spacer()
+
+                Circle()
+                  .fill(isConnected ? Color.semanticSuccess : Color.textTertiary)
+                  .frame(width: 10, height: 10)
+
+                Image(systemName: "chevron.right")
                   .font(.retraceSubheadline)
-                  .foregroundColor(isConnected ? .semanticSuccess : .textTertiary)
+                  .foregroundColor(.textTertiary)
               }
-
-              Spacer()
-
-              Circle()
-                .fill(isConnected ? Color.semanticSuccess : Color.textTertiary)
-                .frame(width: 10, height: 10)
             }
           }
 
           // Server section
           settingsSection(title: "SERVER") {
             NavigationLink {
-              ServerSettingsView(wearablesVM: wearablesVM)
+              ServerSettingsDetailView()
             } label: {
               HStack {
                 Image(systemName: "server.rack")
@@ -151,7 +159,7 @@ struct ProfileView: View {
                 Spacer()
 
                 Toggle("", isOn: $autoAdvanceEnabled)
-                  .tint(.textPrimary)
+                  .tint(.green)
               }
             }
           }

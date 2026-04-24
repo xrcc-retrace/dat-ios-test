@@ -44,5 +44,6 @@ struct ExpertTabView: View {
     .tint(.textPrimary)
     .toolbarBackground(Color.backgroundPrimary, for: .tabBar)
     .toolbarBackground(.visible, for: .tabBar)
+    .toolbarColorScheme(.dark, for: .tabBar)
   }
 }

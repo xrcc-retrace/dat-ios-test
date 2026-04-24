@@ -98,8 +98,16 @@ struct PinchDragRecognizer {
     // is too noisy to use as a contact gate without false negatives.
     // Orientation still gates on `palmFacingZ` — that signal comes from
     // wrist/MCP landmarks which are more stable.
-    var indexContactThreshold: Float = 0.04
-    var indexReleaseThreshold: Float = 0.05
+    //
+    // Both thresholds are scale-invariant ratios — `thumb-tip ↔ index-tip`
+    // distance divided by `wrist ↔ middleMCP` distance (the same handSize
+    // proxy used by the orientation gate). A ratio of 0.22 means "thumb
+    // and index are within ~22 % of one palm-length of each other." This
+    // stays stable as the user moves nearer / farther from the camera —
+    // image-unit thresholds tighten when the hand is close (handSize
+    // grows), making sustained pinches release on jitter.
+    var indexContactRatio: Float = 0.22
+    var indexReleaseRatio: Float = 0.28
 
     /// Center "dead zone" radius, in normalized image units. Drift
     /// below this is treated as zero (no quadrant highlights, release
@@ -129,7 +137,17 @@ struct PinchDragRecognizer {
     var gateDisabled: Bool = false
 
     var maxMissingFramesDuringPinching: Int = 4
-    var maxPinchDurationMs: Int = 4000
+
+    /// Release debounce — number of consecutive frames the index pinch
+    /// must stay above `indexReleaseRatio` (or have missing
+    /// thumb/index landmarks) before the FSM commits to a real release.
+    /// 1 = no debounce (single bad frame ends the pinch — convenient for
+    /// deterministic unit tests but jittery on-device).
+    /// 3 ≈ 100 ms at 30 fps — absorbs MediaPipe distance jitter and brief
+    /// landmark dropouts without delaying intentional releases noticeably.
+    /// Production call sites should override to 3; default stays at 1 so
+    /// the test suite's single-frame release pattern keeps working.
+    var releaseDebounceFrames: Int = 1
   }
 
   /// Read-only snapshot for debug overlays.
@@ -138,7 +156,9 @@ struct PinchDragRecognizer {
     let fsm: FSM
     let inCooldown: Bool
     let trackingDurationMs: Int
-    let latestIndexDistance: Float?
+    /// Most recent pinch ratio (thumb-index distance ÷ handSize). Nil
+    /// while idle or when the frame lacked the landmarks to compute it.
+    let latestIndexRatio: Float?
     let pendingSelectActive: Bool
     /// Quadrant the thumb is currently occupying (nil while idle, in the
     /// center dead zone, or not tracking). Drives the cross-UI's lit box.
@@ -162,7 +182,7 @@ struct PinchDragRecognizer {
     var latestThumbPosition: CGPoint
     var latestTimestampMs: Int
     var missingFrameRun: Int
-    var latestContactDistance2D: Float
+    var latestContactRatio: Float
     let isDoubleTapCandidate: Bool
     /// Last quadrant for which a `.highlight*` was emitted (nil means the
     /// thumb is in the center dead zone or no highlight has fired yet).
@@ -172,10 +192,18 @@ struct PinchDragRecognizer {
     /// `selectRadius` during this pinch. Drives the `.cancel` vs
     /// `.select` decision on release.
     var hasEverExitedSelectRadius: Bool
+    /// Consecutive frames the pinch has registered as "released" (ratio
+    /// above `indexReleaseRatio`, or no thumb/index landmark). Reset
+    /// to 0 every time the pinch tests as still in contact. Commits to a
+    /// real release once it reaches `releaseDebounceFrames`.
+    var releaseRunFrames: Int
   }
 
   private struct PinchMeasurement {
-    let distance2D: Float
+    /// Thumb-tip ↔ index-tip distance divided by `handSize`
+    /// (`|wrist → middleMCP|`). Scale-invariant, so a single threshold
+    /// works regardless of how close the hand is to the camera.
+    let ratio: Float
   }
 
   private struct PendingSelect {
@@ -242,7 +270,7 @@ struct PinchDragRecognizer {
       }
 
       let indexPasses = indexM.map {
-        $0.distance2D < config.indexContactThreshold
+        $0.ratio < config.indexContactRatio
       } ?? false
       guard indexPasses, let m = indexM, let thumb = frame.thumbTip else {
         return nil
@@ -269,10 +297,11 @@ struct PinchDragRecognizer {
         latestThumbPosition: startPt,
         latestTimestampMs: frame.timestampMs,
         missingFrameRun: 0,
-        latestContactDistance2D: m.distance2D,
+        latestContactRatio: m.ratio,
         isDoubleTapCandidate: isDoubleTap,
         lastHighlightedQuadrant: nil,
-        hasEverExitedSelectRadius: false
+        hasEverExitedSelectRadius: false,
+        releaseRunFrames: 0
       )
       state = .indexPinching(ctx)
       lastContactStartPosition = startPt
@@ -280,12 +309,6 @@ struct PinchDragRecognizer {
       return nil
 
     case .indexPinching(var ctx):
-      if frame.timestampMs - ctx.startTimestampMs > config.maxPinchDurationMs {
-        lastContactReleasePosition = ctx.latestThumbPosition
-        state = .idle
-        return nil
-      }
-
       if frame.isEmpty {
         ctx.missingFrameRun += 1
         if ctx.missingFrameRun > config.maxMissingFramesDuringPinching {
@@ -298,13 +321,16 @@ struct PinchDragRecognizer {
       }
       ctx.missingFrameRun = 0
 
-      let stillIn2D = (indexM?.distance2D ?? .infinity) <= config.indexReleaseThreshold
-      if stillIn2D, let m = indexM {
+      let stillIn = (indexM?.ratio ?? .infinity) <= config.indexReleaseRatio
+      if stillIn, let m = indexM {
+        // Pinch is still engaged this frame. Reset the release-debounce
+        // counter so a stale "almost released" run doesn't persist.
+        ctx.releaseRunFrames = 0
         if let thumb = frame.thumbTip {
           ctx.latestThumbPosition = CGPoint(x: CGFloat(thumb.x), y: CGFloat(thumb.y))
         }
         ctx.latestTimestampMs = frame.timestampMs
-        ctx.latestContactDistance2D = m.distance2D
+        ctx.latestContactRatio = m.ratio
 
         // Quadrant highlight emission.
         let currentQuadrant = quadrant(for: ctx)
@@ -324,6 +350,16 @@ struct PinchDragRecognizer {
 
         state = .indexPinching(ctx)
         return highlight
+      }
+
+      // Frame looks released — accumulate the debounce counter. Don't
+      // commit the release until we've seen `releaseDebounceFrames` in a
+      // row, which absorbs single-frame distance jitter and brief
+      // landmark dropouts without re-anchoring the start position.
+      ctx.releaseRunFrames += 1
+      if ctx.releaseRunFrames < max(1, config.releaseDebounceFrames) {
+        state = .indexPinching(ctx)
+        return nil
       }
 
       // Release — classify and route.
@@ -378,7 +414,7 @@ struct PinchDragRecognizer {
         fsm: .idle,
         inCooldown: cooldown,
         trackingDurationMs: 0,
-        latestIndexDistance: nil,
+        latestIndexRatio: nil,
         pendingSelectActive: pendingActive,
         currentHighlightQuadrant: nil,
         hasDriftedOutDuringPinch: false
@@ -388,7 +424,7 @@ struct PinchDragRecognizer {
         fsm: .indexPinching,
         inCooldown: false,
         trackingDurationMs: ctx.latestTimestampMs - ctx.startTimestampMs,
-        latestIndexDistance: ctx.latestContactDistance2D,
+        latestIndexRatio: ctx.latestContactRatio,
         pendingSelectActive: pendingActive,
         currentHighlightQuadrant: ctx.lastHighlightedQuadrant,
         hasDriftedOutDuringPinch: ctx.hasEverExitedSelectRadius
@@ -402,10 +438,17 @@ struct PinchDragRecognizer {
     guard let thumb = frame.thumbTip, let index = frame.indexTip else {
       return nil
     }
+    // handSize comes from `wrist → middleMCP` (HandOrientation already
+    // computes it). If the orientation landmarks are missing the frame
+    // is too degenerate to do scale-invariant pinch detection on, so
+    // bail and let the caller treat it as "no measurement."
+    guard let hand = frame.orientation, hand.handSize > 1e-4 else {
+      return nil
+    }
     let dx = thumb.x - index.x
     let dy = thumb.y - index.y
     let dist2D = (dx * dx + dy * dy).squareRoot()
-    return PinchMeasurement(distance2D: dist2D)
+    return PinchMeasurement(ratio: dist2D / hand.handSize)
   }
 
   /// Quadrant the thumb currently occupies relative to the pinch-start

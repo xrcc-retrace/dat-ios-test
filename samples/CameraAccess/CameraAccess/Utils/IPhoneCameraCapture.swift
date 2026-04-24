@@ -118,11 +118,17 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
   }
 
   /// Rotate the on-screen preview to match the current interface orientation.
-  /// The capture output's connection stays pinned at 90° — JPEG frames sent to
-  /// Gemini keep their portrait-normalized geometry regardless of which way
-  /// the phone is held.
+  /// The main capture output's connection stays pinned at 90° — JPEG frames
+  /// sent to Gemini keep their portrait-normalized geometry regardless of
+  /// which way the phone is held.
+  ///
+  /// The hand-tracking output, however, follows the preview: MediaPipe
+  /// landmarks are normalized to the buffer it processed, and the debug
+  /// overlay maps those coords linearly into the on-screen preview rect.
+  /// If the buffer were portrait while the preview was landscape (or
+  /// vice-versa), markers would land in the wrong place, so the hand
+  /// connection rotates with the preview.
   func setPreviewInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
-    guard let connection = previewLayer.connection else { return }
     let angle: CGFloat
     switch orientation {
     case .portrait: angle = 90
@@ -132,8 +138,13 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     case .unknown: angle = 90
     @unknown default: angle = 90
     }
-    if connection.isVideoRotationAngleSupported(angle) {
+    if let connection = previewLayer.connection,
+       connection.isVideoRotationAngleSupported(angle) {
       connection.videoRotationAngle = angle
+    }
+    if let handConnection = handVideoOutput.connection(with: .video),
+       handConnection.isVideoRotationAngleSupported(angle) {
+      handConnection.videoRotationAngle = angle
     }
   }
 

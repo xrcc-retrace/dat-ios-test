@@ -302,14 +302,62 @@ final class PinchDragRecognizerTests: XCTestCase {
     XCTAssertEqual(r.debugState.fsm, .idle)
   }
 
-  func test_abandonedHold_exceedsMaxDuration_resets() {
-    var r = PinchDragRecognizer(now: clockSource)
+  // The 4 s pinch-duration cap was removed — a sustained highlight now
+  // stays in `.indexPinching` indefinitely. This block intentionally has
+  // no test for an "abandoned hold reset"; the FSM only exits the
+  // pinching state on real release, missing-frame timeout, or debounced
+  // release jitter (covered by `test_releaseDebounce_*` below).
+
+  // MARK: - Release debounce
+
+  /// Single-frame release jitter mid-pinch is absorbed when the recognizer
+  /// is configured with `releaseDebounceFrames > 1`. The pinch survives,
+  /// `startThumbPosition` does NOT shift, and the FSM stays in
+  /// `.indexPinching`.
+  func test_releaseDebounce_singleFrameJitter_doesNotEndPinch() {
+    var cfg = PinchDragRecognizer.Config()
+    cfg.releaseDebounceFrames = 3
+    var r = PinchDragRecognizer(config: cfg, now: clockSource)
     var ts = 0
     _ = r.ingest(indexPinchFrame(timestampMs: ts))
-    // Hold for 5s — exceeds maxPinchDurationMs (4000).
-    ts = 5000; advance(ms: 5000)
+    XCTAssertEqual(r.debugState.fsm, .indexPinching)
+
+    // One bad frame — distance jumps above the release threshold.
+    ts += 33; advance(ms: 33)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+    XCTAssertEqual(r.debugState.fsm, .indexPinching,
+                   "Debounce should keep the FSM in pinching after one stray release frame")
+
+    // Pinch comes back next frame — debounce counter resets.
+    ts += 33; advance(ms: 33)
     XCTAssertNil(r.ingest(indexPinchFrame(timestampMs: ts)))
+    XCTAssertEqual(r.debugState.fsm, .indexPinching)
+  }
+
+  /// Three consecutive release frames commit the release at the default
+  /// `releaseDebounceFrames = 3`. Only the third frame fires (or defers)
+  /// the classified event.
+  func test_releaseDebounce_threeFramesCommitsRelease() {
+    var cfg = PinchDragRecognizer.Config()
+    cfg.releaseDebounceFrames = 3
+    var r = PinchDragRecognizer(config: cfg, now: clockSource)
+    var ts = 0
+    _ = r.ingest(indexPinchFrame(timestampMs: ts))
+
+    // Frames 1 and 2 of release — both absorbed, no commit.
+    ts += 33; advance(ms: 33)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+    XCTAssertEqual(r.debugState.fsm, .indexPinching)
+    ts += 33; advance(ms: 33)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)))
+    XCTAssertEqual(r.debugState.fsm, .indexPinching)
+
+    // Frame 3 — debounce satisfied, classifies as .select, defers.
+    ts += 33; advance(ms: 33)
+    XCTAssertNil(r.ingest(releasedFrame(timestampMs: ts)),
+                 "Third release frame should defer .select for double-tap window")
     XCTAssertEqual(r.debugState.fsm, .idle)
+    XCTAssertTrue(r.debugState.pendingSelectActive)
   }
 
   // MARK: - Orientation gate

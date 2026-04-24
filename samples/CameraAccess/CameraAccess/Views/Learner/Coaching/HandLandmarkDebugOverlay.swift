@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// Shows two landmarks — `thumbTip`, `indexTip` — plus a live distance
 /// line connecting them. The line flips green when the pinch-contact
-/// gate passes (2D distance under `indexContactThreshold`); red / thin
-/// otherwise.
+/// gate passes (`thumb-index distance ÷ handSize` under
+/// `indexContactRatio`); red / thin otherwise.
 ///
 /// Persistent START / END markers show where the thumb was at the most
 /// recent pinch begin / release, with a dashed line between them so the
@@ -20,7 +20,9 @@ import SwiftUI
 /// Remove once gesture → action wiring lands.
 struct HandLandmarkDebugOverlay: View {
   let frame: HandLandmarkFrame?
-  let indexContactThreshold: Float
+  /// Pinch-contact gate as `thumb-index distance ÷ handSize`. Compared
+  /// against the same ratio computed off the live frame.
+  let indexContactRatio: Float
   /// Orientation start-gate bounds. The overlay uses these to render a
   /// POSE OK / POSE OFF chip — matches the gate the recognizer itself
   /// applies at IDLE → pinching transitions. Both palm-facing-Z AND
@@ -47,9 +49,17 @@ struct HandLandmarkDebugOverlay: View {
           let indexPt = point(x: indexTip.x, y: indexTip.y, in: size)
 
           // Pinch detection is 2D only — z is too noisy from MediaPipe
-          // to be useful, so we skip computing it entirely.
+          // to be useful, so we skip computing it entirely. Threshold is
+          // expressed as `thumb-index distance ÷ handSize` for scale
+          // invariance against camera distance. If `handSize` is missing
+          // (incomplete landmarks) `ratio` falls to `.infinity` so the
+          // gate reads as not-pinched until the orientation pose lands.
           let indexDist2D = distance2D(thumbTip, indexTip)
-          let indexPinched = indexDist2D < indexContactThreshold
+          let handSize = frame.orientation?.handSize ?? 0
+          let indexRatio: Float = handSize > 1e-4
+            ? indexDist2D / handSize
+            : .infinity
+          let indexPinched = indexRatio < indexContactRatio
 
           // Thumb ↔ indexTip line.
           Path { path in
@@ -144,14 +154,20 @@ struct HandLandmarkDebugOverlay: View {
             HStack(spacing: 10) {
               HStack(spacing: 4) {
                 Circle()
-                  .fill(indexDist2D < indexContactThreshold ? Color.green : Color.red)
+                  .fill(indexPinched ? Color.green : Color.red)
                   .frame(width: 5, height: 5)
-                Text(String(format: "IDX %.2f", indexDist2D))
-                  .font(.system(size: 9, design: .monospaced))
-                  .foregroundStyle(.white.opacity(0.85))
+                // Print the live pinch ratio. "—" when handSize is
+                // unavailable (no orientation landmarks this frame).
+                Text(
+                  indexRatio.isFinite
+                    ? String(format: "IDX/HAND %.2f", indexRatio)
+                    : "IDX/HAND —"
+                )
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
               }
             }
-            Text(String(format: "th IDX<%.2f", indexContactThreshold))
+            Text(String(format: "gate <%.2f", indexContactRatio))
               .font(.system(size: 8, design: .monospaced))
               .foregroundStyle(.white.opacity(0.5))
           }

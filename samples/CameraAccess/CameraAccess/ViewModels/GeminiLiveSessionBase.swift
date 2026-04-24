@@ -97,7 +97,15 @@ class GeminiLiveSessionBase: ObservableObject {
   var handLandmarkerService: HandLandmarkerService?
 
   // Active recognizer (Milestone 2B) — pinch-drag-release in image space.
-  var pinchDragRecognizer = PinchDragRecognizer()
+  // Production overrides `releaseDebounceFrames` to 3 (default in
+  // `Config()` is 1 to keep unit tests deterministic).
+  var pinchDragRecognizer = PinchDragRecognizer(config: GeminiLiveSessionBase.pinchProductionConfig)
+
+  static var pinchProductionConfig: PinchDragRecognizer.Config {
+    var c = PinchDragRecognizer.Config()
+    c.releaseDebounceFrames = 3
+    return c
+  }
 
   // Dormant — Milestone 2A, Meta XR thumb-on-index micro gestures.
   // Kept compilable and on disk but never wired into the active session
@@ -126,13 +134,14 @@ class GeminiLiveSessionBase: ObservableObject {
   /// camera is off or no hand has been detected yet.
   @Published var latestHandFrame: HandLandmarkFrame?
 
-  /// Pinch thresholds in normalized image units — surfaced for the debug
-  /// overlay to render the same gate the recognizer applies.
-  var indexPinchContactThreshold: Float {
-    PinchDragRecognizer.Config().indexContactThreshold
+  /// Pinch thresholds, expressed as `thumb-index distance ÷ handSize` —
+  /// surfaced for the debug overlay to render the same gate the
+  /// recognizer applies. Scale-invariant against camera distance.
+  var indexPinchContactRatio: Float {
+    PinchDragRecognizer.Config().indexContactRatio
   }
-  var indexPinchReleaseThreshold: Float {
-    PinchDragRecognizer.Config().indexReleaseThreshold
+  var indexPinchReleaseRatio: Float {
+    PinchDragRecognizer.Config().indexReleaseRatio
   }
 
   /// Orientation start-gate bounds, surfaced so the debug overlay renders
@@ -592,7 +601,7 @@ class GeminiLiveSessionBase: ObservableObject {
         // Fresh recognizer per camera session so no stale state carries
         // across restart. Clear the debug log too so it starts empty each
         // time the user enters a coaching session.
-        self.pinchDragRecognizer = PinchDragRecognizer()
+        self.pinchDragRecognizer = PinchDragRecognizer(config: Self.pinchProductionConfig)
         self.recentPinchDragEvents.removeAll()
         let handService = HandLandmarkerService()
         do {

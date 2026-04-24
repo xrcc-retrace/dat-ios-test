@@ -85,7 +85,17 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
 
   /// Private recognizer — one instance per camera session. Reset on
   /// `resetHandTracking()` so no stale TRACKING state survives a teardown.
-  private var pinchDragRecognizer = PinchDragRecognizer()
+  /// Production overrides `releaseDebounceFrames` to 3 (default in
+  /// `Config()` is 1 to keep unit tests deterministic).
+  private var pinchDragRecognizer = PinchDragRecognizer(
+    config: ExpertRecordingHUDViewModel.productionConfig
+  )
+
+  private static var productionConfig: PinchDragRecognizer.Config {
+    var c = PinchDragRecognizer.Config()
+    c.releaseDebounceFrames = 3
+    return c
+  }
 
   private let pinchDragLogMaxHistory: Int = 50
 
@@ -95,8 +105,8 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   private var lastOrientationLogAt: Date?
 
   // Threshold passthroughs for the debug overlay (match Learner HUD exactly).
-  var indexPinchContactThreshold: Float {
-    PinchDragRecognizer.Config().indexContactThreshold
+  var indexPinchContactRatio: Float {
+    PinchDragRecognizer.Config().indexContactRatio
   }
   var gatePalmFacingZMin: Float {
     PinchDragRecognizer.Config().gatePalmFacingZMin
@@ -271,7 +281,7 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   /// VM when a new camera session is being brought up (or torn down), so
   /// stale TRACKING state from a prior run can't carry over.
   func resetHandTracking() {
-    pinchDragRecognizer = PinchDragRecognizer()
+    pinchDragRecognizer = PinchDragRecognizer(config: Self.productionConfig)
     latestHandFrame = nil
     recentPinchDragEvents.removeAll()
     lastOrientationLogAt = nil

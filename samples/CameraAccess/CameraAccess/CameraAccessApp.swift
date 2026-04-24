@@ -79,7 +79,7 @@ struct CameraAccessApp: App {
     WindowGroup {
       MainAppView(wearables: Wearables.shared, viewModel: wearablesViewModel)
         .environmentObject(appOrientationController)
-        .preferredColorScheme(.light)
+        .preferredColorScheme(.dark)
         .alert("Error", isPresented: $wearablesViewModel.showError) {
           Button("OK") {
             wearablesViewModel.dismissError()

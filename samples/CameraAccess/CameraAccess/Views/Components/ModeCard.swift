@@ -25,6 +25,7 @@ struct ModeCard: View {
             .font(.retraceCallout)
             .foregroundColor(.textSecondary)
         }
+        .layoutPriority(1)
 
         Spacer()
 
@@ -34,7 +35,7 @@ struct ModeCard: View {
             .foregroundColor(.textTertiary)
         }
       }
-      .padding(Spacing.xxl)
+      .padding(Spacing.xl)
       .background(Color.surfaceBase)
       .cornerRadius(Radius.lg)
     }

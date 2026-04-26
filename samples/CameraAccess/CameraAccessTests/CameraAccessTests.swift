@@ -43,6 +43,7 @@ class ViewModelIntegrationTests: XCTestCase {
     }
     mockDevice = nil
     cameraKit = nil
+    UserDefaults.standard.removeObject(forKey: VoiceSettings.storageKey)
     try await super.tearDown()
   }
 
@@ -152,5 +153,14 @@ class ViewModelIntegrationTests: XCTestCase {
 
     XCTAssertFalse(viewModel.isStreaming)
     XCTAssertTrue([.stopped, .waiting].contains(viewModel.streamingStatus))
+  }
+
+  func testVoiceSettingsFallbackUsesPuckAndStoredValueWins() {
+    let defaults = UserDefaults.standard
+    defaults.removeObject(forKey: VoiceSettings.storageKey)
+    XCTAssertEqual(VoiceSettings.storedVoice(userDefaults: defaults), VoiceSettings.defaultVoice)
+
+    defaults.set("Zephyr", forKey: VoiceSettings.storageKey)
+    XCTAssertEqual(VoiceSettings.storedVoice(userDefaults: defaults), "Zephyr")
   }
 }

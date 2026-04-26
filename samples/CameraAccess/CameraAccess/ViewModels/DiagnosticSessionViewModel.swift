@@ -83,7 +83,7 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     guard let sid = sessionId else { return nil }
     handoffInFlight = true
     handoffError = nil
-    let voice = UserDefaults.standard.string(forKey: "geminiVoice") ?? "Puck"
+    let voice = VoiceSettings.storedVoice()
     do {
       let apiService = ProcedureAPIService()
       let response = try await apiService.handoffDiagnosticToLearner(
@@ -126,7 +126,7 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   // MARK: - Base overrides (template hooks)
 
   override func mintSession() async throws -> SessionStartPayload {
-    let voice = UserDefaults.standard.string(forKey: "geminiVoice") ?? "Charon"
+    let voice = VoiceSettings.storedVoice()
     let apiService = ProcedureAPIService()
     let response = try await apiService.startDiagnosticSession(voice: voice)
     return SessionStartPayload(

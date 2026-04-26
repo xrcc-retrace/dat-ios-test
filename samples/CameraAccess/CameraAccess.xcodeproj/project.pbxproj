@@ -128,8 +128,8 @@
 		C2E5B075169FFA153CE06E2C /* GeminiLiveSessionBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4032E6C4B7888AA4B354B6C /* GeminiLiveSessionBase.swift */; };
 		C53B4AE1A18110027BFE72C8 /* ExpertRecordingReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99BE488FAC885889315D07C1 /* ExpertRecordingReviewView.swift */; };
 		CAB9A8E7F6D5C4B3D6E5F4A5 /* HandLandmarkDebugOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA98F7E6D5C4B3A2D6E5F4A4 /* HandLandmarkDebugOverlay.swift */; };
-		CB404020A287A048885791B4 /* OnboardingVoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B6B4BB3ADE36A453A89411B /* OnboardingVoiceView.swift */; };
 		CCFB4F9A809161BA16F035E3 /* ProcedureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0A4467810688AEE1B5FE17 /* ProcedureDetailView.swift */; };
+		D1A7BEEF0E0F1A2B3C4D5E6F /* DiamondLogoDither.metal in Sources */ = {isa = PBXBuildFile; fileRef = D1A7BEEF0E0F1A2B3C4D5E70 /* DiamondLogoDither.metal */; };
 		D659494CA368E17AD36B2F79 /* ControlRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291F420A9AF30EB7035C0DB7 /* ControlRow.swift */; };
 		D6CA4D64B6C4E0755B4A16CC /* ProcedureEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5624A7D9CF8B4355351555A /* ProcedureEditView.swift */; };
 		DBCABF8A7C6B5D4E7F6A5B4C /* PinchDragRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBDA9F8E7D6C5B4E7F6A5B3 /* PinchDragRecognizer.swift */; };
@@ -166,14 +166,14 @@
 /* Begin PBXContainerItemProxy section */
 		E66CC0132F3E05D900B07379 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = CCCCCCCCCCCCCCCCCCCCCC;
+			containerPortal = CCCCCCCCCCCCCCCCCCCCCC /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 8A8A8A8A8A8A8A8A8A8A8A8A;
 			remoteInfo = CameraAccess;
 		};
 		E699CC992E8150670052C240 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = CCCCCCCCCCCCCCCCCCCCCC;
+			containerPortal = CCCCCCCCCCCCCCCCCCCCCC /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 8A8A8A8A8A8A8A8A8A8A8A8A;
 			remoteInfo = CameraAccess;
@@ -228,7 +228,6 @@
 		65304E7AB009BBE6224140C3 /* ServerSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerSettingsView.swift; path = CameraAccess/Views/ServerSettingsView.swift; sourceTree = SOURCE_ROOT; };
 		65A849EA88ED898041402BAE /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryView.swift; path = CameraAccess/Views/Learner/Library/LibraryView.swift; sourceTree = SOURCE_ROOT; };
 		68B622472F9383BA008690E4 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
-		6B6B4BB3ADE36A453A89411B /* OnboardingVoiceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingVoiceView.swift; path = CameraAccess/Views/Onboarding/Screens/OnboardingVoiceView.swift; sourceTree = SOURCE_ROOT; };
 		6D7F4383882B22765067A716 /* RecordTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RecordTabView.swift; path = CameraAccess/Views/Expert/RecordTabView.swift; sourceTree = SOURCE_ROOT; };
 		6F13449B876DE9D2EA5DF77D /* MetadataPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MetadataPill.swift; path = CameraAccess/Views/Components/MetadataPill.swift; sourceTree = SOURCE_ROOT; };
 		731A4EA49C2D88F60F8FF5AB /* ProcedureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProcedureModels.swift; path = CameraAccess/Models/ProcedureModels.swift; sourceTree = SOURCE_ROOT; };
@@ -302,6 +301,7 @@
 		C8C748278F0F5C3661104317 /* ExpertCoachingTips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertCoachingTips.swift; path = CameraAccess/Views/Expert/HUD/ExpertCoachingTips.swift; sourceTree = SOURCE_ROOT; };
 		C9C849A9B99F92F1549ECD93 /* ExpertRecordingHUDViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertRecordingHUDViewModel.swift; path = CameraAccess/ViewModels/ExpertRecordingHUDViewModel.swift; sourceTree = SOURCE_ROOT; };
 		CCBDA9F8E7D6C5B4E7F6A5B3 /* PinchDragRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PinchDragRecognizer.swift; path = CameraAccess/HandTracking/PinchDragRecognizer.swift; sourceTree = SOURCE_ROOT; };
+		D1A7BEEF0E0F1A2B3C4D5E70 /* DiamondLogoDither.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; name = DiamondLogoDither.metal; path = CameraAccess/DiamondLogoDither.metal; sourceTree = SOURCE_ROOT; };
 		D496455793E9E33B61DA9E0C /* MicroGestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MicroGestureRecognizer.swift; path = CameraAccess/HandTracking/MicroGestureRecognizer.swift; sourceTree = SOURCE_ROOT; };
 		D5F0471C992400624FF476F8 /* OnboardingCoachingStyleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingCoachingStyleView.swift; path = CameraAccess/Views/Onboarding/Screens/OnboardingCoachingStyleView.swift; sourceTree = SOURCE_ROOT; };
 		D7014E92A26E9858AE17F0C3 /* OnboardingContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingContainerView.swift; path = CameraAccess/Views/Onboarding/OnboardingContainerView.swift; sourceTree = SOURCE_ROOT; };
@@ -427,6 +427,7 @@
 				37C64B77A5C8C6B418C0EAAF /* ProfileView.swift */,
 				17C0439BAEAF309681C62270 /* LearnerProgressView.swift */,
 				36F94839AA7C4E3C9519970E /* ModeSelectionView.swift */,
+				D1A7BEEF0E0F1A2B3C4D5E70 /* DiamondLogoDither.metal */,
 				65304E7AB009BBE6224140C3 /* ServerSettingsView.swift */,
 				FF6245968116F15F41790113 /* VoiceSelectionView.swift */,
 				51DF4216B6006231F97080BF /* VoicePreviewPlayer.swift */,
@@ -471,7 +472,6 @@
 				F1374FFAA4CB441A491BBEDF /* OnboardingTroubleshootView.swift */,
 				A02744CCAB572D3E3345190F /* OnboardingExpertView.swift */,
 				43E34BA0AE604C0B4B6B1D9D /* OnboardingControlsView.swift */,
-				6B6B4BB3ADE36A453A89411B /* OnboardingVoiceView.swift */,
 				0D2D4698A22364A9E5283B14 /* OnboardingGlassesView.swift */,
 				D5F0471C992400624FF476F8 /* OnboardingCoachingStyleView.swift */,
 				291F420A9AF30EB7035C0DB7 /* ControlRow.swift */,
@@ -632,9 +632,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9A9A9A9A9A9A9A9A9A9A9A9A /* Build configuration list for PBXNativeTarget "CameraAccess" */;
 			buildPhases = (
-				AAAAAAAAAAAAAAAAAAAAAA,
+				AAAAAAAAAAAAAAAAAAAAAA /* Sources */,
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Frameworks */,
-				BBBBBBBBBBBBBBBBBBBBBB,
+				BBBBBBBBBBBBBBBBBBBBBB /* Resources */,
 				8FD96B932E6F0C6E00F56AB1 /* Embed Frameworks */,
 			);
 			buildRules = (
@@ -694,7 +694,7 @@
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		'CCCCCCCCCCCCCCCCCCCCCC' = {
+		CCCCCCCCCCCCCCCCCCCCCC /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 2620;
@@ -713,7 +713,7 @@
 					};
 				};
 			};
-			buildConfigurationList = DDDDDDDDDDDDDDDDDDDDDD;
+			buildConfigurationList = DDDDDDDDDDDDDDDDDDDDDD /* Build configuration list for PBXProject "CameraAccess" */;
 			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -738,7 +738,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		'BBBBBBBBBBBBBBBBBBBBBB' = {
+		BBBBBBBBBBBBBBBBBBBBBB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -776,7 +776,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		'AAAAAAAAAAAAAAAAAAAAAA' = {
+		AAAAAAAAAAAAAAAAAAAAAA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -849,6 +849,7 @@
 				6B834DD19E3C401388F96E98 /* ProfileView.swift in Sources */,
 				BD2444379D35C9F9FE39D4AC /* LearnerProgressView.swift in Sources */,
 				1E4F439EAE369380451037CB /* ModeSelectionView.swift in Sources */,
+				D1A7BEEF0E0F1A2B3C4D5E6F /* DiamondLogoDither.metal in Sources */,
 				29EB4BBFB219301C48660997 /* ServerSettingsView.swift in Sources */,
 				731C4E9BB8B14032A9B3C286 /* VoiceSelectionView.swift in Sources */,
 				FE5F49669B7A87C7AAA10A0B /* VoicePreviewPlayer.swift in Sources */,
@@ -902,7 +903,6 @@
 				DC844E50B6D77DA737C03E94 /* OnboardingTroubleshootView.swift in Sources */,
 				445E454AA5E3911B776A814A /* OnboardingExpertView.swift in Sources */,
 				05714658BFD1B6DC49A75D3F /* OnboardingControlsView.swift in Sources */,
-				CB404020A287A048885791B4 /* OnboardingVoiceView.swift in Sources */,
 				F54048AFAC824DDEB22B27A9 /* OnboardingGlassesView.swift in Sources */,
 				B2F741F2BB781859874A84D8 /* OnboardingCoachingStyleView.swift in Sources */,
 				D659494CA368E17AD36B2F79 /* ControlRow.swift in Sources */,
@@ -1114,7 +1114,7 @@
 			};
 			name = Release;
 		};
-		'EEEEEEEEEEEEEEEEEEEEEE' = {
+		EEEEEEEEEEEEEEEEEEEEEE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1242,10 +1242,10 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		'DDDDDDDDDDDDDDDDDDDDDD' = {
+		DDDDDDDDDDDDDDDDDDDDDD /* Build configuration list for PBXProject "CameraAccess" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EEEEEEEEEEEEEEEEEEEEEE,
+				EEEEEEEEEEEEEEEEEEEEEE /* Debug */,
 				FFFFFFFFFFFFFFFFFFFFFFFF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
@@ -1313,5 +1313,5 @@
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = CCCCCCCCCCCCCCCCCCCCCC;
+	rootObject = CCCCCCCCCCCCCCCCCCCCCC /* Project object */;
 }

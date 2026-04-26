@@ -13,5 +13,8 @@ struct OnboardingProgressBar: View {
           .animation(.easeInOut(duration: 0.3), value: currentStep)
       }
     }
+    .accessibilityElement(children: .ignore)
+    .accessibilityIdentifier("onboarding_progress")
+    .accessibilityLabel("Step \(currentStep) of \(totalSteps)")
   }
 }

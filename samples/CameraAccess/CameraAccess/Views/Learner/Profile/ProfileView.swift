@@ -3,7 +3,7 @@ import SwiftUI
 struct ProfileView: View {
   @ObservedObject var wearablesVM: WearablesViewModel
   let onExit: () -> Void
-  @AppStorage("geminiVoice") private var geminiVoice = "Puck"
+  @AppStorage(VoiceSettings.storageKey) private var geminiVoice = VoiceSettings.defaultVoice
   @AppStorage("autoAdvanceEnabled") private var autoAdvanceEnabled = true
   @AppStorage(OnboardingContainerView.completionKey) private var onboardingCompleted = true
 

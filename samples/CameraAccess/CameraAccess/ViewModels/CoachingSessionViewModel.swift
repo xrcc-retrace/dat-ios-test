@@ -175,7 +175,7 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   override func mintSession() async throws -> SessionStartPayload {
     let autoAdvance = UserDefaults.standard.object(forKey: "autoAdvanceEnabled") as? Bool ?? true
     print("[Coaching] auto_advance = \(autoAdvance) (from UserDefaults)")
-    let selectedVoice = UserDefaults.standard.string(forKey: "geminiVoice") ?? "Puck"
+    let selectedVoice = VoiceSettings.storedVoice()
     print("[Coaching] voice = \(selectedVoice) (from UserDefaults)")
 
     let apiService = ProcedureAPIService()

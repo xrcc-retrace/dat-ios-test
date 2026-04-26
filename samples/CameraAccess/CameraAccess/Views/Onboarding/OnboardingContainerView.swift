@@ -9,7 +9,7 @@ struct OnboardingContainerView: View {
   @State private var currentPage: Int = 1
   @State private var navigationDirection: NavigationDirection = .forward
 
-  private let totalPages = 8
+  private let totalPages = 7
 
   enum NavigationDirection {
     case forward
@@ -62,17 +62,13 @@ struct OnboardingContainerView: View {
           .transition(pageTransition)
           .zIndex(5)
       } else if currentPage == 6 {
-        OnboardingVoiceView(onNext: advance)
+        OnboardingGlassesView(wearablesVM: wearablesVM, onNext: advance)
           .transition(pageTransition)
           .zIndex(6)
       } else if currentPage == 7 {
-        OnboardingGlassesView(wearablesVM: wearablesVM, onNext: advance)
-          .transition(pageTransition)
-          .zIndex(7)
-      } else if currentPage == 8 {
         OnboardingControlsView(onFinish: finish)
           .transition(pageTransition)
-          .zIndex(8)
+          .zIndex(7)
       }
     }
     .animation(.easeInOut(duration: 0.35), value: currentPage)

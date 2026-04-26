@@ -46,38 +46,33 @@ struct ModeSelectionView: View {
       // trailing edge, covering the mode selector. On exit it slides back
       // out, revealing the mode selector already in place (no blink).
       if let mode = selectedMode {
-        Group {
-          switch mode {
-          case .expert:
-            ExpertTabView(
-              wearables: wearables,
-              wearablesVM: wearablesVM,
-              onExit: { selectedMode = nil }
-            )
-          case .learner:
-            LearnerTabView(
-              wearables: wearables,
-              wearablesVM: wearablesVM,
-              onExit: { selectedMode = nil }
-            )
-          case .troubleshoot:
-            // The intro picker chooses transport (glasses vs iPhone) before
-            // the actual diagnostic session opens — same pattern the
-            // coaching flow uses via LearnerProcedureDetailView.
-            TroubleshootIntroView(
-              wearables: wearables,
-              wearablesVM: wearablesVM,
-              serverBaseURL: ServerEndpoint.shared.resolvedBaseURL,
-              onExit: { selectedMode = nil }
-            )
-          }
-        }
-        .transition(.move(edge: .trailing))
-        .zIndex(1)
+        selectedModeView(for: mode)
+          .transition(.move(edge: .trailing))
+          .zIndex(1)
       }
     }
     .animation(.easeInOut(duration: 0.35), value: selectedMode)
     .tint(.textPrimary)
+  }
+
+  @ViewBuilder
+  private func selectedModeView(for mode: AppMode) -> some View {
+    let dismiss = { selectedMode = nil }
+    switch mode {
+    case .expert:
+      ExpertTabView(wearables: wearables, wearablesVM: wearablesVM, onExit: dismiss)
+    case .learner:
+      LearnerTabView(wearables: wearables, wearablesVM: wearablesVM, onExit: dismiss)
+    case .troubleshoot:
+      // The intro picker chooses transport (glasses vs iPhone) before the
+      // diagnostic session opens — same pattern as the coaching flow.
+      TroubleshootIntroView(
+        wearables: wearables,
+        wearablesVM: wearablesVM,
+        serverBaseURL: ServerEndpoint.shared.resolvedBaseURL,
+        onExit: dismiss
+      )
+    }
   }
 
   private var modeSelectorScreen: some View {
@@ -179,11 +174,21 @@ private struct LandingWorkflow: Identifiable {
 }
 
 private struct EntryBackdropView: View {
-  // Tune these two fractions to change how far apart the diamonds travel.
+  // Tune these to reshape the diamond motion. Separation fractions are
+  // expressed as a fraction of motifSize: 0 = fully overlapping diamonds,
+  // 1 = fully apart.
   private let baseSeparationFraction: CGFloat = 0.0
   private let maxSeparationFraction: CGFloat = 0.75
   private let animationSpeed: Float = 0.8
   private let verticalOffset: CGFloat = 120
+
+  // Shader visual constants — kept here so the shader argument list reads
+  // declaratively rather than as a stack of bare floats.
+  private let opacity: Float = 0.96
+  private let pixelScale: Float = 1.0
+
+  // Anchor for relative time. Using timeIntervalSinceReferenceDate would
+  // overflow Float precision (~7.7e8) and freeze the animation.
   private let startDate = Date()
 
   var body: some View {
@@ -192,8 +197,7 @@ private struct EntryBackdropView: View {
         let size = proxy.size
         let motifSize = max(min(size.width * 0.84, size.height * 0.44), 280)
         let center = CGPoint(x: size.width * 0.42, y: size.height * 0.22 + verticalOffset)
-        let baseSeparation = motifSize * baseSeparationFraction
-        let maxSeparation = motifSize * maxSeparationFraction
+        let elapsed = Float(context.date.timeIntervalSince(startDate))
 
         Rectangle()
           .fill(Color.backgroundPrimary)
@@ -204,12 +208,12 @@ private struct EntryBackdropView: View {
                 .float2(Float(size.width), Float(size.height)),
                 .float2(Float(center.x), Float(center.y)),
                 .float(Float(motifSize)),
-                .float(Float(baseSeparation)),
-                .float(Float(maxSeparation)),
-                .float(Float(context.date.timeIntervalSince(startDate))),
+                .float(Float(motifSize * baseSeparationFraction)),
+                .float(Float(motifSize * maxSeparationFraction)),
+                .float(elapsed),
                 .float(animationSpeed),
-                .float(0.96),
-                .float(1.0),
+                .float(opacity),
+                .float(pixelScale),
               ]
             )
           )

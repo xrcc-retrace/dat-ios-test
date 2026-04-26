@@ -12,11 +12,6 @@ struct OnboardingWelcomeView: View {
           .resizable()
           .scaledToFit()
           .frame(maxWidth: 220)
-
-        Text("RETRACE")
-          .font(.retraceFace(.bold, size: 28))
-          .tracking(4.0)
-          .foregroundColor(.textPrimary)
       }
 
       Spacer()

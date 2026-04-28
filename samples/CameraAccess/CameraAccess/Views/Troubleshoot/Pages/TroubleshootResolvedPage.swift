@@ -22,6 +22,8 @@ struct TroubleshootResolvedPage: RayBanHUDView {
 
   var body: some View {
     VStack(spacing: 8) {
+      Spacer(minLength: 0)
+
       DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
         stage: .findFix,
@@ -30,6 +32,7 @@ struct TroubleshootResolvedPage: RayBanHUDView {
       )
       startPill
       bottomActionRow
+
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)

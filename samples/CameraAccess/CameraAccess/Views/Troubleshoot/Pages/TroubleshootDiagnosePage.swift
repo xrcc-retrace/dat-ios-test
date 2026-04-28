@@ -15,6 +15,8 @@ struct TroubleshootDiagnosePage: RayBanHUDView {
 
   var body: some View {
     VStack(spacing: 8) {
+      Spacer(minLength: 0)
+
       productChip
       DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
@@ -23,6 +25,7 @@ struct TroubleshootDiagnosePage: RayBanHUDView {
         bodyText: "Tell me what you're seeing — strange noises, error lights, parts that don't fit."
       )
       bottomActionRow
+
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)

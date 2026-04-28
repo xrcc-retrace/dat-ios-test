@@ -19,6 +19,8 @@ struct TroubleshootIdentifyPage: RayBanHUDView {
 
   var body: some View {
     VStack(spacing: 8) {
+      Spacer(minLength: 0)
+
       DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
         stage: .identify,
@@ -26,6 +28,7 @@ struct TroubleshootIdentifyPage: RayBanHUDView {
         bodyText: "Or describe it out loud — say or show the device."
       )
       bottomActionRow
+
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)

@@ -22,6 +22,8 @@ struct TroubleshootSearchingPage: RayBanHUDView {
 
   var body: some View {
     VStack(spacing: 8) {
+      Spacer(minLength: 0)
+
       DiagnosticPhaseLensBar(phase: viewModel.phase)
       stageCard
         .transition(.asymmetric(
@@ -29,6 +31,7 @@ struct TroubleshootSearchingPage: RayBanHUDView {
           removal: .opacity
         ))
       bottomActionRow
+
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)

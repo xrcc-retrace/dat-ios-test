@@ -5,6 +5,25 @@ enum HUDSurfaceShape: Equatable {
   case rounded(CGFloat)
 }
 
+/// Environment-propagated flag that tells lens components which compositing
+/// mode the parent emulator is rendering under (`.plusLighter` additive vs.
+/// `.normal` opaque). Threaded from `RayBanHUDEmulator` so the panel surface
+/// can swap to a dark "container" recipe when additive — bright surfaces
+/// halate the camera background and bleed white text edges; dark surfaces
+/// composite to ~transparent under additive and give bright content a
+/// clean, low-luminance neighborhood. Reference: Google's
+/// "transparent screens" guidance (design.google/library/transparent-screens).
+private struct HUDAdditiveBlendKey: EnvironmentKey {
+  static let defaultValue: Bool = false
+}
+
+extension EnvironmentValues {
+  var hudAdditiveBlend: Bool {
+    get { self[HUDAdditiveBlendKey.self] }
+    set { self[HUDAdditiveBlendKey.self] = newValue }
+  }
+}
+
 struct RayBanHUDPanelModifier: ViewModifier {
   let shape: HUDSurfaceShape
 
@@ -25,12 +44,16 @@ extension View {
 
 struct HUDSurfaceBackground: View {
   let shape: HUDSurfaceShape
+  @Environment(\.hudAdditiveBlend) private var additiveBlend
 
   var body: some View {
     ZStack {
       fill
       diagonalShade
-      sheen
+      // Sheen is pure halation under `.plusLighter` — drop it in additive.
+      if !additiveBlend {
+        sheen
+      }
       stroke
     }
     .compositingGroup()
@@ -85,7 +108,22 @@ struct HUDSurfaceBackground: View {
   }
 
   private var surfaceBase: LinearGradient {
-    LinearGradient(
+    if additiveBlend {
+      // Near-black "dark container" — under `.plusLighter` this composites
+      // to ~transparent (camera passes through unchanged) and gives white
+      // text a clean low-luminance neighborhood instead of the halated
+      // mid-gray that bled into adjacent pixels. The faint top-leading
+      // lift keeps the panel from looking flat-black at the apex.
+      return LinearGradient(
+        colors: [
+          Color(red: 0.04, green: 0.05, blue: 0.06).opacity(0.92),
+          Color(red: 0.02, green: 0.02, blue: 0.03).opacity(0.92),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+    }
+    return LinearGradient(
       colors: [
         Color(red: 0.44, green: 0.48, blue: 0.49).opacity(0.75),
         Color(red: 0.39, green: 0.43, blue: 0.44).opacity(0.75),
@@ -96,7 +134,21 @@ struct HUDSurfaceBackground: View {
   }
 
   private var surfaceShade: LinearGradient {
-    LinearGradient(
+    if additiveBlend {
+      // Drop the white-ish lift under additive — those bright stops are
+      // halation sources. Keep only the dark stop so the gradient stays
+      // luminance-neutral on the camera.
+      return LinearGradient(
+        colors: [
+          Color.clear,
+          Color.clear,
+          Color.black.opacity(0.18),
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+    }
+    return LinearGradient(
       colors: [
         Color.white.opacity(0.05),
         Color.white.opacity(0.01),

@@ -141,13 +141,21 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     // The boundary that makes swipe-out animations correct: a card sliding
     // left disappears at the lens edge instead of translating off-canvas.
     .clipped(antialiased: true)
+    // Propagate the compositing decision into the panel system so
+    // `HUDSurfaceBackground` can swap to a dark "container" recipe under
+    // additive (Google's transparent-screens guidance: dark surfaces avoid
+    // halating into adjacent text; bright surfaces destroy legibility).
+    .environment(\.hudAdditiveBlend, additiveBlend)
     // Compose the lens to an offscreen layer and additively blend it onto
-    // the camera feed. Gives the Ray-Ban Display feel: dark HUD pixels →
-    // camera shows through; bright HUD pixels → brighten the camera. When
-    // `additiveBlend` is off, the modifier chain still costs a compositing
-    // pass but renders identically (`.normal` blend = passthrough).
-    .compositingGroup()
-    .blendMode(additiveBlend ? .plusLighter : .normal)
+    // the camera feed only when the user toggle is on. Applying the
+    // modifiers conditionally (different view identity per branch) plus
+    // a `.id` on the lens guarantees SwiftUI rebuilds the offscreen
+    // layer when the toggle flips — without this, the `Coaching` scene
+    // re-composed correctly but `Expert` and `Troubleshoot` cached the
+    // old layer until a multitasking-driven full re-layout. See plan
+    // notes for the diagnosis.
+    .modifier(LensCompositingModifier(additiveBlend: additiveBlend))
+    .id(additiveBlend)
     .overlay {
       // Debug-only outline of the square. Drawn outside the clip so the
       // dashed stroke + size badge are always visible. Toggled via
@@ -252,5 +260,25 @@ struct RayBanHUDEmulator<PageContent: View>: View {
 
     guard let direction else { return }
     hoverCoordinator.dispatch(.directional(direction))
+  }
+}
+
+/// Conditional `.compositingGroup() + .blendMode(.plusLighter)` wrapper.
+/// Keeping the two modifier chains structurally distinct (different view
+/// identity per branch) is what makes SwiftUI invalidate the offscreen
+/// compositing layer when the additive toggle flips, so Expert and
+/// Troubleshoot pick up the change live instead of waiting for a
+/// multitasking-driven re-layout.
+private struct LensCompositingModifier: ViewModifier {
+  let additiveBlend: Bool
+
+  func body(content: Content) -> some View {
+    if additiveBlend {
+      content
+        .compositingGroup()
+        .blendMode(.plusLighter)
+    } else {
+      content
+    }
   }
 }

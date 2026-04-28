@@ -41,7 +41,8 @@ struct TroubleshootDiagnosePage: RayBanHUDView {
     HStack {
       Spacer(minLength: 0)
       RetraceAudioMeter(
-        peak: viewModel.aiOutputPeak,
+        aiPeak: viewModel.aiOutputPeak,
+        userPeak: viewModel.userInputPeak,
         tint: .white,
         intensity: .compact
       )

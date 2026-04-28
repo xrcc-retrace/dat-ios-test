@@ -342,7 +342,8 @@ struct TroubleshootSessionView: View {
 
         if !viewModel.isMuted {
           RetraceAudioMeter(
-            peak: viewModel.aiOutputPeak,
+            aiPeak: viewModel.aiOutputPeak,
+            userPeak: viewModel.userInputPeak,
             tint: .textPrimary,
             intensity: .standard
           )

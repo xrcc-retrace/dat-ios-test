@@ -36,6 +36,14 @@ class AudioSessionManager: ObservableObject {
   /// meter in coaching + troubleshoot.
   @Published var aiOutputPeak: Float = 0
 
+  /// EMA-smoothed peak amplitude of the user's mic input, in `0...1`.
+  /// Parallel to `aiOutputPeak` — drives the "listening" state of the
+  /// audio meter so the lens has a visible signal that the mic is
+  /// hearing the user (white meter), distinct from the AI-speaking
+  /// pastel palette. Updated from `recordCapturedBuffer` with the same
+  /// asymmetric attack/release as the AI peak.
+  @Published var userInputPeak: Float = 0
+
   let mode: AudioSessionMode
 
   private let engine = AVAudioEngine()
@@ -423,6 +431,7 @@ class AudioSessionManager: ObservableObject {
     onAudioBufferSecondary = nil
     lastBufferPeak = 0
     aiOutputPeak = 0
+    userInputPeak = 0
     stopStatsTimer()
     audioConverter = nil
     converterInputFormat = nil
@@ -467,6 +476,10 @@ class AudioSessionManager: ObservableObject {
       self.captureBuffersSinceLastFlush += 1
       self.silentMicWarned = false  // buffers are flowing; re-arm watchdog
       self.lastBufferPeak = peak
+      // EMA shape mirrors `aiOutputPeak`: faster attack than release so a
+      // sharp utterance pops the meter, then it tails off softly.
+      let alpha: Float = peak > self.userInputPeak ? 0.6 : 0.2
+      self.userInputPeak += alpha * (peak - self.userInputPeak)
     }
   }
 

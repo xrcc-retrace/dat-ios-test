@@ -128,7 +128,18 @@ struct RayBanHUDStepCard: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
 
-    inner
+    // Expanded mode: long descriptions + insights can overflow the lens.
+    // Wrap in a non-bouncing ScrollView so content stays inside the lens
+    // square but the user can pan to read the full step. Collapsed mode
+    // doesn't need scroll — the truncation cap keeps it fixed-size.
+    if isExpanded {
+      ScrollView(.vertical, showsIndicators: false) {
+        inner
+      }
+      .scrollBounceBehavior(.basedOnSize)
+    } else {
+      inner
+    }
   }
 
   @ViewBuilder

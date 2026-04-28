@@ -102,7 +102,13 @@ struct CoachingStepPage: RayBanHUDView {
 
       contentArea
 
-      Spacer(minLength: 0)
+      // When the step description is expanded, the step card claims all
+      // remaining vertical room so its inner ScrollView has a bounded
+      // viewport to scroll within. Other modes keep the spacer to let
+      // the card breathe at its natural height.
+      if expansion != .stepExpanded {
+        Spacer(minLength: 0)
+      }
     }
     .padding(RayBanHUDLayoutTokens.contentPadding)
   }
@@ -161,7 +167,8 @@ struct CoachingStepPage: RayBanHUDView {
     HStack {
       Spacer(minLength: 0)
       RetraceAudioMeter(
-        peak: viewModel.aiOutputPeak,
+        aiPeak: viewModel.aiOutputPeak,
+        userPeak: viewModel.userInputPeak,
         tint: .white,
         intensity: .compact
       )
@@ -280,6 +287,13 @@ struct CoachingStepPage: RayBanHUDView {
         // accordingly. The `withAnimation(.spring(...))` in
         // `toggleExpansion` smoothly animates the size change.
         RayBanHUDStepCard(mode: stepCardMode)
+          // Expanded mode: claim the remaining lens height so the card's
+          // inner `ScrollView` has space to scroll. Collapsed mode keeps
+          // its natural intrinsic height so layout doesn't shift.
+          .frame(
+            maxHeight: expansion == .stepExpanded ? .infinity : nil,
+            alignment: .top
+          )
       case .referenceExpanded, .insightsExpanded:
         compactStepHeader
       }

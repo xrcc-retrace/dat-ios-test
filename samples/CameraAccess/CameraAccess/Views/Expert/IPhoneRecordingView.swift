@@ -61,6 +61,7 @@ struct IPhoneRecordingView: View {
           pageIndex: $expertPageIndex,
           showBoundary: debugMode,
           additiveBlend: hudAdditiveBlend,
+          additiveSurfaceVariant: .lowTint,
           // Lens double-tap → focus-engine `.dismiss`. The page handler
           // ignores this (returns false), so it's a no-op until the
           // stop confirmation overlay pushes its handler — at which

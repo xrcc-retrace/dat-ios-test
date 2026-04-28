@@ -29,6 +29,14 @@ enum HUDControl: Hashable {
   /// Top-right affordance on the Coaching step page — toggles the in-page
   /// insights (tips / warnings / red flags) expansion.
   case toggleInsights
+  /// Bottom-left mic mute/unmute capsule on the Coaching step page.
+  case toggleMute
+  /// Bottom-right Exit capsule on the Coaching step page.
+  case exitWorkflowButton
+  /// Bottom-left mic mute/unmute capsule on Troubleshoot pages.
+  case diagnosticToggleMute
+  /// Bottom-right Exit capsule on Troubleshoot pages.
+  case diagnosticExit
   /// Cancel button on the in-lens "Are you sure you want to exit?" overlay.
   /// Default-focused on the overlay's appearance so an accidental select
   /// gesture cannot trigger exit by itself.

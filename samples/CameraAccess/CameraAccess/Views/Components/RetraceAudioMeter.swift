@@ -14,9 +14,16 @@ import SwiftUI
 /// opacity at silence and ramps to 100% at full volume so it stays
 /// visually subtle during quiet moments.
 struct RetraceAudioMeter: View {
-  /// Pre-smoothed peak amplitude in `0...1`. Caller is responsible for
-  /// any EMA / attack-release shaping (the matching VMs already do this).
-  let peak: Float
+  /// Pre-smoothed peak amplitude of the *AI's* voice output, `0...1`.
+  /// Drives the speaking palette + bar heights when AI is speaking.
+  let aiPeak: Float
+
+  /// Pre-smoothed peak amplitude of the *user's* mic input, `0...1`.
+  /// When AI is silent and this rises above `listeningThreshold`, the
+  /// meter switches to the white "listening" state and drives bar
+  /// heights from this value instead of `aiPeak`. Pass 0 if the call
+  /// site has no mic signal (e.g. expert recording's controls bar).
+  let userPeak: Float
 
   /// Single tint applied uniformly to every bar.
   let tint: Color
@@ -25,10 +32,72 @@ struct RetraceAudioMeter: View {
   /// the controls bar. Drives bar count, dimensions, and frame size.
   let intensity: Intensity
 
-  init(peak: Float, tint: Color = .white, intensity: Intensity = .compact) {
-    self.peak = peak
+  /// Rendering behavior for color/state semantics.
+  let style: Style
+
+  /// New two-peak initializer. AI-only call sites can pass `userPeak: 0`.
+  init(
+    aiPeak: Float,
+    userPeak: Float = 0,
+    tint: Color = .white,
+    intensity: Intensity = .compact,
+    style: Style = .conversation
+  ) {
+    self.aiPeak = aiPeak
+    self.userPeak = userPeak
     self.tint = tint
     self.intensity = intensity
+    self.style = style
+  }
+
+  /// Backward-compatible single-peak initializer. Treats the value as
+  /// the AI peak — preserves prior speaking-palette behavior for any
+  /// call site that hasn't migrated to the two-peak form yet.
+  init(
+    peak: Float,
+    tint: Color = .white,
+    intensity: Intensity = .compact,
+    style: Style = .conversation
+  ) {
+    self.aiPeak = peak
+    self.userPeak = 0
+    self.tint = tint
+    self.intensity = intensity
+    self.style = style
+  }
+
+  /// Threshold at which the AI peak is considered "speaking" — the
+  /// smoothed mirror in the VM stays above ~0.04 during continuous
+  /// playback and drops near 0 between turns. Sits comfortably above
+  /// the noise floor.
+  private let aiSpeakingThreshold: Float = 0.05
+  /// Threshold at which the user mic is considered "actively talking".
+  /// Slightly higher than the AI threshold because mic input has a
+  /// non-zero noise floor even at silence.
+  private let listeningThreshold: Float = 0.07
+
+  /// Derived display state. Computed at render time from the two peaks.
+  /// `.aiSpeaking` always wins over `.listening` so back-channels from
+  /// the user during AI playback don't flicker the palette.
+  private enum DisplayMode { case aiSpeaking, listening, idle }
+  private var displayMode: DisplayMode {
+    if style == .micOnly {
+      return userPeak > listeningThreshold ? .listening : .idle
+    }
+    if aiPeak > aiSpeakingThreshold { return .aiSpeaking }
+    if userPeak > listeningThreshold { return .listening }
+    return .idle
+  }
+
+  /// The peak that drives bar heights / loudness — picks AI in speaking
+  /// mode, mic in listening mode, the larger of the two at idle so a
+  /// quiet whisper still nudges the meter.
+  private var drivingPeak: Float {
+    switch displayMode {
+    case .aiSpeaking: return aiPeak
+    case .listening: return userPeak
+    case .idle: return max(aiPeak, userPeak)
+    }
   }
 
   /// History of recent peaks, length = `intensity.barCount`. Index 0 is
@@ -82,12 +151,16 @@ struct RetraceAudioMeter: View {
     .animation(.easeOut(duration: 0.06), value: buffer)
   }
 
-  /// Per-bar color. Bars always carry visible pastel hue (sky → cyan →
-  /// mint → peach → rose left-to-right); louder input pushes them
-  /// further from white so the gradient deepens with voice. The
-  /// caller-supplied `tint` is currently ignored (kept on the init for
-  /// source compat with earlier monochrome callers).
+  /// Per-bar color. AI-speaking → pastel sky→rose gradient; listening →
+  /// uniform white (signals "mic is hearing you"); idle → pastel at the
+  /// silence floor.
   private func barColor(at index: Int) -> Color {
+    if style == .micOnly {
+      return Color.white
+    }
+    if displayMode == .listening {
+      return Color.white
+    }
     let palette = Self.pastelPalette
     let frac = Double(index) / Double(max(1, intensity.barCount - 1))
     let scaled = frac * Double(palette.count - 1)
@@ -139,7 +212,7 @@ struct RetraceAudioMeter: View {
     if !next.isEmpty {
       // Newest peak at index 0, oldest peeled off the end → flow L → R.
       next.removeLast()
-      next.insert(peak.clamped(to: 0...1), at: 0)
+      next.insert(drivingPeak.clamped(to: 0...1), at: 0)
     }
     buffer = next
 
@@ -173,11 +246,14 @@ struct RetraceAudioMeter: View {
   }
 
   private var meterOpacity: Double {
+    if style == .micOnly {
+      return 1.0
+    }
     // Floor at 0.65 so the colored bars stay legible at silence —
     // dimmer than that and the gradient washes out, especially under
     // the lens's additive-blend mode where low-alpha colors collapse
     // toward the camera background.
-    Double(0.65 + 0.35 * loudnessSmoothed.clamped(to: 0...1))
+    return Double(0.65 + 0.35 * loudnessSmoothed.clamped(to: 0...1))
   }
 
   /// Radians per second for the wobble carrier. ~6 rad/s ≈ ~1 Hz —
@@ -197,41 +273,53 @@ struct RetraceAudioMeter: View {
 // MARK: - Intensity preset
 
 extension RetraceAudioMeter {
+  enum Style {
+    /// Conversation meter: AI output uses the colored palette; user input
+    /// uses white bars. This is the default Learner/Troubleshoot behavior.
+    case conversation
+    /// Mic-only meter: always white. Idle = short bars, speech = varied
+    /// heights from mic input. Used by Expert Recording because there is
+    /// no AI-speaking state in that flow.
+    case micOnly
+  }
+
   enum Intensity {
     case compact
+    case wide
     case standard
 
     var barCount: Int {
       switch self {
       case .compact: return 9
+      case .wide: return 27
       case .standard: return 11
       }
     }
 
     var barWidth: CGFloat {
       switch self {
-      case .compact: return 2
+      case .compact, .wide: return 2
       case .standard: return 2.5
       }
     }
 
     var barSpacing: CGFloat {
       switch self {
-      case .compact: return 1.5
+      case .compact, .wide: return 1.5
       case .standard: return 2
       }
     }
 
     var frameHeight: CGFloat {
       switch self {
-      case .compact: return 12
+      case .compact, .wide: return 12
       case .standard: return 16
       }
     }
 
     var minFraction: Float {
       switch self {
-      case .compact: return 0.10
+      case .compact, .wide: return 0.10
       case .standard: return 0.08
       }
     }
@@ -240,7 +328,7 @@ extension RetraceAudioMeter {
 
     var cornerRadius: CGFloat {
       switch self {
-      case .compact: return 1
+      case .compact, .wide: return 1
       case .standard: return 1.5
       }
     }

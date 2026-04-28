@@ -37,6 +37,10 @@ struct RayBanHUDEmulator<PageContent: View>: View {
   /// tweaks. Bright/sunny scenes will wash out the panels — expected, same
   /// behavior as the physical glasses.
   let additiveBlend: Bool
+  /// Chooses the additive-mode panel recipe inside the lens. Defaults to the
+  /// current standard surface so existing call sites, especially Coaching,
+  /// remain visually unchanged.
+  let additiveSurfaceVariant: HUDAdditiveSurfaceVariant
   /// When true, the lens captures double-taps on its background and
   /// dispatches them as `HUDInputEvent.dismiss` into the focus engine —
   /// the topmost handler decides what dismiss means in its context (step
@@ -58,6 +62,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     pageIndex: Binding<Int>,
     showBoundary: Bool = false,
     additiveBlend: Bool = false,
+    additiveSurfaceVariant: HUDAdditiveSurfaceVariant = .standard,
     enableDismissGesture: Bool = false,
     @ViewBuilder page: @escaping (Int) -> PageContent
   ) {
@@ -65,6 +70,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     self._pageIndex = pageIndex
     self.showBoundary = showBoundary
     self.additiveBlend = additiveBlend
+    self.additiveSurfaceVariant = additiveSurfaceVariant
     self.enableDismissGesture = enableDismissGesture
     self.page = page
   }
@@ -72,6 +78,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
   var body: some View {
     GeometryReader { geometry in
       let side = squareSide(for: geometry.size)
+      let lensAlignment: Alignment = geometry.size.width > geometry.size.height ? .trailing : .center
 
       ZStack {
         // Scrim — clears hover on tap. Sits behind the lens so empty lens
@@ -84,10 +91,12 @@ struct RayBanHUDEmulator<PageContent: View>: View {
         }
 
         // The lens square — centered in portrait. Drops the previous
-        // landscape `.scrollableViewport` branch entirely.
+        // landscape `.scrollableViewport` branch entirely. In landscape,
+        // pin to the trailing edge to match Meta Ray-Ban Display's
+        // right-lens-only screen placement.
         squareLens(side: side)
           .frame(width: side, height: side)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: lensAlignment)
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
     }
@@ -141,13 +150,25 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     // The boundary that makes swipe-out animations correct: a card sliding
     // left disappears at the lens edge instead of translating off-canvas.
     .clipped(antialiased: true)
+    // Propagate the compositing decision into the panel system so
+    // `HUDSurfaceBackground` can swap to a dark "container" recipe under
+    // additive (Google's transparent-screens guidance: dark surfaces avoid
+    // halating into adjacent text; bright surfaces destroy legibility).
+    .environment(\.hudAdditiveBlend, additiveBlend)
+    .environment(\.hudAdditiveSurfaceVariant, additiveSurfaceVariant)
     // Compose the lens to an offscreen layer and additively blend it onto
-    // the camera feed. Gives the Ray-Ban Display feel: dark HUD pixels →
-    // camera shows through; bright HUD pixels → brighten the camera. When
-    // `additiveBlend` is off, the modifier chain still costs a compositing
-    // pass but renders identically (`.normal` blend = passthrough).
-    .compositingGroup()
-    .blendMode(additiveBlend ? .plusLighter : .normal)
+    // the camera feed only when the user toggle is on. Applying the
+    // modifiers conditionally (different view identity per branch) plus
+    // a `.id` on the lens guarantees SwiftUI rebuilds the offscreen
+    // layer when the toggle flips — without this, the `Coaching` scene
+    // re-composed correctly but `Expert` and `Troubleshoot` cached the
+    // old layer until a multitasking-driven full re-layout. See plan
+    // notes for the diagnosis.
+    .modifier(LensCompositingModifier(additiveBlend: additiveBlend))
+    .id(LensCompositingIdentity(
+      additiveBlend: additiveBlend,
+      additiveSurfaceVariant: additiveSurfaceVariant
+    ))
     .overlay {
       // Debug-only outline of the square. Drawn outside the clip so the
       // dashed stroke + size badge are always visible. Toggled via
@@ -252,5 +273,30 @@ struct RayBanHUDEmulator<PageContent: View>: View {
 
     guard let direction else { return }
     hoverCoordinator.dispatch(.directional(direction))
+  }
+}
+
+private struct LensCompositingIdentity: Hashable {
+  let additiveBlend: Bool
+  let additiveSurfaceVariant: HUDAdditiveSurfaceVariant
+}
+
+/// Conditional `.compositingGroup() + .blendMode(.plusLighter)` wrapper.
+/// Keeping the two modifier chains structurally distinct (different view
+/// identity per branch) is what makes SwiftUI invalidate the offscreen
+/// compositing layer when the additive toggle flips, so Expert and
+/// Troubleshoot pick up the change live instead of waiting for a
+/// multitasking-driven re-layout.
+private struct LensCompositingModifier: ViewModifier {
+  let additiveBlend: Bool
+
+  func body(content: Content) -> some View {
+    if additiveBlend {
+      content
+        .compositingGroup()
+        .blendMode(.plusLighter)
+    } else {
+      content
+    }
   }
 }

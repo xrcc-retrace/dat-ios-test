@@ -5,8 +5,8 @@ import SwiftUI
 /// forward is to upload a manual themselves; that lands in the library
 /// and the user can re-run the diagnostic.
 ///
-/// Layout mirrors coaching: live indicator top → main card middle →
-/// Upload pill → in-lens 3-segment progress bar at bottom.
+/// Layout mirrors coaching: phase indicator top -> main card middle ->
+/// Upload pill -> bottom audio row.
 struct TroubleshootNoSolutionPage: RayBanHUDView {
   @ObservedObject var viewModel: DiagnosticSessionViewModel
   /// Focus-engine `.dismiss` → trigger the end-diagnostic confirmation
@@ -18,14 +18,16 @@ struct TroubleshootNoSolutionPage: RayBanHUDView {
   var body: some View {
     VStack(spacing: 8) {
       Spacer(minLength: 0)
-      audioPill
+
+      DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
         stage: .findFix,
         title: "Nothing found",
         bodyText: "Couldn't match a saved procedure or synthesize one from the web. Try uploading a manual."
       )
-      DiagnosticPhaseLensBar(phase: viewModel.phase)
       uploadPill
+      bottomActionRow
+
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
@@ -37,27 +39,22 @@ struct TroubleshootNoSolutionPage: RayBanHUDView {
         coordinator: coord,
         focusedControl: .uploadManual,
         voiceCommandLabel: "upload manual",
+        onSetMuted: { muted in viewModel.setMuted(muted) },
         onDismiss: onDismiss
       )
     }
   }
 
-  /// Compact audio meter wrapped in a glass capsule, sitting right
-  /// above the main card. Mirrors the coaching layout.
-  private var audioPill: some View {
-    HStack {
-      Spacer(minLength: 0)
-      RetraceAudioMeter(
-        peak: viewModel.aiOutputPeak,
-        tint: .white,
-        intensity: .compact
-      )
-      .accessibilityHidden(true)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 6)
-      .rayBanHUDPanel(shape: .capsule)
-      Spacer(minLength: 0)
-    }
+  private var bottomActionRow: some View {
+    RayBanHUDBottomAudioActionRow(
+      isMuted: viewModel.isMuted,
+      aiPeak: viewModel.aiOutputPeak,
+      userPeak: viewModel.userInputPeak,
+      muteControl: .diagnosticToggleMute,
+      exitControl: .diagnosticExit,
+      onToggleMute: { viewModel.toggleMute() },
+      onExit: onDismiss
+    )
   }
 
   private var uploadPill: some View {

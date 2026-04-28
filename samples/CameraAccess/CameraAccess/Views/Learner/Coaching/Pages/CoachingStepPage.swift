@@ -17,11 +17,9 @@ import SwiftUI
 /// expansion resets to `.collapsed` so the user starts each step from the
 /// default view.
 ///
-/// Exit happens via `RayBanHUDEmulator`'s `onLensBackGesture` callback
-/// wired from `CoachingSessionView` — no in-page exit affordance lives
-/// here. The back gesture is a MediaPipe double index-finger pinch on
-/// the real device; until that recognizer ships, a screen double-tap on
-/// lens background is the dev fallback.
+/// Exit happens either via the bottom-right Exit capsule or via
+/// `RayBanHUDEmulator`'s `onLensBackGesture` callback wired from
+/// `CoachingSessionView`. Both paths open the same confirmation overlay.
 /// Step transitions remain driven by Gemini Live tool calls
 /// (`advance_step`).
 struct CoachingStepPage: RayBanHUDView {
@@ -87,6 +85,9 @@ struct CoachingStepPage: RayBanHUDView {
             return !step.populatedInsightCategories.isEmpty
           },
           isReferenceExpanded: { expansion == .referenceExpanded },
+          onSetMuted: { muted in
+            viewModel.setMuted(muted)
+          },
           onShowExitConfirmation: onShowExitConfirmation
         )
       }
@@ -98,11 +99,9 @@ struct CoachingStepPage: RayBanHUDView {
     VStack(spacing: 8) {
       topAffordances
 
-      audioPill
-
       contentArea
 
-      Spacer(minLength: 0)
+      bottomActionRow
     }
     .padding(RayBanHUDLayoutTokens.contentPadding)
   }
@@ -146,31 +145,22 @@ struct CoachingStepPage: RayBanHUDView {
         toggleExpansion(.insightsExpanded)
       }
     }
-    .frame(height: 28)
+    .frame(height: 32)
   }
 
-  /// Voice indicator — sits in its own row right above the step card,
-  /// wrapped in a glass capsule for harder bar contrast. Mirrors the
-  /// audio pill pattern across Troubleshoot lens pages so both flows
-  /// surface the AI's voice activity in the same visual slot. The
-  /// meter dims to ~35% at silence and ramps to full opacity as Gemini
-  /// speaks — no timer, no idle pulse, fully amplitude-driven via
-  /// `viewModel.aiOutputPeak`.
-  @ViewBuilder
-  private var audioPill: some View {
-    HStack {
-      Spacer(minLength: 0)
-      RetraceAudioMeter(
-        peak: viewModel.aiOutputPeak,
-        tint: .white,
-        intensity: .compact
-      )
-      .accessibilityHidden(true)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 6)
-      .rayBanHUDPanel(shape: .capsule)
-      Spacer(minLength: 0)
-    }
+  /// Bottom-of-lens action row. Mute and Exit are the two selectable
+  /// surfaces; the wide waveform between them is passive status only so
+  /// it cannot be mistaken for a mic control.
+  private var bottomActionRow: some View {
+    RayBanHUDBottomAudioActionRow(
+      isMuted: viewModel.isMuted,
+      aiPeak: viewModel.aiOutputPeak,
+      userPeak: viewModel.userInputPeak,
+      muteControl: .toggleMute,
+      exitControl: .exitWorkflowButton,
+      onToggleMute: { viewModel.toggleMute() },
+      onExit: onShowExitConfirmation
+    )
   }
 
   /// Color-coded availability dot drawn in the trailing edge of a toggle
@@ -192,22 +182,22 @@ struct CoachingStepPage: RayBanHUDView {
   ) -> some View {
     HStack(spacing: 6) {
       Image(systemName: icon)
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: 13, weight: .semibold))
       Text(label)
-        .font(.inter(.medium, size: 11))
+        .font(.inter(.medium, size: 13))
         .lineLimit(1)
       if let statusDot {
         Circle()
           .fill(color(for: statusDot, isActive: isActive))
-          .frame(width: 7, height: 7)
+          .frame(width: 8, height: 8)
           .accessibilityHidden(true)
       }
     }
     .foregroundStyle(
       isActive ? Color.black.opacity(0.88) : Color.white.opacity(0.94)
     )
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 7)
     .background(
       Capsule()
         .fill(isActive ? Color.white.opacity(0.95) : Color.clear)
@@ -267,6 +257,7 @@ struct CoachingStepPage: RayBanHUDView {
 
       stepCard
     }
+    .frame(maxHeight: expansion == .stepExpanded ? .infinity : nil)
   }
 
   // MARK: - Step card
@@ -280,6 +271,13 @@ struct CoachingStepPage: RayBanHUDView {
         // accordingly. The `withAnimation(.spring(...))` in
         // `toggleExpansion` smoothly animates the size change.
         RayBanHUDStepCard(mode: stepCardMode)
+          // Expanded mode: claim the remaining lens height so the card's
+          // inner `ScrollView` has space to scroll. Collapsed mode keeps
+          // its natural intrinsic height so layout doesn't shift.
+          .frame(
+            maxHeight: expansion == .stepExpanded ? .infinity : nil,
+            alignment: .top
+          )
       case .referenceExpanded, .insightsExpanded:
         compactStepHeader
       }

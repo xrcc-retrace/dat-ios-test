@@ -2,11 +2,11 @@ import SwiftUI
 
 /// Second page of the Troubleshoot lens flow. Active when phase has
 /// advanced to `.diagnosing` (server gate confirmed). Shows the
-/// confirmed product as a yellow chip, the diagnose stage card asking
-/// the user to describe symptoms, and the live audio meter on top.
+/// confirmed product as a yellow chip, the phase indicator, the diagnose
+/// stage card asking the user to describe symptoms, and bottom audio
+/// controls.
 ///
-/// Layout mirrors coaching: live indicator top → main card middle →
-/// in-lens 3-segment progress bar at bottom.
+/// Layout: product chip -> phase indicator -> main card -> bottom audio row.
 struct TroubleshootDiagnosePage: RayBanHUDView {
   @ObservedObject var viewModel: DiagnosticSessionViewModel
   /// Focus-engine `.dismiss` → trigger the end-diagnostic confirmation
@@ -16,41 +16,40 @@ struct TroubleshootDiagnosePage: RayBanHUDView {
   var body: some View {
     VStack(spacing: 8) {
       Spacer(minLength: 0)
+
       productChip
-      audioPill
+      DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
         stage: .diagnose,
         title: "Describe what's wrong",
         bodyText: "Tell me what you're seeing — strange noises, error lights, parts that don't fit."
       )
-      DiagnosticPhaseLensBar(phase: viewModel.phase)
+      bottomActionRow
+
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
     .padding(.vertical, RayBanHUDLayoutTokens.contentPadding)
     // Passive page — only behavior is the dismiss path.
     .hudInputHandler { coord in
-      TroubleshootPageHandler(coordinator: coord, onDismiss: onDismiss)
+      TroubleshootPageHandler(
+        coordinator: coord,
+        onSetMuted: { muted in viewModel.setMuted(muted) },
+        onDismiss: onDismiss
+      )
     }
   }
 
-  /// Compact audio meter wrapped in a glass capsule, sitting right
-  /// above the main card. Mirrors the coaching layout so both lens
-  /// surfaces read the same at-a-glance.
-  private var audioPill: some View {
-    HStack {
-      Spacer(minLength: 0)
-      RetraceAudioMeter(
-        peak: viewModel.aiOutputPeak,
-        tint: .white,
-        intensity: .compact
-      )
-      .accessibilityHidden(true)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 6)
-      .rayBanHUDPanel(shape: .capsule)
-      Spacer(minLength: 0)
-    }
+  private var bottomActionRow: some View {
+    RayBanHUDBottomAudioActionRow(
+      isMuted: viewModel.isMuted,
+      aiPeak: viewModel.aiOutputPeak,
+      userPeak: viewModel.userInputPeak,
+      muteControl: .diagnosticToggleMute,
+      exitControl: .diagnosticExit,
+      onToggleMute: { viewModel.toggleMute() },
+      onExit: onDismiss
+    )
   }
 
   private var productChip: some View {

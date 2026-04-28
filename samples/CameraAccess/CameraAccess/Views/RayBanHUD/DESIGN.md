@@ -41,9 +41,16 @@ The lens supports two blending modes against the live camera feed, switched at r
 - **Opaque** (default): standard alpha-composited overlay. The HUD draws its panels and text directly over the camera; dark panel pixels show as dim grey, light pixels as bright. Predictable legibility regardless of background. This is what we ship by default.
 - **Additive** (`.compositingGroup() + .blendMode(.plusLighter)`): the entire lens composes to one offscreen layer and **adds** its luminance to the camera. Dark HUD pixels become transparent (camera shows through unchanged); bright HUD pixels brighten the camera. This is the same optical behavior as the real Meta Ray-Ban Display — bright scenes wash panels out, dark scenes make them pop.
 
-The toggle is global and applies to every mode (Coaching, Expert, Troubleshoot) since they all mount through the same emulator. **Don't add per-element blend-mode tweaks** — the consistency of the lens depends on a single, lens-wide compositing decision. If panels look wrong in additive mode against bright backgrounds, that's a feature (matches physical glasses) — don't compensate by darkening individual panels.
+The toggle is global and applies to every mode (Coaching, Expert, Troubleshoot) since they all mount through the same emulator. **Don't add per-element blend-mode tweaks** — the consistency of the lens depends on a single, lens-wide compositing decision.
 
-When designing new lens components, **assume opaque** for the legibility floor. If something becomes unreadable in additive mode but the user has additive on, that's the user's choice — don't add carve-outs.
+**Panel surface has two recipes, picked by environment.** The emulator threads `\.hudAdditiveBlend` into the panel system; `HUDSurfaceBackground` reads it and switches between:
+
+- *Opaque mode*: mid-gray surface + white sheen + soft inner shade — reads as a defined card on the camera.
+- *Additive mode*: near-black surface, no sheen, dark inner shade. Under `.plusLighter` this composites to ~transparent (camera passes through unchanged) — exactly the "dark container" Google's transparent-screens guidance prescribes. Bright surfaces would halate into the white text and destroy edges; the dark recipe gives bright content a clean low-luminance neighborhood. This is *not* a per-element opt-in — it's the panel system's two surface variants, switched once by environment.
+
+Reference: [design.google/library/transparent-screens](https://design.google/library/transparent-screens). Key takeaway: on additive displays you can only add light, not subtract. **Make text legible by darkening the container behind it, not by brightening the text** (which is already white) or the surface (which only adds halation).
+
+When designing new lens components, **assume opaque** for the legibility floor. New surfaces should pick up the panel system automatically via `.rayBanHUDPanel(...)`; only reach into `HUDSurfaceBackground` recipes if a component genuinely needs a different surface, and add the additive variant alongside the opaque one — don't add carve-outs that ignore additive mode.
 
 ### Color palette
 

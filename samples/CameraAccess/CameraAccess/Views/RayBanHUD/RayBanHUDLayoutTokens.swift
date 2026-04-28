@@ -34,7 +34,9 @@ enum RayBanHUDLayoutTokens {
   /// `DESIGN.md` confirmation-overlay convention.
   static let stopCountdownDuration: TimeInterval = 3.0
   /// Compact step-card description truncation cutoff before "Read more" kicks in.
-  static let stepDescriptionCharacterLimit: Int = 75
+  /// Sized so the prefix + "… Read more" fits inside `lineLimit(2)` at the
+  /// 18 pt body weight without clipping the affordance.
+  static let stepDescriptionCharacterLimit: Int = 60
   /// Single half-cycle of the green completion pulse. Full pulse = 2× this (autoreverse).
   static let completionPulseDuration: Double = 0.70
   /// Maximum width of the Exit workflow pill.

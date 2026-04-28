@@ -34,25 +34,6 @@ extension ProcedureStepResponse {
   }
 }
 
-struct RayBanHUDInsightsChip: View {
-  var body: some View {
-    HStack(spacing: 4) {
-      Image(systemName: "lightbulb.fill")
-        .font(.system(size: 9, weight: .bold))
-      Text("INSIGHTS AVAILABLE")
-        .font(.inter(.bold, size: 10))
-        .tracking(1.0)
-    }
-    .foregroundStyle(Color.black.opacity(0.85))
-    .padding(.horizontal, 8)
-    .padding(.vertical, 3)
-    .background(
-      Capsule()
-        .fill(Color(red: 1.0, green: 0.76, blue: 0.11))
-    )
-  }
-}
-
 struct RayBanHUDStepCard: View {
   let mode: RayBanHUDStepCardMode
 
@@ -105,12 +86,6 @@ struct RayBanHUDStepCard: View {
           .font(.inter(.medium, size: 12))
           .tracking(1.2)
           .foregroundStyle(Color.white.opacity(0.9))
-
-        if let step, step.hasAnyInsights, !isExpanded {
-          RayBanHUDInsightsChip()
-        }
-
-        Spacer(minLength: 0)
       }
 
       if let step {
@@ -128,7 +103,18 @@ struct RayBanHUDStepCard: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
 
-    inner
+    // Expanded mode: long descriptions + insights can overflow the lens.
+    // Wrap in a non-bouncing ScrollView so content stays inside the lens
+    // square but the user can pan to read the full step. Collapsed mode
+    // doesn't need scroll — the truncation cap keeps it fixed-size.
+    if isExpanded {
+      ScrollView(.vertical, showsIndicators: false) {
+        inner
+      }
+      .scrollBounceBehavior(.basedOnSize)
+    } else {
+      inner
+    }
   }
 
   @ViewBuilder
@@ -426,4 +412,3 @@ struct RayBanHUDCompletionActionCard: View {
     )
   }
 }
-

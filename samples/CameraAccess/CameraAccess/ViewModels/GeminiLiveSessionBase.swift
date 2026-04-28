@@ -58,6 +58,11 @@ class GeminiLiveSessionBase: ObservableObject {
   /// controls bar can react to actual speech volume instead of a flat
   /// "is speaking" Boolean.
   @Published private(set) var aiOutputPeak: Float = 0
+  /// Smoothed peak amplitude of the user's mic input, in `0...1`. Mirrored
+  /// from `AudioSessionManager.userInputPeak`. Drives the listening (white)
+  /// state of `RetraceAudioMeter` — pinned to 0 while muted so a paused mic
+  /// can't read as "listening".
+  @Published private(set) var userInputPeak: Float = 0
   @Published var geminiConnectionState: GeminiLiveService.ConnectionState = .disconnected
   @Published var activity: [ActivityEntry] = []
 
@@ -228,10 +233,16 @@ class GeminiLiveSessionBase: ObservableObject {
   // MARK: - Public control
 
   func toggleMute() {
-    isMuted.toggle()
+    setMuted(!isMuted)
+  }
+
+  func setMuted(_ muted: Bool) {
+    guard isMuted != muted else { return }
+    isMuted = muted
     isSendingAudio = !isMuted
     if isMuted {
       voiceStatus = "Muted"
+      userInputPeak = 0
     } else if geminiConnectionState == .connected {
       voiceStatus = "Listening"
     }
@@ -863,6 +874,16 @@ class GeminiLiveSessionBase: ObservableObject {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] peak in
         self?.aiOutputPeak = peak
+      }
+      .store(in: &cancellables)
+
+    audio.$userInputPeak
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] peak in
+        guard let self = self else { return }
+        // Pin to 0 while muted — mic may still capture frames for VAD/AEC,
+        // but visually we're not "listening".
+        self.userInputPeak = self.isMuted ? 0 : peak
       }
       .store(in: &cancellables)
   }

@@ -9,10 +9,8 @@ import Foundation
 /// user intent rather than the safer-back-out option (cf. the exit
 /// confirmation overlay where Cancel is the safe default).
 ///
-/// - **Left/right** → traverses Confirm ↔ Re-identify.
-/// - **Up/down** → no-op (overlay is two stacked pills, but horizontal
-///   traversal covers both visual layouts the designer might pick; if a
-///   future revision moves them vertical we add up/down neighbors here).
+/// - **Down/right** from Confirm -> Re-identify.
+/// - **Up/left** from Re-identify -> Confirm.
 /// - **Select** → fires the focused button's `onConfirm`.
 /// - **Dismiss** → equivalent to Re-identify (the user wants out of the
 ///   "is this the right product?" question; rejecting the guess and
@@ -29,8 +27,8 @@ final class TroubleshootConfirmHandler: HUDInputHandler {
 
   var focusGraph: FocusGraph {
     [
-      .confirmIdentification: FocusNeighbors(right: .reIdentify),
-      .reIdentify:            FocusNeighbors(left: .confirmIdentification),
+      .confirmIdentification: FocusNeighbors(down: .reIdentify, right: .reIdentify),
+      .reIdentify:            FocusNeighbors(up: .confirmIdentification, left: .confirmIdentification),
     ]
   }
 

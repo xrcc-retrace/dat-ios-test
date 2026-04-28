@@ -17,7 +17,15 @@ struct ExpertHUDRecordingStatusChip: View {
         .foregroundStyle(Color.white.opacity(0.98))
         .monospacedDigit()
 
-      RetraceAudioMeter(peak: audioPeak, tint: .white, intensity: .compact)
+      // Expert recording is mic-only — wire the buffer peak in as
+      // `userPeak` so the meter renders in its white "listening" state.
+      RetraceAudioMeter(
+        aiPeak: 0,
+        userPeak: audioPeak,
+        tint: .white,
+        intensity: .compact,
+        style: .micOnly
+      )
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 8)

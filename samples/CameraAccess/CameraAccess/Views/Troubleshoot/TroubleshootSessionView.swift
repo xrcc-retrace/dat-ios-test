@@ -80,6 +80,7 @@ struct TroubleshootSessionView: View {
               pageIndex: $troubleshootPageIndex,
               showBoundary: debugMode,
               additiveBlend: hudAdditiveBlend,
+              additiveSurfaceVariant: .lowTint,
               // Lens double-tap → focus-engine `.dismiss` → topmost
               // page handler routes to the end-diagnostic alert.
               // Mirrors Coaching's exit pattern, and gives touch
@@ -93,10 +94,10 @@ struct TroubleshootSessionView: View {
                   // Recede the page so the overlay reads as foreground.
                   // Combined with the overlay's heavier weight, foreground
                   // and background separate cleanly.
-                  .scaleEffect(viewModel.pendingConfirmation ? 0.92 : 1.0)
-                  .opacity(viewModel.pendingConfirmation ? 0.32 : 1.0)
-                  .blur(radius: viewModel.pendingConfirmation ? 6 : 0)
-                  .allowsHitTesting(!viewModel.pendingConfirmation)
+                  .scaleEffect((viewModel.pendingConfirmation || showDismissConfirmation) ? 0.92 : 1.0)
+                  .opacity((viewModel.pendingConfirmation || showDismissConfirmation) ? 0.32 : 1.0)
+                  .blur(radius: (viewModel.pendingConfirmation || showDismissConfirmation) ? 6 : 0)
+                  .allowsHitTesting(!(viewModel.pendingConfirmation || showDismissConfirmation))
 
                 if viewModel.pendingConfirmation, let product = viewModel.identifiedProduct {
                   TroubleshootConfirmOverlay(
@@ -106,10 +107,27 @@ struct TroubleshootSessionView: View {
                   )
                   .transition(.scale(scale: 0.88).combined(with: .opacity))
                 }
+
+                if showDismissConfirmation {
+                  CoachingExitConfirmationOverlay(
+                    onCancel: {
+                      withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        showDismissConfirmation = false
+                      }
+                    },
+                    onConfirm: confirmDiagnosticExit
+                  )
+                  .transition(.scale(scale: 0.88).combined(with: .opacity))
+                  .padding(.horizontal, 32)
+                }
               }
               .animation(
                 .spring(response: 0.32, dampingFraction: 0.85),
                 value: viewModel.pendingConfirmation
+              )
+              .animation(
+                .spring(response: 0.32, dampingFraction: 0.85),
+                value: showDismissConfirmation
               )
               .animation(
                 .spring(response: 0.32, dampingFraction: 0.85),
@@ -134,12 +152,10 @@ struct TroubleshootSessionView: View {
       }
     }
     .preferredColorScheme(.dark)
-    .alert("End diagnostic?", isPresented: $showDismissConfirmation) {
+    .alert("End diagnostic?", isPresented: systemDismissConfirmationBinding) {
       Button("Cancel", role: .cancel) {}
       Button("End", role: .destructive) {
-        viewModel.endSession()
-        dismiss()
-        onExit()
+        confirmDiagnosticExit()
       }
     } message: {
       Text("Your diagnostic conversation will end.")
@@ -451,6 +467,24 @@ struct TroubleshootSessionView: View {
   private func retryDiagnostic() {
     viewModel.endSession()
     Task { await viewModel.startSession() }
+  }
+
+  private var systemDismissConfirmationBinding: Binding<Bool> {
+    Binding(
+      get: { showDismissConfirmation && transport != .iPhone },
+      set: { newValue in
+        if transport != .iPhone {
+          showDismissConfirmation = newValue
+        }
+      }
+    )
+  }
+
+  private func confirmDiagnosticExit() {
+    showDismissConfirmation = false
+    viewModel.endSession()
+    dismiss()
+    onExit()
   }
 }
 

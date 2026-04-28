@@ -32,22 +32,38 @@ struct RetraceAudioMeter: View {
   /// the controls bar. Drives bar count, dimensions, and frame size.
   let intensity: Intensity
 
+  /// Rendering behavior for color/state semantics.
+  let style: Style
+
   /// New two-peak initializer. AI-only call sites can pass `userPeak: 0`.
-  init(aiPeak: Float, userPeak: Float = 0, tint: Color = .white, intensity: Intensity = .compact) {
+  init(
+    aiPeak: Float,
+    userPeak: Float = 0,
+    tint: Color = .white,
+    intensity: Intensity = .compact,
+    style: Style = .conversation
+  ) {
     self.aiPeak = aiPeak
     self.userPeak = userPeak
     self.tint = tint
     self.intensity = intensity
+    self.style = style
   }
 
   /// Backward-compatible single-peak initializer. Treats the value as
   /// the AI peak — preserves prior speaking-palette behavior for any
   /// call site that hasn't migrated to the two-peak form yet.
-  init(peak: Float, tint: Color = .white, intensity: Intensity = .compact) {
+  init(
+    peak: Float,
+    tint: Color = .white,
+    intensity: Intensity = .compact,
+    style: Style = .conversation
+  ) {
     self.aiPeak = peak
     self.userPeak = 0
     self.tint = tint
     self.intensity = intensity
+    self.style = style
   }
 
   /// Threshold at which the AI peak is considered "speaking" — the
@@ -65,6 +81,9 @@ struct RetraceAudioMeter: View {
   /// the user during AI playback don't flicker the palette.
   private enum DisplayMode { case aiSpeaking, listening, idle }
   private var displayMode: DisplayMode {
+    if style == .micOnly {
+      return userPeak > listeningThreshold ? .listening : .idle
+    }
     if aiPeak > aiSpeakingThreshold { return .aiSpeaking }
     if userPeak > listeningThreshold { return .listening }
     return .idle
@@ -136,6 +155,9 @@ struct RetraceAudioMeter: View {
   /// uniform white (signals "mic is hearing you"); idle → pastel at the
   /// silence floor.
   private func barColor(at index: Int) -> Color {
+    if style == .micOnly {
+      return Color.white
+    }
     if displayMode == .listening {
       return Color.white
     }
@@ -224,11 +246,14 @@ struct RetraceAudioMeter: View {
   }
 
   private var meterOpacity: Double {
+    if style == .micOnly {
+      return 1.0
+    }
     // Floor at 0.65 so the colored bars stay legible at silence —
     // dimmer than that and the gradient washes out, especially under
     // the lens's additive-blend mode where low-alpha colors collapse
     // toward the camera background.
-    Double(0.65 + 0.35 * loudnessSmoothed.clamped(to: 0...1))
+    return Double(0.65 + 0.35 * loudnessSmoothed.clamped(to: 0...1))
   }
 
   /// Radians per second for the wobble carrier. ~6 rad/s ≈ ~1 Hz —
@@ -248,6 +273,16 @@ struct RetraceAudioMeter: View {
 // MARK: - Intensity preset
 
 extension RetraceAudioMeter {
+  enum Style {
+    /// Conversation meter: AI output uses the colored palette; user input
+    /// uses white bars. This is the default Learner/Troubleshoot behavior.
+    case conversation
+    /// Mic-only meter: always white. Idle = short bars, speech = varied
+    /// heights from mic input. Used by Expert Recording because there is
+    /// no AI-speaking state in that flow.
+    case micOnly
+  }
+
   enum Intensity {
     case compact
     case wide

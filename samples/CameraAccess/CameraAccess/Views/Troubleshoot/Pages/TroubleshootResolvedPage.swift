@@ -9,8 +9,8 @@ import SwiftUI
 /// `.generatedSOP`. Default focus on the Start pill so a single select
 /// gesture commits to the forward path.
 ///
-/// Layout mirrors coaching: live indicator top → main card middle → Start
-/// pill → in-lens 3-segment progress bar at bottom.
+/// Layout mirrors coaching: phase indicator top -> main card middle ->
+/// Start pill -> bottom audio row.
 struct TroubleshootResolvedPage: RayBanHUDView {
   @ObservedObject var viewModel: DiagnosticSessionViewModel
   let onStart: (String) -> Void
@@ -22,15 +22,14 @@ struct TroubleshootResolvedPage: RayBanHUDView {
 
   var body: some View {
     VStack(spacing: 8) {
-      Spacer(minLength: 0)
-      audioPill
+      DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
         stage: .findFix,
         title: procedureTitle,
         bodyText: sourceText
       )
-      DiagnosticPhaseLensBar(phase: viewModel.phase)
       startPill
+      bottomActionRow
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
@@ -42,28 +41,22 @@ struct TroubleshootResolvedPage: RayBanHUDView {
         coordinator: coord,
         focusedControl: .startProcedure,
         voiceCommandLabel: "start",
+        onSetMuted: { muted in viewModel.setMuted(muted) },
         onDismiss: onDismiss
       )
     }
   }
 
-  /// Compact audio meter wrapped in a glass capsule, sitting right
-  /// above the main card. Mirrors the coaching layout.
-  private var audioPill: some View {
-    HStack {
-      Spacer(minLength: 0)
-      RetraceAudioMeter(
-        aiPeak: viewModel.aiOutputPeak,
-        userPeak: viewModel.userInputPeak,
-        tint: .white,
-        intensity: .compact
-      )
-      .accessibilityHidden(true)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 6)
-      .rayBanHUDPanel(shape: .capsule)
-      Spacer(minLength: 0)
-    }
+  private var bottomActionRow: some View {
+    RayBanHUDBottomAudioActionRow(
+      isMuted: viewModel.isMuted,
+      aiPeak: viewModel.aiOutputPeak,
+      userPeak: viewModel.userInputPeak,
+      muteControl: .diagnosticToggleMute,
+      exitControl: .diagnosticExit,
+      onToggleMute: { viewModel.toggleMute() },
+      onExit: onDismiss
+    )
   }
 
   @ViewBuilder

@@ -16,14 +16,9 @@ struct TroubleshootConfirmOverlay: View {
   @EnvironmentObject private var hoverCoordinator: HUDHoverCoordinator
 
   var body: some View {
-    VStack(spacing: 0) {
-      categoryChip
-      Spacer(minLength: 8)
-      titlePanel
-      Spacer(minLength: 16)
-      confirmPill
-      Spacer(minLength: 10)
-      rejectPill
+    VStack(spacing: 18) {
+      deviceGroup
+      actionGroup
     }
     .padding(RayBanHUDLayoutTokens.contentPadding)
     .frame(maxWidth: 280)
@@ -33,12 +28,24 @@ struct TroubleshootConfirmOverlay: View {
     .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
     // Focus engine: push the overlay's handler on appear, pop on
     // disappear. `defaultFocus = .confirmIdentification` lands the cursor
-    // on "That's it" automatically — replaces the manual onAppear seed
-    // we used before. On pop, the underlying identify-page handler's
-    // `defaultFocus` (nil for the passive identify page) restores
-    // cleanly.
+    // on "That's it" automatically. On pop, the underlying identify-page
+    // handler's bottom-row default focus restores cleanly.
     .hudInputHandler { coord in
       TroubleshootConfirmHandler(coordinator: coord)
+    }
+  }
+
+  private var deviceGroup: some View {
+    VStack(spacing: 8) {
+      categoryChip
+      titlePanel
+    }
+  }
+
+  private var actionGroup: some View {
+    VStack(spacing: 8) {
+      confirmPill
+      rejectPill
     }
   }
 
@@ -93,6 +100,6 @@ struct TroubleshootConfirmOverlay: View {
       .frame(maxWidth: .infinity)
       .padding(.vertical, 10)
       .rayBanHUDPanel(shape: .capsule)
-      .hoverSelectable(.reIdentify, shape: .capsule, behavior: .selectOnly, onConfirm: onReject)
+      .hoverSelectable(.reIdentify, shape: .capsule, onConfirm: onReject)
   }
 }

@@ -8,8 +8,8 @@ import SwiftUI
 /// `identifiedProduct` yet. Once Gemini calls `identify_product`, the
 /// `TroubleshootConfirmOverlay` recedes the lens and asks for confirmation.
 ///
-/// Layout mirrors coaching: live indicator top → main card middle → in-
-/// lens 3-segment progress bar at bottom.
+/// Layout mirrors coaching: phase indicator top -> main card middle ->
+/// bottom audio row.
 struct TroubleshootIdentifyPage: RayBanHUDView {
   @ObservedObject var viewModel: DiagnosticSessionViewModel
   /// Focus-engine `.dismiss` (lens double-tap, future MediaPipe back) →
@@ -19,14 +19,13 @@ struct TroubleshootIdentifyPage: RayBanHUDView {
 
   var body: some View {
     VStack(spacing: 8) {
-      Spacer(minLength: 0)
-      audioPill
+      DiagnosticPhaseLensBar(phase: viewModel.phase)
       TroubleshootStageHeaderCard(
         stage: .identify,
         title: "Show me what's broken",
         bodyText: "Or describe it out loud — say or show the device."
       )
-      DiagnosticPhaseLensBar(phase: viewModel.phase)
+      bottomActionRow
       Spacer(minLength: 0)
     }
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
@@ -35,27 +34,23 @@ struct TroubleshootIdentifyPage: RayBanHUDView {
     // consumed so touch double-tap and pinch-back behave consistently
     // with the rest of the focus-engine pipeline.
     .hudInputHandler { coord in
-      TroubleshootPageHandler(coordinator: coord, onDismiss: onDismiss)
+      TroubleshootPageHandler(
+        coordinator: coord,
+        onSetMuted: { muted in viewModel.setMuted(muted) },
+        onDismiss: onDismiss
+      )
     }
   }
 
-  /// Compact audio meter wrapped in a glass capsule, sized to the bars
-  /// + horizontal padding. Sits right above the main card so the user's
-  /// eye finds the AI's voice activity at a glance. Mirrors coaching.
-  private var audioPill: some View {
-    HStack {
-      Spacer(minLength: 0)
-      RetraceAudioMeter(
-        aiPeak: viewModel.aiOutputPeak,
-        userPeak: viewModel.userInputPeak,
-        tint: .white,
-        intensity: .compact
-      )
-      .accessibilityHidden(true)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 6)
-      .rayBanHUDPanel(shape: .capsule)
-      Spacer(minLength: 0)
-    }
+  private var bottomActionRow: some View {
+    RayBanHUDBottomAudioActionRow(
+      isMuted: viewModel.isMuted,
+      aiPeak: viewModel.aiOutputPeak,
+      userPeak: viewModel.userInputPeak,
+      muteControl: .diagnosticToggleMute,
+      exitControl: .diagnosticExit,
+      onToggleMute: { viewModel.toggleMute() },
+      onExit: onDismiss
+    )
   }
 }

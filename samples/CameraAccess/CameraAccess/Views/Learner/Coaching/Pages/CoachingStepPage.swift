@@ -152,71 +152,15 @@ struct CoachingStepPage: RayBanHUDView {
   /// surfaces; the wide waveform between them is passive status only so
   /// it cannot be mistaken for a mic control.
   private var bottomActionRow: some View {
-    ZStack(alignment: .bottom) {
-      wideAudioMeter
-
-      HStack(alignment: .bottom, spacing: 12) {
-        muteCapsule
-
-        Spacer(minLength: 0)
-
-        exitCapsule
-      }
-    }
-    .frame(height: 34)
-  }
-
-  private var muteCapsule: some View {
-    HStack(spacing: 6) {
-      Image(systemName: viewModel.isMuted ? "mic.slash.fill" : "mic.fill")
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(
-          viewModel.isMuted ? Color.white.opacity(0.55) : Color.white.opacity(0.95)
-        )
-
-      Text(viewModel.isMuted ? "Unmute" : "Mute")
-        .font(.inter(.medium, size: 13))
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 7)
-    .layoutPriority(1)
-    .rayBanHUDPanel(shape: .capsule)
-    .hoverSelectable(.toggleMute, shape: .capsule) {
-      viewModel.toggleMute()
-    }
-  }
-
-  private var wideAudioMeter: some View {
-    RetraceAudioMeter(
+    RayBanHUDBottomAudioActionRow(
+      isMuted: viewModel.isMuted,
       aiPeak: viewModel.aiOutputPeak,
       userPeak: viewModel.userInputPeak,
-      tint: .white,
-      intensity: .wide
+      muteControl: .toggleMute,
+      exitControl: .exitWorkflowButton,
+      onToggleMute: { viewModel.toggleMute() },
+      onExit: onShowExitConfirmation
     )
-    .accessibilityHidden(true)
-    .padding(.bottom, 7)
-  }
-
-  private var exitCapsule: some View {
-    HStack(spacing: 6) {
-      Image(systemName: "rectangle.portrait.and.arrow.forward")
-        .font(.system(size: 13, weight: .semibold))
-      Text("Exit")
-        .font(.inter(.medium, size: 13))
-    }
-    .foregroundStyle(Color.white.opacity(0.96))
-    .padding(.horizontal, 13)
-    .padding(.vertical, 7)
-    .background(
-      Capsule()
-        .fill(Color(red: 0.62, green: 0.16, blue: 0.18).opacity(0.55))
-    )
-    .rayBanHUDPanel(shape: .capsule)
-    .hoverSelectable(.exitWorkflowButton, shape: .capsule) {
-      onShowExitConfirmation()
-    }
   }
 
   /// Color-coded availability dot drawn in the trailing edge of a toggle

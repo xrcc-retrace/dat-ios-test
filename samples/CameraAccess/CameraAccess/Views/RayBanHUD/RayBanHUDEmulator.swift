@@ -37,6 +37,10 @@ struct RayBanHUDEmulator<PageContent: View>: View {
   /// tweaks. Bright/sunny scenes will wash out the panels — expected, same
   /// behavior as the physical glasses.
   let additiveBlend: Bool
+  /// Chooses the additive-mode panel recipe inside the lens. Defaults to the
+  /// current standard surface so existing call sites, especially Coaching,
+  /// remain visually unchanged.
+  let additiveSurfaceVariant: HUDAdditiveSurfaceVariant
   /// When true, the lens captures double-taps on its background and
   /// dispatches them as `HUDInputEvent.dismiss` into the focus engine —
   /// the topmost handler decides what dismiss means in its context (step
@@ -58,6 +62,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     pageIndex: Binding<Int>,
     showBoundary: Bool = false,
     additiveBlend: Bool = false,
+    additiveSurfaceVariant: HUDAdditiveSurfaceVariant = .standard,
     enableDismissGesture: Bool = false,
     @ViewBuilder page: @escaping (Int) -> PageContent
   ) {
@@ -65,6 +70,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     self._pageIndex = pageIndex
     self.showBoundary = showBoundary
     self.additiveBlend = additiveBlend
+    self.additiveSurfaceVariant = additiveSurfaceVariant
     self.enableDismissGesture = enableDismissGesture
     self.page = page
   }
@@ -149,6 +155,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     // additive (Google's transparent-screens guidance: dark surfaces avoid
     // halating into adjacent text; bright surfaces destroy legibility).
     .environment(\.hudAdditiveBlend, additiveBlend)
+    .environment(\.hudAdditiveSurfaceVariant, additiveSurfaceVariant)
     // Compose the lens to an offscreen layer and additively blend it onto
     // the camera feed only when the user toggle is on. Applying the
     // modifiers conditionally (different view identity per branch) plus
@@ -158,7 +165,10 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     // old layer until a multitasking-driven full re-layout. See plan
     // notes for the diagnosis.
     .modifier(LensCompositingModifier(additiveBlend: additiveBlend))
-    .id(additiveBlend)
+    .id(LensCompositingIdentity(
+      additiveBlend: additiveBlend,
+      additiveSurfaceVariant: additiveSurfaceVariant
+    ))
     .overlay {
       // Debug-only outline of the square. Drawn outside the clip so the
       // dashed stroke + size badge are always visible. Toggled via
@@ -264,6 +274,11 @@ struct RayBanHUDEmulator<PageContent: View>: View {
     guard let direction else { return }
     hoverCoordinator.dispatch(.directional(direction))
   }
+}
+
+private struct LensCompositingIdentity: Hashable {
+  let additiveBlend: Bool
+  let additiveSurfaceVariant: HUDAdditiveSurfaceVariant
 }
 
 /// Conditional `.compositingGroup() + .blendMode(.plusLighter)` wrapper.

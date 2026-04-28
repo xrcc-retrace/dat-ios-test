@@ -25,6 +25,7 @@ final class TroubleshootPageHandler: HUDInputHandler {
   unowned let coordinator: HUDHoverCoordinator
   let focusedControl: HUDControl?
   let onDismiss: () -> Void
+  let onSetMuted: (Bool) -> Void
   /// Voice phrase that fires the focused control's confirm closure.
   /// Layered on top of the always-available exit phrases. Ignored when
   /// `focusedControl == nil`.
@@ -34,22 +35,39 @@ final class TroubleshootPageHandler: HUDInputHandler {
     coordinator: HUDHoverCoordinator,
     focusedControl: HUDControl? = nil,
     voiceCommandLabel: String? = nil,
+    onSetMuted: @escaping (Bool) -> Void,
     onDismiss: @escaping () -> Void
   ) {
     self.coordinator = coordinator
     self.focusedControl = focusedControl
     self.voiceCommandLabel = voiceCommandLabel
+    self.onSetMuted = onSetMuted
     self.onDismiss = onDismiss
   }
 
-  var defaultFocus: HUDControl? { focusedControl }
+  var defaultFocus: HUDControl? { focusedControl ?? .diagnosticToggleMute }
 
-  var focusGraph: FocusGraph { [:] }
+  var focusGraph: FocusGraph {
+    var graph: FocusGraph = [
+      .diagnosticToggleMute: FocusNeighbors(right: .diagnosticExit),
+      .diagnosticExit: FocusNeighbors(left: .diagnosticToggleMute),
+    ]
 
-  func handle(direction: Direction) -> Bool { false }
+    if let focusedControl {
+      graph[focusedControl] = FocusNeighbors(down: .diagnosticToggleMute)
+      graph[.diagnosticToggleMute] = FocusNeighbors(up: focusedControl, right: .diagnosticExit)
+      graph[.diagnosticExit] = FocusNeighbors(up: focusedControl, left: .diagnosticToggleMute)
+    }
+
+    return graph
+  }
+
+  func handle(direction: Direction) -> Bool {
+    defaultFocusTraversal(coordinator: coordinator, graph: focusGraph, direction: direction)
+  }
 
   func handleSelect() -> Bool {
-    guard let id = focusedControl else { return false }
+    guard let id = coordinator.hovered else { return false }
     coordinator.fireConfirm(for: id)
     return true
   }
@@ -68,6 +86,8 @@ final class TroubleshootPageHandler: HUDInputHandler {
       "exit":           { [weak self] in self?.onDismiss() },
       "end diagnostic": { [weak self] in self?.onDismiss() },
       "cancel":         { [weak self] in self?.onDismiss() },
+      "mute":           { [weak self] in self?.onSetMuted(true) },
+      "unmute":         { [weak self] in self?.onSetMuted(false) },
     ]
     if let id = focusedControl, let label = voiceCommandLabel {
       commands[label] = { [weak self] in self?.coordinator.fireConfirm(for: id) }

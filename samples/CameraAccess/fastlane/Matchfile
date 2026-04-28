@@ -1,0 +1,4 @@
+git_url("git@github.com:xrcc-retrace/ios-signing-certs.git")
+storage_mode("git")
+type("appstore")
+app_identifier(["com.xrcc.retrace.ios.v1"])

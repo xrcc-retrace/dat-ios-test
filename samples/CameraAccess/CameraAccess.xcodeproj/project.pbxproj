@@ -729,6 +729,7 @@
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Frameworks */,
 				B2A1AFE725D64119AF3BBD78 /* Resources */,
 				8FD96B932E6F0C6E00F56AB1 /* Embed Frameworks */,
+				0BCC73072FA1519C00B6E79D /* Patch MediaPipeTasksVision Info.plist */,
 			);
 			buildRules = (
 			);
@@ -867,6 +868,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		0BCC73072FA1519C00B6E79D /* Patch MediaPipeTasksVision Info.plist */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Patch MediaPipeTasksVision Info.plist";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nFRAMEWORK=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/MediaPipeTasksVision.framework\"\nPLIST=\"${FRAMEWORK}/Info.plist\"\n\nif [ ! -f \"$PLIST\" ]; then\n  echo \"MediaPipeTasksVision.framework not found at $PLIST — skipping\"\n  exit 0\nfi\n\n/usr/libexec/PlistBuddy -c \"Add :CFBundleShortVersionString string 0.10.21\" \"$PLIST\" 2>/dev/null || true\n/usr/libexec/PlistBuddy -c \"Add :CFBundleVersion string 0.10.21\" \"$PLIST\" 2>/dev/null || true\n/usr/libexec/PlistBuddy -c \"Add :MinimumOSVersion string 17.0\" \"$PLIST\" 2>/dev/null || true\n\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY}\" ] && [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" != \"-\" ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \"$FRAMEWORK\"\nfi\n\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		76498560E4914BC6835776C9 /* Sources */ = {
@@ -1094,7 +1117,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xrcc.retrace.ios1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xrcc.retrace.ios.v1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
@@ -1122,7 +1145,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.xrcc.retrace.ios1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.xrcc.retrace.ios.v1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

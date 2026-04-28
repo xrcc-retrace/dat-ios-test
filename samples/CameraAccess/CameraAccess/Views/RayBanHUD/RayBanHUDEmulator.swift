@@ -72,6 +72,7 @@ struct RayBanHUDEmulator<PageContent: View>: View {
   var body: some View {
     GeometryReader { geometry in
       let side = squareSide(for: geometry.size)
+      let lensAlignment: Alignment = geometry.size.width > geometry.size.height ? .trailing : .center
 
       ZStack {
         // Scrim — clears hover on tap. Sits behind the lens so empty lens
@@ -84,10 +85,12 @@ struct RayBanHUDEmulator<PageContent: View>: View {
         }
 
         // The lens square — centered in portrait. Drops the previous
-        // landscape `.scrollableViewport` branch entirely.
+        // landscape `.scrollableViewport` branch entirely. In landscape,
+        // pin to the trailing edge to match Meta Ray-Ban Display's
+        // right-lens-only screen placement.
         squareLens(side: side)
           .frame(width: side, height: side)
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: lensAlignment)
       }
       .frame(width: geometry.size.width, height: geometry.size.height)
     }

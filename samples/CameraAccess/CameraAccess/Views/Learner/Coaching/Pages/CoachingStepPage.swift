@@ -152,16 +152,16 @@ struct CoachingStepPage: RayBanHUDView {
   /// surfaces; the wide waveform between them is passive status only so
   /// it cannot be mistaken for a mic control.
   private var bottomActionRow: some View {
-    HStack(alignment: .bottom, spacing: 12) {
-      muteCapsule
-
-      Spacer(minLength: 0)
-
+    ZStack(alignment: .bottom) {
       wideAudioMeter
 
-      Spacer(minLength: 0)
+      HStack(alignment: .bottom, spacing: 12) {
+        muteCapsule
 
-      exitCapsule
+        Spacer(minLength: 0)
+
+        exitCapsule
+      }
     }
     .frame(height: 34)
   }

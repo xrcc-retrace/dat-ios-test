@@ -19,23 +19,25 @@
     {
       "layers" : [
         {
-          "image-name" : "Rectangle 1.png",
+          "hidden" : false,
+          "image-name" : "Image.png",
           "name" : "Rectangle 1",
           "position" : {
             "scale" : 0.8,
             "translation-in-points" : [
-              80.76696561199742,
+              79.90625,
               0
             ]
           }
         },
         {
-          "image-name" : "Rectangle 2.png",
+          "hidden" : false,
+          "image-name" : "Image 2.png",
           "name" : "Rectangle 2",
           "position" : {
             "scale" : 0.8,
             "translation-in-points" : [
-              -80.76696561199736,
+              -80.76696561199742,
               0
             ]
           }

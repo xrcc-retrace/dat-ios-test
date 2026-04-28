@@ -1,7 +1,16 @@
 import SwiftUI
 
+enum VoiceSettings {
+  static let storageKey = "geminiVoice"
+  static let defaultVoice = "Puck"
+
+  static func storedVoice(userDefaults: UserDefaults = .standard) -> String {
+    userDefaults.string(forKey: storageKey) ?? defaultVoice
+  }
+}
+
 struct VoiceSelectionView: View {
-  @AppStorage("geminiVoice") private var selectedVoice = "Puck"
+  @AppStorage(VoiceSettings.storageKey) private var selectedVoice = VoiceSettings.defaultVoice
   @StateObject private var player = VoicePreviewPlayer()
   @State private var voices: [VoiceOption] = VoiceSelectionView.fallbackVoices
 

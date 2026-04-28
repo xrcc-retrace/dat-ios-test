@@ -14,7 +14,7 @@ final class CameraAccessUITests: XCTestCase {
 
   override func setUpWithError() throws {
     continueAfterFailure = false
-    app.launchArguments = ["--ui-testing"]
+    app.launchArguments = ["--ui-testing", "--ui-testing-complete-onboarding"]
   }
 
   // MARK: - Helpers
@@ -104,5 +104,38 @@ final class CameraAccessUITests: XCTestCase {
     // Should return to NonStreamView
     let startButton = app.buttons["Start streaming"]
     XCTAssertTrue(startButton.waitForExistence(timeout: 10), "Should return to NonStreamView after stopping")
+  }
+
+  @MainActor
+  func testOnboardingHasSevenStepsAndSkipsVoiceSelection() {
+    app.launchArguments = ["--ui-testing", "--ui-testing-reset-onboarding"]
+    app.launch()
+
+    let progress = app.otherElements["onboarding_progress"]
+    XCTAssertTrue(progress.waitForExistence(timeout: 10), "Onboarding progress should be visible")
+    XCTAssertEqual(progress.label, "Step 1 of 7")
+
+    app.buttons["Get Started"].tap()
+    XCTAssertEqual(progress.label, "Step 2 of 7")
+
+    app.tap()
+    app.tap()
+    app.buttons["Next"].tap()
+    XCTAssertEqual(progress.label, "Step 3 of 7")
+
+    app.buttons["Next"].tap()
+    XCTAssertEqual(progress.label, "Step 4 of 7")
+
+    app.buttons["Next"].tap()
+    XCTAssertEqual(progress.label, "Step 5 of 7")
+
+    app.buttons["Next"].tap()
+    XCTAssertEqual(progress.label, "Step 6 of 7")
+    XCTAssertFalse(app.staticTexts["Pick your AI voice."].exists)
+    XCTAssertTrue(app.staticTexts["Connect your Ray-Ban Meta."].exists)
+
+    app.buttons["Skip for now"].tap()
+    XCTAssertEqual(progress.label, "Step 7 of 7")
+    XCTAssertTrue(app.staticTexts["Control hands-free."].exists)
   }
 }

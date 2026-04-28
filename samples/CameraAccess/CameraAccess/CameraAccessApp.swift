@@ -38,6 +38,13 @@ struct CameraAccessApp: App {
   init() {
     RetraceNavBarAppearance.install()
 
+    let arguments = ProcessInfo.processInfo.arguments
+    if arguments.contains("--ui-testing-reset-onboarding") {
+      UserDefaults.standard.removeObject(forKey: OnboardingContainerView.completionKey)
+    } else if arguments.contains("--ui-testing-complete-onboarding") {
+      UserDefaults.standard.set(true, forKey: OnboardingContainerView.completionKey)
+    }
+
     do {
       try Wearables.configure()
     } catch {
@@ -48,7 +55,7 @@ struct CameraAccessApp: App {
 
     #if DEBUG
     // Auto-configure MockDeviceKit when launched by XCUITests
-    if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+    if arguments.contains("--ui-testing") {
       let device = MockDeviceKit.shared.pairRaybanMeta()
 
       let cameraKit = device.services.camera

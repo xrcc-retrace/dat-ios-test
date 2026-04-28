@@ -10,7 +10,20 @@ class DiscoverViewModel: ObservableObject {
 
   private let api = ProcedureAPIService()
 
-  let categories = ["All", "Coffee Machines", "Electrical", "Assembly", "Maintenance", "Cleaning"]
+  // Canonical chip list — must stay in sync with the backend's
+  // ProcedureCategory Literal in models/procedure.py. "All" is a UI
+  // affordance only (server never assigns it). Server defaults to "Other"
+  // for procedures Gemini couldn't classify or that predate the field.
+  let categories = [
+    "All",
+    "Assembly",
+    "Electrical",
+    "Calibration",
+    "Maintenance",
+    "Repair",
+    "Inspection",
+    "Other",
+  ]
 
   func fetchProcedures() async {
     isLoading = true
@@ -35,8 +48,15 @@ class DiscoverViewModel: ObservableObject {
       }
     }
 
-    // Category filtering would go here when procedures have category tags
-    // For now, "All" shows everything
+    // Category filter — "All" is a no-op; otherwise match the server-
+    // assigned category, treating nil/empty as "Other" so legacy rows
+    // still surface in the catch-all chip rather than vanishing entirely.
+    if selectedCategory != "All" {
+      result = result.filter {
+        let c = ($0.category?.isEmpty == false ? $0.category : nil) ?? "Other"
+        return c == selectedCategory
+      }
+    }
 
     return result
   }

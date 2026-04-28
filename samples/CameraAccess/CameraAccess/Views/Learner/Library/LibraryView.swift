@@ -181,7 +181,9 @@ struct LibraryView: View {
                 stepCount: procedure.steps.count,
                 duration: procedure.totalDuration,
                 createdAt: procedure.createdAt,
-                status: procedure.status
+                status: procedure.status,
+                iconSymbol: procedure.iconSymbol,
+                iconEmoji: procedure.iconEmoji
               )
             }
           }

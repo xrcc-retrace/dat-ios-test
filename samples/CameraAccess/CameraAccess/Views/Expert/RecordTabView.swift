@@ -12,11 +12,18 @@ struct RecordTabView: View {
   @State private var showIPhoneRecording = false
   @State private var showRegistrationSheet = false
   @State private var showGlassesInactiveSheet = false
+  @State private var showTransportPicker = false
+  @State private var pendingTransport: CaptureTransport?
   @State private var showMediaPicker = false
   @State private var selectedVideoURL: URL?
   @State private var selectedVideoDuration: TimeInterval = 0
   @State private var showReview = false
+  @State private var showPDFPicker = false
+  @State private var pendingPDFURL: URL?
+  @State private var showPDFPreview = false
+  @State private var showManualUploadSheet = false
   @StateObject private var uploadService = UploadService()
+  @StateObject private var manualUploadVM = ManualUploadViewModel()
 
   var body: some View {
     RetraceScreen {
@@ -59,6 +66,24 @@ struct RecordTabView: View {
       GlassesInactiveSheet(iPhoneAlternativeTitle: "Record with iPhone instead") {
         showIPhoneRecording = true
       }
+    }
+    // Transport picker. The sheet just records the user's choice; routing
+    // (registration gate, inactive prompt, full-screen recording) happens in
+    // onDismiss so we don't try to present a sheet on top of the picker
+    // mid-dismissal.
+    .sheet(
+      isPresented: $showTransportPicker,
+      onDismiss: { handlePickedTransport() }
+    ) {
+      CaptureTransportPickerSheet(
+        title: "How do you want to record?",
+        subtitle: nil,
+        glassesActionLabel: "Record with Glasses",
+        iPhoneActionLabel: "Record with iPhone",
+        onSelect: { transport in
+          pendingTransport = transport
+        }
+      )
     }
     .sheet(isPresented: $showMediaPicker) {
       MediaPickerView(mode: .video) { url, _ in
@@ -105,6 +130,58 @@ struct RecordTabView: View {
         )
       }
     }
+    .fileImporter(
+      isPresented: $showPDFPicker,
+      allowedContentTypes: [.pdf],
+      allowsMultipleSelection: false
+    ) { result in
+      if case .success(let urls) = result, let url = urls.first {
+        pendingPDFURL = url
+        showPDFPreview = true
+      }
+    }
+    .fullScreenCover(
+      isPresented: $showPDFPreview,
+      onDismiss: {
+        pendingPDFURL = nil
+      }
+    ) {
+      if let url = pendingPDFURL {
+        PDFPreviewView(
+          pdfURL: url,
+          onUpload: { pdfURL, productName in
+            manualUploadVM.start(pdfURL: pdfURL, productName: productName)
+            showPDFPreview = false
+            // Re-present as a sheet so the user can dismiss-to-background.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+              showManualUploadSheet = true
+            }
+          },
+          onCancel: { showPDFPreview = false }
+        )
+      }
+    }
+    .sheet(isPresented: $showManualUploadSheet) {
+      ExpertManualUploadSheet(
+        viewModel: manualUploadVM,
+        onComplete: { procedureId in
+          showManualUploadSheet = false
+          onProcedureCreated(procedureId)
+        },
+        onDismiss: {
+          showManualUploadSheet = false
+          manualUploadVM.cancel()
+        },
+        onSendToBackground: {
+          showManualUploadSheet = false
+        },
+        onRetry: {
+          if let url = pendingPDFURL {
+            manualUploadVM.start(pdfURL: url, productName: "")
+          }
+        }
+      )
+    }
   }
 
   private func handleProcedureAcknowledged() {
@@ -113,68 +190,71 @@ struct RecordTabView: View {
     }
   }
 
+  // Routes the user's transport choice after the picker sheet finishes
+  // dismissing. Keeps the gate logic out of the sheet itself so the
+  // registration / inactive prompts can present cleanly.
+  private func handlePickedTransport() {
+    guard let transport = pendingTransport else { return }
+    pendingTransport = nil
+    switch transport {
+    case .glasses:
+      if wearablesVM.registrationState != .registered {
+        showRegistrationSheet = true
+      } else if !wearablesVM.hasActiveDevice {
+        showGlassesInactiveSheet = true
+      } else {
+        showStreaming = true
+      }
+    case .iPhone:
+      showIPhoneRecording = true
+    }
+  }
+
   private var landingView: some View {
-    VStack(spacing: Spacing.section) {
-      Spacer()
+    VStack(alignment: .leading, spacing: Spacing.section) {
+      Spacer(minLength: Spacing.xl)
 
-      Image(systemName: "video.fill")
-        .font(.system(size: 48))
-        .foregroundColor(.textTertiary)
-
-      VStack(spacing: Spacing.md) {
-        Text("Record a New Procedure")
-          .font(.retraceFace(.semibold, size: 22))
+      VStack(alignment: .leading, spacing: Spacing.xs) {
+        Text("Create a procedure")
+          .font(.retraceTitle1)
           .foregroundColor(.textPrimary)
-
-        Text("Stream from your glasses and record,\nor upload an existing video")
-          .font(.retraceBody)
+        Text("Three ways to bring in the expert's knowledge.")
+          .font(.retraceCallout)
           .foregroundColor(.textSecondary)
-          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
       }
 
-      Spacer()
-
       VStack(spacing: Spacing.lg) {
-        ModeCard(
-          icon: "eyeglasses",
-          title: "Record with Glasses",
-          subtitle: "Stream and record live",
-          isEnabled: true
+        AccentedHeroCard(
+          icon: "record.circle",
+          title: "Record Live",
+          subtitle: "Capture the task as the expert performs it."
         ) {
-          // Three-way gate at the tap:
-          //   - Not registered  → Meta AI pairing sheet
-          //   - Registered but glasses not awake / in range → inactive prompt
-          //   - Registered + active → straight into streaming
-          if wearablesVM.registrationState != .registered {
-            showRegistrationSheet = true
-          } else if !wearablesVM.hasActiveDevice {
-            showGlassesInactiveSheet = true
-          } else {
-            showStreaming = true
-          }
-        }
-
-        ModeCard(
-          icon: "iphone",
-          title: "Record with iPhone",
-          subtitle: "Use the phone's back camera + mic",
-          isEnabled: true
-        ) {
-          showIPhoneRecording = true
+          showTransportPicker = true
         }
 
         ModeCard(
           icon: "square.and.arrow.up",
-          title: "Upload Video",
-          subtitle: "Select a video from your library",
+          title: "Upload video",
+          subtitle: "From a video on this phone.",
           isEnabled: true
         ) {
           showMediaPicker = true
+        }
+
+        ModeCard(
+          icon: "doc.fill",
+          title: "Upload PDF manual",
+          subtitle: "From a product manual PDF.",
+          isEnabled: true
+        ) {
+          showPDFPicker = true
         }
       }
 
       Spacer()
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, Spacing.screenPadding)
   }
 }

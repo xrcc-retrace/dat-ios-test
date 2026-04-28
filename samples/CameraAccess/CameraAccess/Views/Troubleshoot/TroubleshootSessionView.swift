@@ -13,6 +13,7 @@ struct TroubleshootSessionView: View {
   let onExit: () -> Void
 
   @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var appOrientationController: AppOrientationController
   @StateObject private var viewModel: DiagnosticSessionViewModel
 
   @State private var showDismissConfirmation = false
@@ -20,6 +21,18 @@ struct TroubleshootSessionView: View {
   // Drawer state for the iPhone camera-first layout. Ignored on glasses
   // transport (which keeps the existing vertical stack).
   @State private var drawerExpanded = true
+  // Active lens page inside the Ray-Ban emulator. Troubleshoot ships with
+  // zero pages today; the designer fills them in incrementally.
+  @State private var troubleshootPageIndex: Int = 0
+  // Portrait is the app default; the real value is overwritten in
+  // `.onAppear` from `resolveInterfaceOrientation()` so the session
+  // preserves whatever orientation the phone is already in. Mirrors
+  // Coaching's orientation flow.
+  @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
+  // Global debug surface — drives the lens boundary outline and the
+  // hand-tracking landmark overlay. Set in Server Settings → Debug.
+  @AppStorage("debugMode") private var debugMode: Bool = false
+  @AppStorage("hudAdditiveBlend") private var hudAdditiveBlend: Bool = false
 
   init(
     wearables: WearablesInterface,
@@ -48,11 +61,61 @@ struct TroubleshootSessionView: View {
         IPhoneCoachingLayout(
           viewModel: viewModel,
           drawerExpanded: $drawerExpanded,
+          showDrawer: currentInterfaceOrientation.isPortrait,
           hud: {
-            // Troubleshoot-flow Ray-Ban HUD surface. Frontend designer
-            // edits TroubleshootRayBanHUD.swift; layout enforces
-            // full-bleed + transparent + hit-test pass-through.
-            TroubleshootRayBanHUD(viewModel: viewModel)
+            // Lens drives the five-step Troubleshoot flow. Exactly one page
+            // is alive at a time; the page is selected from VM state. The
+            // confirmation overlay layers on top via the recede+arrive
+            // pattern when `pendingConfirmation == true`.
+            //
+            // Overlay sits *inside* the emulator's page closure (mirrors
+            // ExpertNarrationTipPage's ZStack pattern, lines 56-85) so
+            // both the page and the overlay are children of the emulator
+            // and inherit its `HUDHoverCoordinator` environmentObject.
+            // Rendering the overlay as a sibling of the emulator (the
+            // older shape) leaves it without the env and crashes on first
+            // hover read.
+            RayBanHUDEmulator(
+              pageCount: 1,
+              pageIndex: $troubleshootPageIndex,
+              showBoundary: debugMode,
+              additiveBlend: hudAdditiveBlend,
+              // Lens double-tap → focus-engine `.dismiss` → topmost
+              // page handler routes to the end-diagnostic alert.
+              // Mirrors Coaching's exit pattern, and gives touch
+              // parity with the MediaPipe double-pinch back gesture
+              // (which still also fires `viewModel.onBackGesture`
+              // legacy callback below).
+              enableDismissGesture: true
+            ) { _ in
+              ZStack {
+                troubleshootCurrentPage
+                  // Recede the page so the overlay reads as foreground.
+                  // Combined with the overlay's heavier weight, foreground
+                  // and background separate cleanly.
+                  .scaleEffect(viewModel.pendingConfirmation ? 0.92 : 1.0)
+                  .opacity(viewModel.pendingConfirmation ? 0.32 : 1.0)
+                  .blur(radius: viewModel.pendingConfirmation ? 6 : 0)
+                  .allowsHitTesting(!viewModel.pendingConfirmation)
+
+                if viewModel.pendingConfirmation, let product = viewModel.identifiedProduct {
+                  TroubleshootConfirmOverlay(
+                    product: product,
+                    onConfirm: { viewModel.confirmIdentification() },
+                    onReject: { viewModel.requestReIdentify() }
+                  )
+                  .transition(.scale(scale: 0.88).combined(with: .opacity))
+                }
+              }
+              .animation(
+                .spring(response: 0.32, dampingFraction: 0.85),
+                value: viewModel.pendingConfirmation
+              )
+              .animation(
+                .spring(response: 0.32, dampingFraction: 0.85),
+                value: troubleshootPageKind
+              )
+            }
           }
         ) {
           stackedBody
@@ -61,6 +124,13 @@ struct TroubleshootSessionView: View {
         RetraceScreen {
           stackedBody
         }
+      }
+
+      // Hand-tracking dev overlay — landmark dots, pinch-drag cross, event
+      // log. Sits above everything but allows hit-testing through. Reads
+      // from the single shared `HandGestureService` regardless of mode.
+      if debugMode {
+        HandGestureDebugStack(provider: HandGestureService.shared)
       }
     }
     .preferredColorScheme(.dark)
@@ -75,10 +145,36 @@ struct TroubleshootSessionView: View {
       Text("Your diagnostic conversation will end.")
     }
     .onAppear {
+      // Double index-finger pinch ("back" gesture) → end-diagnostic
+      // confirmation, same destination as the top-bar close button.
+      viewModel.onBackGesture = {
+        showDismissConfirmation = true
+      }
       Task { await viewModel.startSession() }
+      if transport == .iPhone {
+        // Match Coaching's orientation flow — broaden the allowed mask so
+        // SwiftUI chrome can follow the phone into landscape, seed the
+        // preview from the scene's actual interface orientation, and let
+        // the observer below forward future rotations into the camera.
+        appOrientationController.setAllowed([.portrait, .landscapeLeft, .landscapeRight])
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        let resolved = resolveInterfaceOrientation()
+        currentInterfaceOrientation = resolved
+        viewModel.setPreviewInterfaceOrientation(resolved)
+      }
     }
     .onDisappear {
       viewModel.endSession()
+      if transport == .iPhone {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        appOrientationController.unlock()
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+      guard transport == .iPhone else { return }
+      let resolved = resolveInterfaceOrientation()
+      currentInterfaceOrientation = resolved
+      viewModel.setPreviewInterfaceOrientation(resolved)
     }
     .fullScreenCover(item: $activeHandoff) { handoff in
       // Handoff into a learner coaching session keeps the same transport
@@ -245,9 +341,10 @@ struct TroubleshootSessionView: View {
           .foregroundColor(viewModel.isMuted ? .textTertiary : .textPrimary)
 
         if !viewModel.isMuted {
-          SoundWaveView(
-            isActive: viewModel.isAISpeaking,
-            color: .textPrimary
+          RetraceAudioMeter(
+            peak: viewModel.aiOutputPeak,
+            tint: .textPrimary,
+            intensity: .standard
           )
         } else {
           Text("Muted")
@@ -264,6 +361,57 @@ struct TroubleshootSessionView: View {
     .glassPanel(cornerRadius: Radius.xl)
     .padding(.horizontal, Spacing.xl)
     .padding(.bottom, Spacing.md)
+  }
+
+  // MARK: - Lens page selector
+
+  /// Picks which Troubleshoot lens page to render based on phase + resolution.
+  /// Page transitions use the asymmetric inline transition from the design
+  /// system, applied at the parent ZStack via `.animation(...)` on the
+  /// transition trigger key.
+  @ViewBuilder
+  private var troubleshootCurrentPage: some View {
+    let dismissCallback: () -> Void = { showDismissConfirmation = true }
+    Group {
+      switch troubleshootPageKind {
+      case .identify:
+        TroubleshootIdentifyPage(viewModel: viewModel, onDismiss: dismissCallback)
+      case .diagnose:
+        TroubleshootDiagnosePage(viewModel: viewModel, onDismiss: dismissCallback)
+      case .searching:
+        TroubleshootSearchingPage(viewModel: viewModel, onDismiss: dismissCallback)
+      case .resolved:
+        TroubleshootResolvedPage(
+          viewModel: viewModel,
+          onStart: { procedureId in
+            Task { await startHandoff(procedureId: procedureId) }
+          },
+          onDismiss: dismissCallback
+        )
+      case .noSolution:
+        TroubleshootNoSolutionPage(viewModel: viewModel, onDismiss: dismissCallback)
+      }
+    }
+    .transition(.asymmetric(
+      insertion: .opacity.combined(with: .scale(scale: 0.92, anchor: .top)),
+      removal: .opacity
+    ))
+  }
+
+  private var troubleshootPageKind: TroubleshootPageKind {
+    if viewModel.resolution == .noMatch { return .noSolution }
+    switch viewModel.resolution {
+    case .matchedProcedure, .generatedSOP:
+      return .resolved
+    case .none, .noMatch:
+      break
+    }
+    switch viewModel.phase {
+    case .discovering: return .identify
+    case .diagnosing:  return .diagnose
+    case .resolving:   return .searching
+    case .resolved:    return .identify // resolution already handled above
+    }
   }
 
   // MARK: - Helpers
@@ -283,6 +431,14 @@ struct TroubleshootSessionView: View {
     case .error: return .appPrimary
     case .disconnected: return .textTertiary
     }
+  }
+
+  private func resolveInterfaceOrientation() -> UIInterfaceOrientation {
+    let scene = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .first(where: { $0.activationState == .foregroundActive })
+      ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+    return scene?.interfaceOrientation ?? .portrait
   }
 
   private func startHandoff(procedureId: String) async {
@@ -351,4 +507,15 @@ private struct DiagnosticActivityRow: View {
 // fullScreenCover(item:).
 extension LearnerSessionStartResponse: Identifiable {
   public var id: String { sessionId }
+}
+
+/// Identifies which Troubleshoot lens page is alive. Owned by
+/// `TroubleshootSessionView`; computed from VM state via
+/// `troubleshootPageKind`.
+enum TroubleshootPageKind: Hashable {
+  case identify
+  case diagnose
+  case searching
+  case resolved
+  case noSolution
 }

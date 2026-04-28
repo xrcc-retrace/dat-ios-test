@@ -31,6 +31,10 @@ struct ProcedureChapterDetailContent<ReadMoreContent: View, HeaderActionContent:
   @StateObject private var playerModel = ProcedureChapterPlayerModel()
   @State private var expandedStepNumber: Int?
   @State private var isDescriptionExpanded = false
+  // Drives the in-app SFSafariViewController sheet when the user taps a
+  // source row in the optional "Sources" footer. Identifiable URL +
+  // .sheet(item:) gives us animated mount/unmount per URL change.
+  @State private var selectedSourceURL: IdentifiableURL?
 
   private var playbackSignature: String {
     let stepSignature = procedure.orderedSteps.map {
@@ -44,20 +48,33 @@ struct ProcedureChapterDetailContent<ReadMoreContent: View, HeaderActionContent:
     return playerModel.playbackSummary
   }
 
+  /// Procedures with `source_type` of "manual" or "web" have no real
+  /// video — the player slot would either show a broken image (manual,
+  /// where clip_url points at a PNG) or an empty fallback (web). Hide
+  /// the player entirely for those and surface the source type via the
+  /// small badge in `contentHeader` instead.
+  private var hasPlayableVideo: Bool {
+    let st = (procedure.sourceType ?? "video").lowercased()
+    return st == "video"
+  }
+
   var body: some View {
     GeometryReader { proxy in
       VStack(spacing: 0) {
-        ProcedureSourcePlayerCard(
-          player: playerModel.player,
-          summary: playerSummary,
-          height: playerHeight(for: proxy.size)
-        )
+        if hasPlayableVideo {
+          ProcedureSourcePlayerCard(
+            player: playerModel.player,
+            summary: playerSummary,
+            height: playerHeight(for: proxy.size)
+          )
+        }
 
         ScrollViewReader { scrollProxy in
           ScrollView {
             LazyVStack(alignment: .leading, spacing: Spacing.xl) {
               contentHeader
               stepSection(scrollProxy: scrollProxy)
+              sourcesSection
           }
           .padding(Spacing.screenPadding)
           .padding(.top, Spacing.md)
@@ -77,11 +94,54 @@ struct ProcedureChapterDetailContent<ReadMoreContent: View, HeaderActionContent:
       playerModel.pause()
       playerModel.endPlaybackSession()
     }
+    .sheet(item: $selectedSourceURL) { wrapper in
+      SafariBrowserView(url: wrapper.url)
+        .ignoresSafeArea()
+    }
+  }
+
+  /// Source-type chip rendered above the title for manual/web procedures.
+  /// Replaces the role the video card used to play in telling the user
+  /// "where this procedure came from". Hidden for video procedures (the
+  /// player itself is the cue).
+  @ViewBuilder
+  private var sourceTypeBadge: some View {
+    let st = (procedure.sourceType ?? "video").lowercased()
+    let info: (icon: String, text: String)? = {
+      switch st {
+      case "manual":
+        return ("doc.fill", "Imported from manual")
+      case "web":
+        let n = procedure.sources?.count ?? 0
+        let label = n == 1 ? "1 online source" : "\(n) online sources"
+        return ("globe", "Synthesized from \(label)")
+      default:
+        return nil
+      }
+    }()
+    if let info {
+      HStack(spacing: Spacing.sm) {
+        Image(systemName: info.icon)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundColor(.textSecondary)
+        Text(info.text)
+          .font(.retraceFace(.semibold, size: 12))
+          .foregroundColor(.textSecondary)
+          .tracking(0.3)
+      }
+      .padding(.horizontal, Spacing.lg)
+      .padding(.vertical, Spacing.sm)
+      .background(Color.surfaceRaised)
+      .clipShape(Capsule())
+      .overlay(Capsule().stroke(Color.borderSubtle, lineWidth: 1))
+    }
   }
 
   private var contentHeader: some View {
     VStack(alignment: .leading, spacing: Spacing.lg) {
       VStack(alignment: .leading, spacing: Spacing.md) {
+        sourceTypeBadge
+
         Text(procedure.title)
           .font(.retraceTitle2)
           .foregroundColor(.textPrimary)
@@ -168,6 +228,8 @@ struct ProcedureChapterDetailContent<ReadMoreContent: View, HeaderActionContent:
       ForEach(procedure.orderedSteps) { step in
         ProcedureStepChapterRow(
           step: step,
+          sourceType: procedure.sourceType,
+          serverBaseURL: serverBaseURL,
           isExpanded: expandedStepNumber == step.stepNumber,
           isActive: playerModel.activeStepNumber == step.stepNumber,
           onTap: {
@@ -176,6 +238,38 @@ struct ProcedureChapterDetailContent<ReadMoreContent: View, HeaderActionContent:
           footer: expandedStepFooter(step)
         )
         .id(step.stepNumber)
+      }
+    }
+  }
+
+  /// "Sources" footer — only renders for procedures the troubleshoot
+  /// web-search flow built (`source_type='web'`), where Gemini cited a
+  /// list of online sources. Hidden entirely for video- or
+  /// manual-derived procedures so the layout stays unchanged for those.
+  @ViewBuilder
+  private var sourcesSection: some View {
+    if let sources = procedure.sources, !sources.isEmpty {
+      VStack(alignment: .leading, spacing: Spacing.md) {
+        HStack {
+          Text("SOURCES")
+            .font(.retraceOverline)
+            .tracking(0.5)
+            .foregroundColor(.textSecondary)
+
+          Spacer()
+
+          Text("\(sources.count)")
+            .font(.retraceOverline)
+            .foregroundColor(.textSecondary)
+        }
+
+        ForEach(sources) { source in
+          SourceRow(source: source) {
+            if let url = URL(string: source.url) {
+              selectedSourceURL = IdentifiableURL(url: url)
+            }
+          }
+        }
       }
     }
   }
@@ -311,45 +405,91 @@ struct ProcedureActiveStepSummary: View {
 
 struct ProcedureStepChapterRow<Footer: View>: View {
   let step: ProcedureStepResponse
+  /// Procedure-level source type ("video" / "manual" / "web"). Drives
+  /// whether the row shows the placeholder timestamp range and whether
+  /// the expanded section embeds a PDF page image (for "manual"). Nil is
+  /// treated as "video" for backward compatibility with legacy rows.
+  let sourceType: String?
+  let serverBaseURL: String
   let isExpanded: Bool
   let isActive: Bool
   let onTap: () -> Void
   let footer: Footer
 
+  /// "video" rows keep their per-step timestamp range; "manual" and
+  /// "web" timestamps are 30s placeholders and would mislead the user.
+  private var showsTimestamp: Bool {
+    (sourceType ?? "video").lowercased() == "video"
+  }
+
+  /// Manual procedures store the per-step PDF page render in `clip_url`
+  /// (.png). When the step is expanded, we want it inline so the learner
+  /// can see what the manual showed for this step.
+  private var inlineManualImageURL: URL? {
+    guard (sourceType ?? "video").lowercased() == "manual" else { return nil }
+    guard let path = step.clipUrl, !path.isEmpty else { return nil }
+    let lower = path.lowercased()
+    let isImage = lower.hasSuffix(".png") || lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg")
+    guard isImage else { return nil }
+    return URL(string: "\(serverBaseURL)\(path)")
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Button(action: onTap) {
-        HStack(alignment: .top, spacing: Spacing.lg) {
-          stepBadge
+      HStack(alignment: .top, spacing: Spacing.lg) {
+        stepBadge
 
-          VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(step.title)
-              .font(.retraceFace(.medium, size: 16))
-              .foregroundColor(.textPrimary)
-              .multilineTextAlignment(.leading)
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+          Text(step.title)
+            .font(.retraceFace(.medium, size: 16))
+            .foregroundColor(.textPrimary)
+            .multilineTextAlignment(.leading)
 
+          if showsTimestamp {
             Text(step.formattedTimeRange)
               .font(.system(size: 11, design: .monospaced))
               .foregroundColor(.textTertiary)
           }
-
-          Spacer(minLength: 0)
-
-          Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.textTertiary)
-            .padding(.top, 2)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+
+        Spacer(minLength: 0)
+
+        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundColor(.textTertiary)
+          .padding(.top, 2)
       }
-      .buttonStyle(.plain)
-      .contentShape(Rectangle())
+      .frame(maxWidth: .infinity, alignment: .leading)
 
       if isExpanded {
         VStack(alignment: .leading, spacing: Spacing.lg) {
           Text(step.description)
             .font(.retraceSubheadline)
             .foregroundColor(.textSecondary)
+
+          if let imageURL = inlineManualImageURL {
+            AsyncImage(url: imageURL) { phase in
+              switch phase {
+              case .success(let image):
+                image.resizable().aspectRatio(contentMode: .fit)
+              case .failure:
+                Color.surfaceRaised.overlay(
+                  Image(systemName: "doc.fill")
+                    .foregroundColor(.textSecondary)
+                )
+              case .empty:
+                Color.surfaceRaised.overlay(ProgressView())
+              @unknown default:
+                Color.surfaceRaised
+              }
+            }
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            .overlay(
+              RoundedRectangle(cornerRadius: Radius.md)
+                .stroke(Color.borderSubtle, lineWidth: 1)
+            )
+          }
 
           if !step.tips.isEmpty {
             TagSection(title: "Tips", items: step.tips, color: .semanticInfo)
@@ -378,6 +518,10 @@ struct ProcedureStepChapterRow<Footer: View>: View {
         .stroke(isActive ? Color.appPrimary.opacity(0.55) : Color.clear, lineWidth: 1)
     }
     .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    .contentShape(Rectangle())
+    .onTapGesture {
+      onTap()
+    }
     .accessibilityIdentifier("procedure_step_row_\(step.stepNumber)")
   }
 

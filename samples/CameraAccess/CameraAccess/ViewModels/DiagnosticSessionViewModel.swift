@@ -24,6 +24,23 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   @Published var handoffInFlight = false
   @Published var handoffError: String?
 
+  /// True after `identify_product` returns and before the user has
+  /// confirmed (or rejected) it. Drives the lens confirmation overlay.
+  /// Cleared when `confirm_identification` returns or when the user
+  /// rejects via `requestReIdentify()` (which wipes `identifiedProduct`).
+  @Published private(set) var pendingConfirmation: Bool = false
+
+  /// Which stage of the search-for-fix flow is currently in flight.
+  /// Derived from `pendingToolCallNames` on the base — `search_procedures`
+  /// in flight = `.searchingLibrary`; `web_search_for_fix` in flight =
+  /// `.searchingWeb`. Subscribed below in init.
+  @Published private(set) var searchStage: SearchStage? = nil
+
+  enum SearchStage: Equatable {
+    case searchingLibrary
+    case searchingWeb
+  }
+
   /// Transport chosen on the Troubleshoot intro picker. iPhone routes
   /// through the camera-first drawer layout; glasses keeps the current
   /// stacked layout.
@@ -42,6 +59,24 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   ) {
     self.diagnosticTransport = transport
     super.init(wearables: wearables, serverBaseURL: serverBaseURL)
+
+    // Derive `searchStage` from the base's published map of in-flight tool
+    // names. Updates in real time as the AI fires search_procedures and
+    // web_search_for_fix.
+    $pendingToolCallNames
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] names in
+        guard let self = self else { return }
+        let activeNames = Set(names.values)
+        if activeNames.contains("web_search_for_fix") {
+          self.searchStage = .searchingWeb
+        } else if activeNames.contains("search_procedures") {
+          self.searchStage = .searchingLibrary
+        } else {
+          self.searchStage = nil
+        }
+      }
+      .store(in: &cancellables)
   }
 
   // MARK: - Lifecycle (public entry / exit)
@@ -56,8 +91,33 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     showManualUploadSheet = false
     handoffInFlight = false
     handoffError = nil
+    pendingConfirmation = false
+    searchStage = nil
 
     await startGeminiLiveSession()
+  }
+
+  // MARK: - Confirmation overlay actions (called from TroubleshootConfirmOverlay)
+
+  /// User tapped "That's it" — confirm the identification. Nudges Gemini
+  /// with an affirmative text turn so the AI fires `confirm_identification`,
+  /// which the server uses to advance phase. Server enforces the gate; this
+  /// method is just the conversational push.
+  func confirmIdentification() {
+    Task { try? await geminiService?.sendClientTextTurn("Yes, that's it.") }
+  }
+
+  /// User tapped "Try again" — reject the identification. Wipes the local
+  /// product so the overlay dismisses, then nudges Gemini to call
+  /// `identify_product` again with a different guess.
+  func requestReIdentify() {
+    identifiedProduct = nil
+    pendingConfirmation = false
+    Task {
+      try? await geminiService?.sendClientTextTurn(
+        "That's not the right tool. Try a different identification."
+      )
+    }
   }
 
   func endSession() {
@@ -112,9 +172,11 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     do {
       let upload = try await apiService.uploadManual(pdfURL: pdfURL)
       print("[Diagnostic] Manual uploaded: \(upload.manualId)")
-      // Synthetic follow-up so Gemini knows the manual is ready.
+      // The manual is ingested server-side and saved as a regular procedure in
+      // the library. Nudge Gemini to retry search_procedures so it picks up
+      // the new entry and can offer it as the resolution.
       try? await geminiService?.sendClientTextTurn(
-        "Manual uploaded. manual_id=\(upload.manualId). Proceed with generate_sop_from_manual using this manual_id."
+        "I just uploaded a manual for this device. Try search_procedures again."
       )
       return true
     } catch {
@@ -157,6 +219,9 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   override func handleToolCallExtras(name: String, args: [String: Any], result: [String: Any]) async {
     switch name {
     case "identify_product":
+      // Phase stays at .discovering. The user must explicitly confirm via
+      // the lens overlay → conversational nudge → `confirm_identification`
+      // tool call. Server-side gate enforced via the troubleshoot prompt.
       if let p = result["product"] as? [String: Any] {
         let prod = IdentifiedProduct(
           productName: (p["product_name"] as? String) ?? "",
@@ -164,8 +229,14 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
           confidence: (p["confidence"] as? String) ?? "medium"
         )
         identifiedProduct = prod
-        phase = .diagnosing
+        pendingConfirmation = true
       }
+
+    case "confirm_identification":
+      // Server has advanced phase to DIAGNOSING; mirror it locally and
+      // dismiss the confirmation overlay.
+      pendingConfirmation = false
+      phase = .diagnosing
 
     case "search_procedures":
       if let arr = result["candidates"] as? [[String: Any]] {
@@ -176,24 +247,23 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
         }
       } else {
         candidateProcedures = []
-      }
-
-    case "fetch_manual":
-      if let status = result["status"] as? String {
-        if status == "user_upload_required" {
-          showManualUploadSheet = true
-        } else if status == "preloaded", let procedureId = result["procedure_id"] as? String {
-          let title = (result["title"] as? String) ?? "Pre-loaded procedure"
-          resolution = .generatedSOP(procedureId: procedureId, title: title)
-          phase = .resolving
-        }
-      }
-
-    case "generate_sop_from_manual":
-      if let procedureId = result["procedure_id"] as? String,
-         (result["status"] as? String) == "ok" {
-        resolution = .generatedSOP(procedureId: procedureId, title: "AI-generated procedure")
         phase = .resolving
+      }
+
+    case "web_search_for_fix":
+      let status = (result["status"] as? String) ?? ""
+      switch status {
+      case "ok":
+        if let procedureId = result["procedure_id"] as? String {
+          let title = (result["title"] as? String) ?? "Generated procedure"
+          resolution = .generatedSOP(procedureId: procedureId, title: title)
+        }
+        phase = .resolving
+      case "no_fix_found", "error":
+        resolution = .noMatch
+        phase = .resolving
+      default:
+        break
       }
 
     case "handoff_to_learner":

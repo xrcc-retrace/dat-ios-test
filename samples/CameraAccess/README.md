@@ -76,6 +76,11 @@ Record a procedure from the glasses or the iPhone, review the raw capture, then 
 - **Progress** — session history (completed / abandoned / in-progress).
 - **Profile** — pick a voice (Puck, Charon, Kore, …) with audio previews fetched from the server at `/api/learner/voices`. Auto-advance toggle for visual completion detection vs verbal confirmation.
 - **Coaching** — the headline flow. Starts a Live session, plays voice coaching through the glasses' open-ear speakers or the iPhone loudspeaker, and surfaces the current step's reference clip in a picture-in-picture overlay. An activity feed shows live transcripts and tool calls.
+- **Troubleshoot** — `Views/Troubleshoot/` (entry: `TroubleshootSessionView`, VM: `DiagnosticSessionViewModel`). Parallel Live session backed by `/api/troubleshoot/*`. The user describes a broken product; Gemini issues `identify_product` → `confirm_identification`, then `search_procedures` over the existing library; on no-match it calls `web_search_for_fix` (Gemini Pro + GoogleSearch grounding → procedure with cited URLs); finally `handoff_to_learner` opens a coaching session on the chosen procedure.
+
+### Onboarding
+
+`Views/Onboarding/` (container + Screens + Components) handles first-launch — permissions, capture-transport pick, and a quick orientation. Skip-on-launch is keyed off `UserDefaults`.
 
 ## Capture transports
 
@@ -93,6 +98,10 @@ Record a procedure from the glasses or the iPhone, review the raw capture, then 
 - `ViewModels/IPhoneExpertRecordingViewModel.swift` drives expert recording.
 - `ViewModels/IPhoneCoachingCameraSource.swift` throttles sample buffers to ≈0.5 fps JPEG (quality 0.5) for coaching — same token budget as the glasses path.
 - Audio is forced onto the built-in mic + loudspeaker.
+
+### Hand tracking
+
+`HandTracking/` is the gesture substrate that powers the Ray-Ban HUD's hover-then-select interaction model. `HandLandmarkerService` extracts hand poses, `HandGestureService` reduces them to a high-level state machine (`hover`, `select`, `idle`), and `MicroGestureRecognizer` + `PinchDragRecognizer` produce the discrete events the HUD consumes. `HandGestureDebugStack` is a debug overlay you can toggle from the Debug Menu. Coaching and troubleshoot sessions both subscribe; recording paths don't (yet).
 
 ### AudioSessionManager modes
 
@@ -130,8 +139,19 @@ samples/CameraAccess/
 │   ├── CameraAccess.entitlements
 │   ├── Assets.xcassets
 │   ├── TestResources/                 # plant.mp4, plant.png for MockDeviceKit
+│   ├── Resources/                     # Bundled fonts / icons / animation assets
+│   ├── DiamondLogoDither.metal        # Custom shader used by the splash + brand surfaces
+│   ├── HandTracking/                  # Hand-pose substrate for HUD hover-then-select
+│   │   ├── HandLandmarkerService.swift
+│   │   ├── HandGestureService.swift
+│   │   ├── HandTrackingConfig.swift
+│   │   ├── MicroGestureRecognizer.swift
+│   │   ├── PinchDragRecognizer.swift
+│   │   ├── HandLandmarkFrame.swift
+│   │   └── HandGestureDebugStack.swift
 │   ├── Models/
 │   │   ├── CaptureTransport.swift     # .glasses | .iPhone
+│   │   ├── DiagnosticModels.swift     # Codable mirrors of /api/troubleshoot
 │   │   └── ProcedureModels.swift      # Codable mirrors of server models (procedures, steps, session, voices, SessionRecord)
 │   ├── Services/
 │   │   ├── BonjourDiscovery.swift     # NWBrowser for _retrace._tcp; caches serverBaseURL
@@ -151,7 +171,9 @@ samples/CameraAccess/
 │   │   ├── StreamSessionViewModel.swift       # glasses stream preview
 │   │   ├── IPhoneExpertRecordingViewModel.swift
 │   │   ├── IPhoneCoachingCameraSource.swift
+│   │   ├── GeminiLiveSessionBase.swift        # Shared base — token lifecycle, reconnect-on-goAway, setup-complete gate. Used by Coaching + Diagnostic VMs.
 │   │   ├── CoachingSessionViewModel.swift     # the big one — Gemini Live orchestration, transport switch, transcripts, tool calls, resumption
+│   │   ├── DiagnosticSessionViewModel.swift   # Troubleshoot-mode Live session
 │   │   ├── DiscoverViewModel.swift
 │   │   ├── LibraryViewModel.swift
 │   │   ├── WorkflowListViewModel.swift
@@ -165,7 +187,11 @@ samples/CameraAccess/
 │       ├── RegistrationView.swift
 │       ├── ServerSettingsView.swift
 │       ├── DebugMenuView.swift
+│       ├── StreamView.swift / NonStreamView.swift / IPhoneCameraPreview.swift / PhotoPreviewView.swift / ExpertRecordingReviewView.swift
 │       ├── Components/                # CardView, CategoryChip, ModeCard, StepProgressBar, GlassPanelModifier, …
+│       ├── Onboarding/                # OnboardingContainerView + Screens/ + Components/ — first-launch flow
+│       ├── RayBanHUD/                 # Lens design system — see DESIGN.md before touching lens UI
+│       ├── Troubleshoot/              # TroubleshootSessionView, TroubleshootIntroView, DiagnosticPhaseBar, DiagnosticResolutionPanel, ManualUploadSheet, TroubleshootConfirmOverlay, TroubleshootPageHandler, Pages/, Components/
 │       ├── Expert/                    # ExpertTabView, RecordTabView, IPhoneRecordingView, WorkflowListView, ProcedureDetailView, ProcedureEditView, StepEditView
 │       ├── MockDeviceKit/
 │       └── Learner/

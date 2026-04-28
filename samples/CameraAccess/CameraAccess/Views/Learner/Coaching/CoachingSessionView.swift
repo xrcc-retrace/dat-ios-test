@@ -23,9 +23,15 @@ struct CoachingSessionView: View {
   // `.onAppear` from `resolveInterfaceOrientation()` so the session
   // preserves whatever orientation the phone is already in.
   @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
-  // Gesture-debug overlay hidden by default — demo footage stays clean.
-  // Flipped from the controls bar Debug button. Resets per session.
-  @State private var showGestureDebug: Bool = false
+  // Global debug surface — drives the lens boundary outline, hand-tracking
+  // overlay, etc. Set in Server Settings → Debug. No per-session toggle.
+  @AppStorage("debugMode") private var debugMode: Bool = false
+  // Additive (plus-lighter) blending for the lens — emulates the real
+  // Ray-Ban Display's optical surface. Set in Server Settings → Debug.
+  @AppStorage("hudAdditiveBlend") private var hudAdditiveBlend: Bool = false
+  // Active lens page inside the Ray-Ban emulator. Mutated by the emulator's
+  // gesture pipeline (finger swipe today, MediaPipe pinch-drag tomorrow).
+  @State private var coachingPageIndex: Int = 0
 
   init(
     procedure: ProcedureResponse,
@@ -62,17 +68,52 @@ struct CoachingSessionView: View {
           drawerExpanded: $drawerExpanded,
           showDrawer: currentInterfaceOrientation.isPortrait,
           hud: {
-            CoachingRayBanHUD(
-              viewModel: viewModel,
-              stepCount: procedure.steps.count,
-              clipURL: currentStepClipURL,
-              layoutMode: .scrollableViewport,
-              showGestureDebug: showGestureDebug,
-              onExit: {
-                viewModel.endSession(progressStore: progressStore)
-                dismiss()
+            let pages = coachingPages
+            // Overlay sits *inside* the emulator's page closure (mirrors
+            // ExpertNarrationTipPage's ZStack pattern) so both the page
+            // and the overlay are children of the emulator and inherit
+            // its `HUDHoverCoordinator` environmentObject. Rendering the
+            // overlay as a sibling of the emulator left it without the
+            // env and crashed on first hover read.
+            RayBanHUDEmulator(
+              pageCount: pages.count,
+              pageIndex: $coachingPageIndex,
+              showBoundary: debugMode,
+              additiveBlend: hudAdditiveBlend,
+              enableDismissGesture: true
+            ) { idx in
+              ZStack {
+                coachingPageContent(for: pages[min(idx, pages.count - 1)])
+                  // Recede the page so the overlay reads as foreground.
+                  // The strong scale + opacity dip + blur is what
+                  // establishes foreground/background separation; the
+                  // overlay panel itself stays on the standard surface.
+                  .scaleEffect(showDismissConfirmation ? 0.92 : 1.0)
+                  .opacity(showDismissConfirmation ? 0.32 : 1.0)
+                  .blur(radius: showDismissConfirmation ? 6 : 0)
+                  .allowsHitTesting(!showDismissConfirmation)
+
+                if showDismissConfirmation {
+                  CoachingExitConfirmationOverlay(
+                    onCancel: {
+                      withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                        showDismissConfirmation = false
+                      }
+                    },
+                    onConfirm: {
+                      viewModel.endSession(progressStore: progressStore)
+                      dismiss()
+                    }
+                  )
+                  .transition(.scale(scale: 0.88).combined(with: .opacity))
+                  .padding(.horizontal, 32)
+                }
               }
-            )
+              .animation(
+                .spring(response: 0.32, dampingFraction: 0.85),
+                value: showDismissConfirmation
+              )
+            }
           }
         ) {
           stackedBody
@@ -89,18 +130,27 @@ struct CoachingSessionView: View {
       if viewModel.showPiP, transport == .glasses, let clipURL = currentStepClipURL {
         PiPReferenceView(url: clipURL)
       }
+
+      // Hand-tracking dev overlay — landmark dots, pinch-drag cross, event
+      // log. Sits above everything but allows hit-testing through. Reads
+      // from the single shared `HandGestureService` regardless of mode.
+      if debugMode {
+        HandGestureDebugStack(provider: HandGestureService.shared)
+      }
     }
     .preferredColorScheme(.dark)
-    .alert("End Session?", isPresented: $showDismissConfirmation) {
-      Button("Cancel", role: .cancel) {}
-      Button("End", role: .destructive) {
-        viewModel.endSession(progressStore: progressStore)
-        dismiss()
-      }
-    } message: {
-      Text("Your progress will be saved.")
-    }
+    // Exit is now driven by `RayBanHUDEmulator.onLensBackGesture` →
+    // `CoachingExitConfirmationOverlay` rendered inside the lens.
+    // The previous `.alert("End Session?", …)` system dialog has been
+    // retired so the exit flow stays inside the Ray-Ban aesthetic.
     .onAppear {
+      // Double index-finger pinch ("back" gesture) → exit confirmation,
+      // same destination as the dev finger-double-tap on lens background.
+      viewModel.onBackGesture = {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+          showDismissConfirmation = true
+        }
+      }
       viewModel.startSession(progressStore: progressStore, startingStep: startingStep)
       if transport == .iPhone {
         // Broaden the allowed orientation mask so the user can naturally
@@ -132,6 +182,15 @@ struct CoachingSessionView: View {
       let resolved = resolveInterfaceOrientation()
       currentInterfaceOrientation = resolved
       viewModel.setPreviewInterfaceOrientation(resolved)
+    }
+    // Reset to the step page on every step transition so the user doesn't
+    // get stranded on a stale insights/clip page from the previous step.
+    .onChange(of: viewModel.currentStepIndex) { _, _ in
+      coachingPageIndex = 0
+    }
+    // Completion collapses the page list to a single page; clamp to 0.
+    .onChange(of: viewModel.isCompleted) { _, _ in
+      coachingPageIndex = 0
     }
   }
 
@@ -251,8 +310,14 @@ struct CoachingSessionView: View {
 
   private var topBar: some View {
     HStack {
+      // Drawer-side exit affordance — mirrors the Troubleshoot pattern.
+      // Routes to the same in-lens exit-confirmation overlay as the
+      // double-pinch / lens double-tap, so all three exit triggers
+      // converge on the same UX.
       Button {
-        showDismissConfirmation = true
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+          showDismissConfirmation = true
+        }
       } label: {
         Image(systemName: "xmark")
           .font(.system(size: 14, weight: .semibold))
@@ -354,9 +419,10 @@ struct CoachingSessionView: View {
           .foregroundColor(viewModel.isMuted ? .textTertiary : .textPrimary)
 
         if !viewModel.isMuted {
-          SoundWaveView(
-            isActive: viewModel.isAISpeaking,
-            color: .textPrimary
+          RetraceAudioMeter(
+            peak: viewModel.aiOutputPeak,
+            tint: .textPrimary,
+            intensity: .standard
           )
         } else {
           Text("Muted")
@@ -384,19 +450,6 @@ struct CoachingSessionView: View {
         viewModel.showPiP.toggle()
       }
 
-      VStack(spacing: Spacing.xs) {
-        Image(systemName: showGestureDebug ? "ladybug.fill" : "ladybug")
-          .font(.system(size: 20))
-          .foregroundColor(showGestureDebug ? .appPrimary : .textPrimary)
-        Text("Debug")
-          .font(.system(size: 10))
-          .foregroundColor(.textSecondary)
-      }
-      .frame(maxWidth: .infinity)
-      .contentShape(Rectangle())
-      .onTapGesture {
-        showGestureDebug.toggle()
-      }
     }
     .padding(.vertical, Spacing.lg)
     .padding(.horizontal, Spacing.xl)
@@ -457,6 +510,49 @@ struct CoachingSessionView: View {
           let clipUrl = step.clipUrl else { return nil }
     return URL(string: "\(serverBaseURL)\(clipUrl)")
   }
+
+  // MARK: - Ray-Ban emulator pages
+
+  /// Ordered list of pages the lens emulator paginates through. Today
+  /// always one page: the step page during an active procedure, the
+  /// completion page when the procedure ends. Reference clip + insights
+  /// are no longer separate pages — they live inside `CoachingStepPage`
+  /// as in-page expandable panels driven by the top-row toggle buttons.
+  private var coachingPages: [CoachingPageKind] {
+    viewModel.isCompleted ? [.completion] : [.step]
+  }
+
+  @ViewBuilder
+  private func coachingPageContent(for kind: CoachingPageKind) -> some View {
+    switch kind {
+    case .step:
+      CoachingStepPage(
+        viewModel: viewModel,
+        stepCount: procedure.steps.count,
+        clipURL: currentStepClipURL,
+        onShowExitConfirmation: {
+          withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+            showDismissConfirmation = true
+          }
+        }
+      )
+    case .completion:
+      CoachingCompletionPage(onExit: handleExit)
+    }
+  }
+
+  private func handleExit() {
+    viewModel.endSession(progressStore: progressStore)
+    dismiss()
+  }
+}
+
+/// Page identity for the Coaching lens. Kept here (not in the page files
+/// themselves) so the parent view fully owns the page list and the
+/// per-mode inclusion logic.
+enum CoachingPageKind: Hashable {
+  case step
+  case completion
 }
 
 // MARK: - Activity Row

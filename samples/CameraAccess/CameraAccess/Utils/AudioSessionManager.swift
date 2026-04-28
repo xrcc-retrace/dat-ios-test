@@ -29,6 +29,13 @@ class AudioSessionManager: ObservableObject {
   /// the buffer in `recordCapturedBuffer`); the HUD smooths it further.
   @Published var lastBufferPeak: Float = 0
 
+  /// EMA-smoothed peak amplitude of the AI's voice output, in `0...1`.
+  /// Updated each time a Gemini Live PCM buffer is scheduled to the player
+  /// node, then reset to 0 when the queue empties (the consuming meter's
+  /// own rolling buffer handles the visual fade-out). Drives the audio
+  /// meter in coaching + troubleshoot.
+  @Published var aiOutputPeak: Float = 0
+
   let mode: AudioSessionMode
 
   private let engine = AVAudioEngine()
@@ -415,6 +422,7 @@ class AudioSessionManager: ObservableObject {
     onAudioBuffer = nil  // drop any capture handler so trailing taps can't fire
     onAudioBufferSecondary = nil
     lastBufferPeak = 0
+    aiOutputPeak = 0
     stopStatsTimer()
     audioConverter = nil
     converterInputFormat = nil
@@ -588,10 +596,21 @@ class AudioSessionManager: ObservableObject {
       memcpy(buffer.int16ChannelData![0], base, data.count)
     }
 
+    // Sample the buffer's amplitude here so the audio meter responds to
+    // the AI's actual voice volume. Cheap one-pass scan, same primitive
+    // used on the input path.
+    let rawPeak = Self.peakAmplitude(of: buffer)
+
     scheduledBufferCount += 1
     Task { @MainActor [weak self] in
       guard let self = self else { return }
       self.isAISpeaking = true
+      // EMA: fast attack (0.6) so the meter spikes immediately when AI
+      // starts a phoneme; slower release (0.2) so it doesn't strobe in
+      // the silences between syllables. The consuming meter additionally
+      // smooths via its own rolling buffer.
+      let alpha: Float = rawPeak > self.aiOutputPeak ? 0.6 : 0.2
+      self.aiOutputPeak += alpha * (rawPeak - self.aiOutputPeak)
     }
 
     playerNode.scheduleBuffer(buffer) { [weak self] in
@@ -601,6 +620,9 @@ class AudioSessionManager: ObservableObject {
         if self.scheduledBufferCount <= 0 {
           self.scheduledBufferCount = 0
           self.isAISpeaking = false
+          // Hand off to the meter's roll-off — set source to 0 and the
+          // meter's rolling buffer drains over ~630 ms.
+          self.aiOutputPeak = 0
         }
       }
     }
@@ -615,6 +637,7 @@ class AudioSessionManager: ObservableObject {
     playerNode.stop()
     scheduledBufferCount = 0
     isAISpeaking = false
+    aiOutputPeak = 0
     // Only re-prime the player if the engine is still running. Barge-in can
     // fire after stopCapture() has torn the engine down; calling
     // playerNode.play() on a stopped engine is a no-op that logs an

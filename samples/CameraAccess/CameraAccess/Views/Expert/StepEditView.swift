@@ -87,15 +87,36 @@ struct StepEditView: View {
               )
           }
 
-          // Clip preview
+          // Clip preview (video) or reference image (manual-derived step)
           if let clipUrl = step.clipUrl,
              let url = URL(string: "\(api.baseURL)\(clipUrl)") {
+            let isImage = ["png", "jpg", "jpeg"].contains(url.pathExtension.lowercased())
             VStack(alignment: .leading, spacing: Spacing.md) {
-              Text("CLIP PREVIEW")
+              Text(isImage ? "REFERENCE IMAGE" : "CLIP PREVIEW")
                 .font(.retraceOverline)
                 .tracking(0.5)
                 .foregroundColor(.textSecondary)
-              StepClipPlayer(url: url)
+              if isImage {
+                AsyncImage(url: url) { phase in
+                  switch phase {
+                  case .success(let image):
+                    image.resizable().aspectRatio(contentMode: .fit)
+                  case .failure:
+                    Color.surfaceRaised.overlay(
+                      Image(systemName: "doc.fill")
+                        .foregroundColor(.textSecondary)
+                    )
+                  case .empty:
+                    Color.surfaceRaised.overlay(ProgressView())
+                  @unknown default:
+                    Color.surfaceRaised
+                  }
+                }
+                .frame(maxWidth: .infinity)
+                .cornerRadius(Radius.md)
+              } else {
+                StepClipPlayer(url: url)
+              }
             }
           }
 

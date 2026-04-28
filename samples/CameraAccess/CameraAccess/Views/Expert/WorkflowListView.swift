@@ -54,9 +54,9 @@ struct WorkflowListView: View {
 
   private var emptyState: some View {
     EmptyStateView(
-      icon: "video.badge.plus",
+      icon: "doc.badge.plus",
       title: "No workflows yet",
-      message: "Record your first procedure using your\nglasses or upload a video"
+      message: "Record with glasses or iPhone, upload\na video, or import a product manual"
     )
   }
 
@@ -83,7 +83,9 @@ struct WorkflowListView: View {
               stepCount: procedure.stepCount ?? 0,
               duration: procedure.totalDuration,
               createdAt: procedure.createdAt,
-              status: procedure.status
+              status: procedure.status,
+              iconSymbol: procedure.iconSymbol,
+              iconEmoji: procedure.iconEmoji
             )
           }
           .padding(.horizontal, Spacing.screenPadding)

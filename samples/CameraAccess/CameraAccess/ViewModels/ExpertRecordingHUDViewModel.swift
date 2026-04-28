@@ -74,68 +74,27 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   @Published private(set) var transcriptAvailable: Bool = false
 
   // MARK: - Hand tracking
-
-  /// Latest MediaPipe landmark frame. Drives the on-HUD landmark overlay.
-  /// Nil while the camera is off or no hand has been detected yet. Mirrors
-  /// `GeminiLiveSessionBase.latestHandFrame` for the Learner HUD.
-  @Published private(set) var latestHandFrame: HandLandmarkFrame?
-
-  /// Rolling log of recent pinch-drag emissions. Drives `MicroGestureDebugLog`.
-  @Published private(set) var recentPinchDragEvents: [PinchDragLogEntry] = []
-
-  /// Private recognizer — one instance per camera session. Reset on
-  /// `resetHandTracking()` so no stale TRACKING state survives a teardown.
-  /// Production overrides `releaseDebounceFrames` to 3 (default in
-  /// `Config()` is 1 to keep unit tests deterministic).
-  private var pinchDragRecognizer = PinchDragRecognizer(
-    config: ExpertRecordingHUDViewModel.productionConfig
-  )
-
-  private static var productionConfig: PinchDragRecognizer.Config {
-    var c = PinchDragRecognizer.Config()
-    c.releaseDebounceFrames = 3
-    return c
-  }
-
-  private let pinchDragLogMaxHistory: Int = 50
-
-  /// Wall-clock timestamp of the most recent `[Orient]` console log.
-  /// Used to throttle orientation logging to ~1 line / second while
-  /// calibrating the upcoming pose-gate.
-  private var lastOrientationLogAt: Date?
-
-  // Threshold passthroughs for the debug overlay (match Learner HUD exactly).
-  var indexPinchContactRatio: Float {
-    PinchDragRecognizer.Config().indexContactRatio
-  }
-  var gatePalmFacingZMin: Float {
-    PinchDragRecognizer.Config().gatePalmFacingZMin
-  }
-  var gatePalmFacingZMax: Float {
-    PinchDragRecognizer.Config().gatePalmFacingZMax
-  }
-  var gateHandSizeMin: Float {
-    PinchDragRecognizer.Config().gateHandSizeMin
-  }
-  var pendingSelectActive: Bool {
-    pinchDragRecognizer.debugState.pendingSelectActive
-  }
-  var currentHighlightQuadrant: PinchDragQuadrant? {
-    pinchDragRecognizer.debugState.currentHighlightQuadrant
-  }
-  var lastContactStartPosition: CGPoint? {
-    pinchDragRecognizer.lastContactStartPosition
-  }
-  var lastContactReleasePosition: CGPoint? {
-    pinchDragRecognizer.lastContactReleasePosition
-  }
+  //
+  // Recognizer + frame log + debug-provider plumbing all live on
+  // `HandGestureService.shared` now. We just route MediaPipe results
+  // into it via `ingestHandFrame(_:)` (called by
+  // `IPhoneExpertRecordingViewModel` from its `HandLandmarkerService.onResult`).
+  //
+  // Tip cycling on pinch-drag left/right used to live here on the
+  // service's `onEvent` hook. It moved into the focus engine — see
+  // `ExpertTipPageHandler` (installed by `ExpertNarrationTipPage` via
+  // `.hudInputHandler`). The handler responds to `.directional(.left)`
+  // / `.directional(.right)` (which the translator generates from
+  // pinch-drag highlights) and calls `advanceTip()` / `retreatTip()`
+  // directly. Keeping the legacy hook in parallel would double-fire
+  // (highlight on quadrant entry → handler; terminal on release →
+  // legacy hook) for the same physical gesture.
 
   // MARK: - Wiring
 
   private weak var audioSessionManager: AudioSessionManager?
   private weak var speechTranscriber: SpeechTranscriber?
 
-  private var rotationTask: Task<Void, Never>?
   private var audioCancellable: AnyCancellable?
   private var transcriptCancellable: AnyCancellable?
   private var transcriptAvailableCancellable: AnyCancellable?
@@ -147,7 +106,6 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   }
 
   deinit {
-    rotationTask?.cancel()
     if let routeObserver {
       NotificationCenter.default.removeObserver(routeObserver)
     }
@@ -184,107 +142,39 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
     recomputeMicSource()
   }
 
-  // MARK: - Tip rotation
+  // MARK: - Tip cycling
 
-  /// Start the 12 s auto-advance loop. Safe to call repeatedly.
-  func startTipRotation() {
-    rotationTask?.cancel()
-    rotationTask = Task { [weak self] in
-      while !Task.isCancelled {
-        try? await Task.sleep(
-          nanoseconds: UInt64(ExpertCoachingTips.autoAdvanceInterval * 1_000_000_000)
-        )
-        guard !Task.isCancelled else { return }
-        await self?.advanceTip()
-      }
-    }
-  }
-
-  func stopTipRotation() {
-    rotationTask?.cancel()
-    rotationTask = nil
-  }
-
-  /// Advance to the next tip, wrapping. Resets the rotation timer so a manual
-  /// swipe doesn't immediately get overridden by the auto-advance firing.
+  /// Advance to the next tip, wrapping. Driven by user gesture only —
+  /// no auto-rotation timer.
   func advanceTip() {
     tipIndex = (tipIndex + 1) % ExpertCoachingTips.pool.count
-    restartRotationIfActive()
   }
 
   /// Go back one tip, wrapping.
   func retreatTip() {
     tipIndex = (tipIndex - 1 + ExpertCoachingTips.pool.count) % ExpertCoachingTips.pool.count
-    restartRotationIfActive()
-  }
-
-  private func restartRotationIfActive() {
-    guard rotationTask != nil else { return }
-    startTipRotation()
   }
 
   // MARK: - Hand tracking ingestion
 
-  /// Consume a MediaPipe landmark frame. Publishes it for the debug
-  /// overlay and feeds `PinchDragRecognizer`; logs every classified event
-  /// and maps pinch-left / pinch-right to tip cycling so the expert can
-  /// flip through narration reminders without touching the phone.
+  /// Routes a MediaPipe frame into the shared gesture pipeline. The
+  /// service handles `latestHandFrame`, the orientation log, recognizer
+  /// FSM, and event log uniformly across modes. Tip cycling is wired
+  /// in `ExpertTipPageHandler` via the focus engine — no service-level
+  /// `onEvent` hook is set from this VM.
   /// Called on MainActor by `IPhoneExpertRecordingViewModel` after the
   /// MediaPipe delivery queue has handed us a frame.
   func ingestHandFrame(_ frame: HandLandmarkFrame) {
-    latestHandFrame = frame
-
-    // Orientation log — throttled to ~1 line / sec so the console stays
-    // readable. Gives the user ground-truth numbers to paste when
-    // tuning the pose-gate range. Mirrored in GeminiLiveSessionBase for
-    // the Learner path.
-    if let orient = frame.orientation {
-      let now = Date()
-      if lastOrientationLogAt == nil ||
-         now.timeIntervalSince(lastOrientationLogAt!) >= 1.0 {
-        lastOrientationLogAt = now
-        print(String(
-          format: "[Orient] palmAngle=%+7.1f°  palmFacingZ=%+.3f  handSize=%.3f  handedness=%@",
-          orient.palmAngleDegrees,
-          orient.palmFacingZ,
-          orient.handSize,
-          frame.handedness ?? "?"
-        ))
-      }
-    }
-
-    guard let event = pinchDragRecognizer.ingest(frame) else { return }
-
-    recentPinchDragEvents.append(PinchDragLogEntry(event: event))
-    let overflow = recentPinchDragEvents.count - pinchDragLogMaxHistory
-    if overflow > 0 {
-      recentPinchDragEvents.removeFirst(overflow)
-    }
-
-    // Natural mapping — pinch-right advances the tip carousel (same
-    // direction as a physical right-swipe); pinch-left retreats. Every
-    // other event (including highlights, select, cancel, and back) stays
-    // in the log without firing any action; we deliberately don't wire
-    // destructive actions to gestures (e.g. .back → stop recording
-    // would be too easy to trigger accidentally — the hold-to-confirm
-    // pill exists for that specifically).
-    switch event {
-    case .right: advanceTip()
-    case .left: retreatTip()
-    case .select, .cancel, .up, .down, .back,
-         .highlightLeft, .highlightRight, .highlightUp, .highlightDown:
-      break
-    }
+    HandGestureService.shared.ingest(frame)
   }
 
-  /// Reset the recognizer + clear the landmark state. Call from the owning
-  /// VM when a new camera session is being brought up (or torn down), so
-  /// stale TRACKING state from a prior run can't carry over.
+  /// Reset the shared gesture service. Called from the owning VM when
+  /// a new camera session is being brought up (or torn down), so stale
+  /// recognizer state from a prior run can't carry over. Also clears
+  /// any `onEvent` closure another mode may have left behind.
   func resetHandTracking() {
-    pinchDragRecognizer = PinchDragRecognizer(config: Self.productionConfig)
-    latestHandFrame = nil
-    recentPinchDragEvents.removeAll()
-    lastOrientationLogAt = nil
+    HandGestureService.shared.reset()
+    HandGestureService.shared.onEvent = nil
   }
 
   // MARK: - Audio peak smoothing
@@ -334,7 +224,6 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
 }
 
 // Marker conformance — all `HandGestureDebugProvider` requirements are
-// already implemented above. Lets `HandGestureDebugStack` drive off the
-// Expert HUD VM just like the session-base-backed Coaching and
-// Troubleshoot VMs.
-extension ExpertRecordingHUDViewModel: HandGestureDebugProvider {}
+// `HandGestureDebugProvider` conformance now lives on `HandGestureService`,
+// not the VM. Views pass `HandGestureService.shared` as the provider.
+// See `HandTracking/HandGestureService.swift`.

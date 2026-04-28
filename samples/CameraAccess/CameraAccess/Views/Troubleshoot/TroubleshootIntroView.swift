@@ -28,56 +28,72 @@ struct TroubleshootIntroView: View {
   @State private var presentedTransport: CaptureTransport?
   @State private var showRegistrationSheet = false
   @State private var showGlassesInactiveSheet = false
+  @State private var showTransportPicker = false
+  @State private var pendingTransport: CaptureTransport?
 
   var body: some View {
-    RetraceScreen {
-      VStack(spacing: Spacing.section) {
-        topBar
+    NavigationStack {
+      RetraceScreen {
+        VStack(alignment: .leading, spacing: Spacing.section) {
+          Spacer(minLength: Spacing.xl)
 
-        VStack(spacing: Spacing.lg) {
-          Image(systemName: "stethoscope")
-            .font(.system(size: 44))
-            .foregroundColor(.textPrimary)
-            .padding(.top, Spacing.xl)
-
-          Text("Troubleshoot")
-            .font(.retraceTitle2)
-            .foregroundColor(.textPrimary)
-
-          Text("Show the problem, describe it out loud, and I'll walk you to the fix.")
-            .font(.retraceCallout)
-            .foregroundColor(.textSecondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, Spacing.xl)
-        }
-
-        Spacer()
-
-        VStack(spacing: Spacing.xl) {
-          ModeCard(
-            icon: "eyeglasses",
-            title: "Troubleshoot with Glasses",
-            subtitle: "Show me through your Ray-Ban Meta glasses",
-            isEnabled: true
-          ) {
-            launchGlasses()
+          VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text("Fix a problem")
+              .font(.retraceTitle1)
+              .foregroundColor(.textPrimary)
+            Text("Point your camera at the device. Gemini identifies it, finds the fix, and walks you through it.")
+              .font(.retraceCallout)
+              .foregroundColor(.textSecondary)
+              .fixedSize(horizontal: false, vertical: true)
           }
 
-          ModeCard(
-            icon: "iphone",
-            title: "Troubleshoot with iPhone",
-            subtitle: "Use your iPhone camera and mic",
-            isEnabled: true
-          ) {
-            presentedTransport = .iPhone
-          }
-        }
+          TroubleshootFlowSummary()
 
-        Spacer()
+          AccentedHeroCard(
+            icon: "stethoscope",
+            title: "Diagnose Live",
+            subtitle: "Show the device on camera and describe what's wrong."
+          ) {
+            showTransportPicker = true
+          }
+
+          Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Spacing.screenPadding)
       }
-      .padding(.horizontal, Spacing.screenPadding)
+      .navigationTitle("Troubleshoot")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .topBarLeading) {
+          Button {
+            onExit()
+          } label: {
+            Image(systemName: "chevron.backward")
+              .foregroundColor(.textPrimary)
+          }
+        }
+      }
+      .retraceNavBar()
     }
     .preferredColorScheme(.dark)
+    // Transport picker. Routing happens in onDismiss so we don't try to
+    // present a registration / inactive sheet on top of the picker
+    // mid-dismissal — same pattern as RecordTabView.
+    .sheet(
+      isPresented: $showTransportPicker,
+      onDismiss: { handlePickedTransport() }
+    ) {
+      CaptureTransportPickerSheet(
+        title: "How do you want to diagnose?",
+        subtitle: nil,
+        glassesActionLabel: "Diagnose with Glasses",
+        iPhoneActionLabel: "Diagnose with iPhone",
+        onSelect: { transport in
+          pendingTransport = transport
+        }
+      )
+    }
     .fullScreenCover(item: $presentedTransport) { transport in
       TroubleshootSessionView(
         wearables: wearables,
@@ -105,26 +121,20 @@ struct TroubleshootIntroView: View {
     }
   }
 
-  // MARK: - Top bar
-
-  private var topBar: some View {
-    HStack {
-      Button {
-        onExit()
-      } label: {
-        Image(systemName: "chevron.left")
-          .font(.system(size: 16, weight: .semibold))
-          .foregroundColor(.textPrimary)
-          .frame(width: 36, height: 36)
-          .glassPanel(cornerRadius: 18)
-      }
-      Spacer()
-    }
-    .padding(.horizontal, Spacing.xxl)
-    .padding(.top, Spacing.md)
-  }
-
   // MARK: - Glasses gating
+
+  // Routes the user's transport choice after the picker sheet finishes
+  // dismissing. Mirrors RecordTabView.handlePickedTransport().
+  private func handlePickedTransport() {
+    guard let transport = pendingTransport else { return }
+    pendingTransport = nil
+    switch transport {
+    case .glasses:
+      launchGlasses()
+    case .iPhone:
+      presentedTransport = .iPhone
+    }
+  }
 
   private func launchGlasses() {
     // Three-way gate, identical to LearnerProcedureDetailView.freshCTAs.

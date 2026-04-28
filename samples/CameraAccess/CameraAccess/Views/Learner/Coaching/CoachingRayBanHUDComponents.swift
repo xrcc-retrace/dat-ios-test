@@ -53,46 +53,8 @@ struct RayBanHUDInsightsChip: View {
   }
 }
 
-struct RayBanHUDExitPill: View {
-  let isSelected: () -> Bool
-  let onHoldStart: () -> Void
-  let onHoldEnd: () -> Void
-
-  var body: some View {
-    HStack(spacing: 10) {
-      Image(systemName: "rectangle.portrait.and.arrow.forward")
-        .font(.system(size: 20, weight: .medium))
-
-      Text("Exit workflow")
-        .font(.inter(.medium, size: 14))
-    }
-    .foregroundStyle(Color.white.opacity(0.98))
-    .frame(maxWidth: .infinity)
-    .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 12)
-    .rayBanHUDPanel(shape: .capsule)
-    .frame(maxWidth: RayBanHUDLayoutTokens.exitPillMaxWidth)
-    .hoverSelectable(.exitWorkflow, shape: .capsule, behavior: .selectOnly) {}
-    .simultaneousGesture(
-      DragGesture(minimumDistance: 0)
-        .onChanged { _ in
-          guard isSelected() else { return }
-          onHoldStart()
-        }
-        .onEnded { _ in
-          onHoldEnd()
-        }
-    )
-  }
-}
-
 struct RayBanHUDStepCard: View {
   let mode: RayBanHUDStepCardMode
-  let horizontalOffset: CGFloat
-  let onConfirm: () -> Void
-  let onDragChanged: (DragGesture.Value) -> Void
-  let onDragEnded: (DragGesture.Value) -> Void
-  let isSwipeEnabled: Bool
 
   @State private var selectedInsightCategory: InsightCategory?
 
@@ -101,20 +63,7 @@ struct RayBanHUDStepCard: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(RayBanHUDLayoutTokens.contentPadding)
       .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-      .modifier(StepCardHoverModifier(isInteractive: isContentMode, onConfirm: onConfirm))
       .contentShape(RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous))
-      .offset(x: horizontalOffset)
-      .simultaneousGesture(
-        DragGesture(minimumDistance: RayBanHUDLayoutTokens.stepSwipeMinimumDistance)
-          .onChanged { value in
-            guard isSwipeEnabled, isContentMode else { return }
-            onDragChanged(value)
-          }
-          .onEnded { value in
-            guard isSwipeEnabled, isContentMode else { return }
-            onDragEnded(value)
-          }
-      )
       .onChange(of: stepIdentityKey) { _, _ in
         selectedInsightCategory = nil
       }
@@ -285,13 +234,6 @@ struct RayBanHUDStepCard: View {
     }
   }
 
-  private var isContentMode: Bool {
-    if case .content = mode {
-      return true
-    }
-    return false
-  }
-
   private var stepIdentityKey: Int {
     switch mode {
     case .content(let stepIndex, _, _, _):
@@ -302,17 +244,32 @@ struct RayBanHUDStepCard: View {
   }
 }
 
+/// The expanded reference-clip surface on the Coaching step page.
+///
+/// Owns the `AVPlayer` so the surrounding focus engine can toggle
+/// playback via the registered `.hoverSelectable` confirm closure —
+/// pinch-select and touch tap both route through `togglePlayback`.
+/// The play overlay is visible when `player == nil` OR `isPlaying ==
+/// false`, giving the user a clear "select to resume" affordance while
+/// paused.
+///
+/// When `clipURL` flips to a different value (e.g., the step
+/// advances), the player is torn down so the next expansion gets a
+/// fresh AVPlayer at position 0 — no audio leaking from a prior step.
+///
+/// Photo references are not yet a server feature; if a future caller
+/// passes a non-video URL, `togglePlayback` is a no-op and the panel
+/// will need a media-type-aware sub-view (see plan).
 struct RayBanHUDDetailPanel: View {
   let clipURL: URL?
-  let onConfirm: () -> Void
+
+  @State private var player: AVPlayer?
+  @State private var isPlaying: Bool = false
 
   var body: some View {
     Group {
       if let clipURL {
-        RayBanHUDReferenceClipPlayer(
-          url: clipURL,
-          cornerRadius: RayBanHUDLayoutTokens.cardRadius
-        )
+        clipView(url: clipURL)
       } else {
         noClipPlaceholder
       }
@@ -323,83 +280,84 @@ struct RayBanHUDDetailPanel: View {
       RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous)
     )
     .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-    .hoverSelectable(.detailCollapse, shape: .rounded(RayBanHUDLayoutTokens.cardRadius), onConfirm: onConfirm)
+    .hoverSelectable(
+      .referenceClip,
+      shape: .rounded(RayBanHUDLayoutTokens.cardRadius),
+      onConfirm: togglePlayback
+    )
+    // Fresh player whenever the underlying URL changes — step advance,
+    // step retreat, or any other case where the parent passes a new
+    // clip. SwiftUI keeps the same panel instance across these changes,
+    // so we have to clear state explicitly.
+    .onChange(of: clipURL) { _, _ in
+      player?.pause()
+      player = nil
+      isPlaying = false
+    }
+  }
+
+  @ViewBuilder
+  private func clipView(url: URL) -> some View {
+    ZStack {
+      if let player {
+        VideoPlayer(player: player)
+      } else {
+        VideoThumbnailView(url: url)
+      }
+
+      if !isPlaying {
+        Image(systemName: "play.circle.fill")
+          .font(.system(size: 42, weight: .regular))
+          .foregroundStyle(Color.white.opacity(0.92))
+          .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
+          .allowsHitTesting(false)
+      }
+    }
   }
 
   private var noClipPlaceholder: some View {
     ZStack {
       Color.black.opacity(0.28)
 
-      VStack(spacing: 10) {
-        Image(systemName: "film.stack")
-          .font(.system(size: 20, weight: .medium))
+      VStack(spacing: 6) {
+        Image(systemName: "rectangle.slash")
+          .font(.system(size: 22, weight: .medium))
           .foregroundStyle(Color.white.opacity(0.78))
+          .padding(.bottom, 4)
 
-        Text("No reference clip for this step")
-          .font(.inter(.medium, size: 14))
+        Text("No reference")
+          .font(.inter(.bold, size: 16))
           .foregroundStyle(Color.white.opacity(0.82))
+
+        Text("This step is instructional only.")
+          .font(.inter(.medium, size: 12))
+          .foregroundStyle(Color.white.opacity(0.62))
       }
       .multilineTextAlignment(.center)
       .padding(RayBanHUDLayoutTokens.contentPadding)
     }
   }
-}
 
-struct RayBanHUDExitOverlay: View {
-  let progress: CGFloat
-  let onCancel: () -> Void
-
-  var body: some View {
-    VStack {
-      Spacer(minLength: 0)
-
-      VStack(alignment: .leading, spacing: 16) {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-          Text("Exit workflow")
-            .font(.inter(.bold, size: 20))
-            .foregroundStyle(Color.white.opacity(0.98))
-
-          Spacer(minLength: 0)
-
-          Text("\(remainingSeconds) sec left")
-            .font(.inter(.medium, size: 12))
-            .foregroundStyle(Color.white.opacity(0.92))
-        }
-
-        GeometryReader { geometry in
-          ZStack(alignment: .leading) {
-            Capsule()
-              .fill(Color.black.opacity(0.35))
-
-            Capsule()
-              .fill(Color(red: 1.0, green: 0.76, blue: 0.11))
-              .frame(width: geometry.size.width * clampedProgress)
-          }
-        }
-        .frame(height: 5)
-      }
-      .padding(RayBanHUDLayoutTokens.contentPadding)
-      .frame(maxWidth: .infinity)
-      .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-      .contentShape(
-        RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous)
-      )
-      .onTapGesture(perform: onCancel)
-
-      Spacer(minLength: 0)
+  /// Toggle play/pause. First select on a fresh panel constructs the
+  /// AVPlayer and starts playback. Subsequent selects flip between
+  /// play and pause. No-op when there's no clip URL (placeholder
+  /// state) or when a non-video URL is passed (forward-looking guard
+  /// — currently not exercised since the server only emits MP4s).
+  private func togglePlayback() {
+    guard let url = clipURL else { return }
+    if player == nil {
+      let p = AVPlayer(url: url)
+      player = p
+      p.play()
+      isPlaying = true
+      return
     }
-  }
-
-  private var clampedProgress: CGFloat {
-    max(0, min(progress, 1))
-  }
-
-  private var remainingSeconds: Int {
-    let remaining = max(
-      0,
-      RayBanHUDLayoutTokens.exitHoldDuration - (RayBanHUDLayoutTokens.exitHoldDuration * Double(clampedProgress))
-    )
-    return Int(ceil(remaining))
+    if isPlaying {
+      player?.pause()
+    } else {
+      player?.play()
+    }
+    isPlaying.toggle()
   }
 }
 
@@ -469,51 +427,3 @@ struct RayBanHUDCompletionActionCard: View {
   }
 }
 
-private struct StepCardHoverModifier: ViewModifier {
-  let isInteractive: Bool
-  let onConfirm: () -> Void
-
-  @ViewBuilder
-  func body(content: Content) -> some View {
-    if isInteractive {
-      content.hoverSelectable(
-        .stepCard,
-        shape: .rounded(RayBanHUDLayoutTokens.cardRadius),
-        onConfirm: onConfirm
-      )
-    } else {
-      content
-    }
-  }
-}
-
-private struct RayBanHUDReferenceClipPlayer: View {
-  let url: URL
-  let cornerRadius: CGFloat
-
-  @State private var player: AVPlayer?
-
-  var body: some View {
-    ZStack {
-      if let player {
-        VideoPlayer(player: player)
-      } else {
-        ZStack {
-          VideoThumbnailView(url: url)
-
-          Button {
-            let player = AVPlayer(url: url)
-            self.player = player
-            player.play()
-          } label: {
-            Image(systemName: "play.circle.fill")
-              .font(.system(size: 42, weight: .regular))
-              .foregroundStyle(Color.white.opacity(0.92))
-              .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
-          }
-        }
-      }
-    }
-    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-  }
-}

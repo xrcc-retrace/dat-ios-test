@@ -90,11 +90,15 @@ struct ModeSelectionView: View {
                 .padding(.top, Spacing.jumbo)
 
               Spacer(minLength: Spacing.section)
+
+              versionFooter
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Spacing.screenPadding)
             .padding(.bottom, Spacing.jumbo)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .containerRelativeFrame(.vertical, alignment: .top)
           }
+          .scrollBounceBehavior(.always, axes: .vertical)
         }
       }
       .toolbar {
@@ -151,6 +155,14 @@ private extension ModeSelectionView {
     }
   }
 
+  var versionFooter: some View {
+    Text("Retrace v1.0")
+      .font(.system(size: 11, weight: .regular))
+      .foregroundColor(.textSecondary.opacity(0.45))
+      .tracking(0.4)
+      .frame(maxWidth: .infinity, alignment: .center)
+  }
+
   var greeting: String {
     let hour = Calendar.current.component(.hour, from: Date())
     switch hour {
@@ -188,8 +200,10 @@ private struct EntryBackdropView: View {
   private let pixelScale: Float = 1.0
 
   // Anchor for relative time. Using timeIntervalSinceReferenceDate would
-  // overflow Float precision (~7.7e8) and freeze the animation.
-  private let startDate = Date()
+  // overflow Float precision (~7.7e8) and freeze the animation. @State so
+  // the anchor survives parent re-renders (tab push/pop) — otherwise
+  // elapsed snaps back to 0 each time and the shader jitters.
+  @State private var startDate = Date()
 
   var body: some View {
     TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: false)) { context in

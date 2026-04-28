@@ -65,7 +65,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       audioSessionManager: audioSessionManager,
       speechTranscriber: speechTranscriber
     )
-    hudViewModel.startTipRotation()
   }
 
   var previewLayer: AVCaptureVideoPreviewLayer {
@@ -129,8 +128,11 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       return
     }
 
-    // Fresh recognizer state + cleared debug log per camera session so no
-    // stale TRACKING state carries over from a prior recording view.
+    // Fresh recognizer state + cleared debug log per camera session so
+    // no stale TRACKING state carries over from a prior recording view.
+    // Tip cycling is now installed by the focus engine (see
+    // `ExpertTipPageHandler` on `ExpertNarrationTipPage`), not via a
+    // service-level `onEvent` hook.
     hudViewModel.resetHandTracking()
 
     let service = HandLandmarkerService()
@@ -218,7 +220,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
     isPreviewLive = false
     audioSessionManager.removeSecondaryAudioConsumer()
     speechTranscriber.stop()
-    hudViewModel.stopTipRotation()
   }
 
   // MARK: - Error surfacing

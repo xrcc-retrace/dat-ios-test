@@ -10,6 +10,10 @@ struct DiscoverView: View {
   @State private var showSearch = false
   // Swipe-to-dismiss offset for the resume card. Negative only (leftward).
   @State private var resumeDragOffset: CGFloat = 0
+  // Direction of the procedure-list slide animation when the chip strip
+  // changes. Forward (true) means the new chip is to the right of the
+  // previous one, so the new list slides in from the trailing edge.
+  @State private var slideForward: Bool = true
 
   var body: some View {
     RetraceScreen {
@@ -24,22 +28,27 @@ struct DiscoverView: View {
 
           categoryChips
 
-          if viewModel.isLoading && viewModel.procedures.isEmpty {
-            HStack {
-              Spacer()
-              ProgressView()
-                .tint(.textPrimary)
-              Spacer()
-            }
-            .padding(.top, Spacing.jumbo)
-          } else if viewModel.filteredProcedures.isEmpty {
-            emptyState
-          } else {
-            procedureList
-          }
+          animatedContent
+            // Re-mount whenever the chip changes so SwiftUI runs the
+            // transition. Search-query changes mutate the same list in
+            // place (no re-mount, no animation) which is what we want.
+            .id(viewModel.selectedCategory)
+            .transition(.asymmetric(
+              insertion: .move(edge: slideForward ? .trailing : .leading)
+                .combined(with: .opacity),
+              removal: .move(edge: slideForward ? .leading : .trailing)
+                .combined(with: .opacity)
+            ))
         }
         .padding(.bottom, Spacing.screenPadding)
+        // Driving the animation off `selectedCategory` keeps search-typing
+        // (which mutates `filteredProcedures` without changing identity)
+        // animation-free, while chip taps trigger the slide.
+        .animation(.smooth(duration: 0.28), value: viewModel.selectedCategory)
       }
+      // Keep the slide visually contained — without this the off-screen
+      // copy of the list briefly draws outside the ScrollView bounds.
+      .clipped()
     }
     .navigationTitle("Procedures")
     .navigationBarTitleDisplayMode(.inline)
@@ -198,11 +207,44 @@ struct DiscoverView: View {
             title: category,
             isSelected: viewModel.selectedCategory == category
           ) {
-            viewModel.selectedCategory = category
+            selectCategory(category)
           }
         }
       }
       .padding(.horizontal, Spacing.screenPadding)
+    }
+  }
+
+  /// Compute slide direction from the chip strip ordering, then commit
+  /// the new category. The matching `.animation(value:)` on the content
+  /// wrapper picks it up.
+  private func selectCategory(_ category: String) {
+    guard category != viewModel.selectedCategory else { return }
+    let oldIndex = viewModel.categories.firstIndex(of: viewModel.selectedCategory) ?? 0
+    let newIndex = viewModel.categories.firstIndex(of: category) ?? 0
+    slideForward = newIndex >= oldIndex
+    viewModel.selectedCategory = category
+  }
+
+  // MARK: - Animated content
+
+  /// The slot that animates between loading / empty / list states.
+  /// Wrapped in a Group so the `.id(selectedCategory)` modifier outside
+  /// can re-mount the whole subtree on chip changes.
+  @ViewBuilder
+  private var animatedContent: some View {
+    if viewModel.isLoading && viewModel.procedures.isEmpty {
+      HStack {
+        Spacer()
+        ProgressView()
+          .tint(.textPrimary)
+        Spacer()
+      }
+      .padding(.top, Spacing.jumbo)
+    } else if viewModel.filteredProcedures.isEmpty {
+      emptyState
+    } else {
+      procedureList
     }
   }
 
@@ -236,7 +278,9 @@ struct DiscoverView: View {
             stepCount: procedure.stepCount ?? 0,
             duration: procedure.totalDuration,
             createdAt: procedure.createdAt,
-            status: procedure.status
+            status: procedure.status,
+            iconSymbol: procedure.iconSymbol,
+            iconEmoji: procedure.iconEmoji
           )
         }
       }

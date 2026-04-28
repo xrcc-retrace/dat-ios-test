@@ -276,6 +276,55 @@ class ProcedureAPIService: ObservableObject {
     return try decoder.decode(ManualStatusResponse.self, from: data)
   }
 
+  // MARK: - Expert manual upload
+
+  /// Upload a PDF manual through the Expert flow. Server runs end-to-end
+  /// SOP extraction (not fault-scoped like the troubleshoot path), renders
+  /// per-step reference images from the PDF, and returns a `manual_id`
+  /// for polling.
+  func uploadExpertManual(pdfURL: URL, productName: String) async throws -> ManualUploadResponse {
+    guard let url = URL(string: "\(serverBaseURL)/api/expert/manuals/upload") else {
+      throw APIError.invalidURL
+    }
+    let pdfData = try Data(contentsOf: pdfURL)
+    let boundary = "Boundary-\(UUID().uuidString)"
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+    request.timeoutInterval = 600
+
+    var body = Data()
+    let filename = pdfURL.lastPathComponent
+    let crlf = "\r\n"
+
+    body.append("--\(boundary)\(crlf)".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"pdf\"; filename=\"\(filename)\"\(crlf)".data(using: .utf8)!)
+    body.append("Content-Type: application/pdf\(crlf)\(crlf)".data(using: .utf8)!)
+    body.append(pdfData)
+    body.append("\(crlf)--\(boundary)\(crlf)".data(using: .utf8)!)
+    body.append("Content-Disposition: form-data; name=\"product_name\"\(crlf)\(crlf)".data(using: .utf8)!)
+    body.append(productName.data(using: .utf8)!)
+    body.append("\(crlf)--\(boundary)--\(crlf)".data(using: .utf8)!)
+    request.httpBody = body
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(ManualUploadResponse.self, from: data)
+  }
+
+  func pollExpertManual(manualId: String) async throws -> ManualStatusResponse {
+    guard let url = URL(string: "\(serverBaseURL)/api/expert/manuals/\(manualId)") else {
+      throw APIError.invalidURL
+    }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+      throw APIError.serverError
+    }
+    return try decoder.decode(ManualStatusResponse.self, from: data)
+  }
+
   // MARK: - Base URL accessor for clip URLs
 
   var baseURL: String { serverBaseURL }

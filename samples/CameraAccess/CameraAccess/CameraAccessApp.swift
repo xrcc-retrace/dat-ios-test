@@ -28,15 +28,17 @@ struct CameraAccessApp: App {
   @UIApplicationDelegateAdaptor(RetraceAppDelegate.self) private var appDelegate
   @StateObject private var appOrientationController = AppOrientationController.shared
 
-  #if DEBUG
-  // Debug menu for simulating device connections during development
-  @StateObject private var debugMenuViewModel = DebugMenuViewModel(mockDeviceKit: MockDeviceKit.shared)
-  #endif
   private let wearables: WearablesInterface
   @StateObject private var wearablesViewModel: WearablesViewModel
 
   init() {
     RetraceNavBarAppearance.install()
+
+    URLCache.shared = URLCache(
+      memoryCapacity:  16 * 1024 * 1024,
+      diskCapacity:   256 * 1024 * 1024,
+      diskPath:       "RetraceURLCache"
+    )
 
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("--ui-testing-reset-onboarding") {
@@ -94,14 +96,6 @@ struct CameraAccessApp: App {
         } message: {
           Text(wearablesViewModel.errorMessage)
         }
-        #if DEBUG
-        .sheet(isPresented: $debugMenuViewModel.showDebugMenu) {
-          MockDeviceKitView(viewModel: debugMenuViewModel.mockDeviceKitViewModel)
-        }
-        .overlay {
-          DebugMenuView(debugMenuViewModel: debugMenuViewModel)
-        }
-        #endif
         .overlay {
           RegistrationView(viewModel: wearablesViewModel)
         }

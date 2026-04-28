@@ -12,6 +12,7 @@ struct ServerSettingsView: View {
         VStack(spacing: Spacing.screenPadding) {
           GlassesSettingsSection(wearablesVM: wearablesVM)
           ServerSettingsSection()
+          DebugSettingsSection()
           Spacer(minLength: 40)
         }
         .padding(Spacing.screenPadding)
@@ -20,6 +21,60 @@ struct ServerSettingsView: View {
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
     .retraceNavBar()
+  }
+}
+
+// MARK: - Debug section
+
+/// Single-toggle debug surface. Read via `@AppStorage("debugMode")`
+/// anywhere in the app — the toggle drives the Ray-Ban lens boundary
+/// outline, the hand-tracking landmark overlay, and any other dev-only
+/// inspection UI we add later. One switch, one source of truth.
+struct DebugSettingsSection: View {
+  @AppStorage("debugMode") private var debugMode: Bool = false
+  @AppStorage("hudAdditiveBlend") private var hudAdditiveBlend: Bool = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Spacing.md) {
+      Text("Debug")
+        .font(.retraceOverline)
+        .tracking(0.5)
+        .foregroundColor(.textSecondary)
+        .textCase(.uppercase)
+
+      Toggle(isOn: $debugMode) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Debug mode")
+            .font(.retraceCallout)
+            .foregroundColor(.textPrimary)
+          Text("Shows the Ray-Ban lens boundary, hand-tracking landmarks, and other developer overlays during sessions.")
+            .font(.retraceCaption1)
+            .foregroundColor(.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .tint(.appPrimary)
+      .padding(14)
+      .background(Color.surfaceRaised)
+      .cornerRadius(Radius.md)
+
+      Toggle(isOn: $hudAdditiveBlend) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Additive HUD blending")
+            .font(.retraceCallout)
+            .foregroundColor(.textPrimary)
+          Text("Renders the Ray-Ban lens with additive (plus-lighter) blending so dark pixels show the camera through and bright pixels brighten what's behind — the same optical behavior as the real Meta Ray-Ban Display. Bright scenes will wash out panels.")
+            .font(.retraceCaption1)
+            .foregroundColor(.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .tint(.appPrimary)
+      .padding(14)
+      .background(Color.surfaceRaised)
+      .cornerRadius(Radius.md)
+    }
+    .padding(.top, Spacing.xl)
   }
 }
 

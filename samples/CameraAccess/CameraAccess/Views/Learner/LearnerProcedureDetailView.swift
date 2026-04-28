@@ -99,11 +99,20 @@ struct LearnerProcedureDetailView: View {
   }
 
   private func learnerMetrics(for procedure: ProcedureResponse) -> [ProcedureMetricItem] {
-    ProcedureMetricItem.workflowSummary(
+    let full = ProcedureMetricItem.workflowSummary(
       duration: procedure.totalDuration,
       stepCount: procedure.steps.count,
       completionCount: progressStore.completedCount(for: procedure.id)
     )
+    // For manual/web procedures, the totalDuration is a 30s-per-step
+    // placeholder Gemini emits for API compatibility. Drop the duration
+    // metric so we don't show a misleading "X minutes". Step count +
+    // completion count remain meaningful and stay in the strip.
+    let st = (procedure.sourceType ?? "video").lowercased()
+    guard st == "video" else {
+      return full.filter { $0.icon != "clock" }
+    }
+    return full
   }
 
   @ViewBuilder

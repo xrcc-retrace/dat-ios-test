@@ -53,6 +53,11 @@ class GeminiLiveSessionBase: ObservableObject {
   @Published var isMuted = false
   @Published var voiceStatus = "Connecting..."
   @Published var isAISpeaking = false
+  /// Smoothed peak amplitude of the AI's voice output, in `0...1`. Mirrored
+  /// from `AudioSessionManager.aiOutputPeak` so the audio meter in the
+  /// controls bar can react to actual speech volume instead of a flat
+  /// "is speaking" Boolean.
+  @Published private(set) var aiOutputPeak: Float = 0
   @Published var geminiConnectionState: GeminiLiveService.ConnectionState = .disconnected
   @Published var activity: [ActivityEntry] = []
 
@@ -71,6 +76,10 @@ class GeminiLiveSessionBase: ObservableObject {
   // MARK: - Gate state
 
   var pendingToolCallIds: Set<String> = []
+  /// Names of tools currently in flight, by id. Subclasses observe this to
+  /// drive stage-aware UI (e.g. the Troubleshoot searching page flips
+  /// between "library" and "web" stages based on which tool is running).
+  @Published private(set) var pendingToolCallNames: [String: String] = [:]
   var isGeminiReady = false
   var isSendingAudio = true
   var audioGateWasOpen = false
@@ -91,94 +100,21 @@ class GeminiLiveSessionBase: ObservableObject {
   var iPhoneVideoSource: IPhoneCoachingCameraSource?
   var cameraLifecycleTask: Task<Void, Never>?
 
-  // Hand tracking: owns the MediaPipe service + the active gesture
-  // recognizer. Reset symmetrically with the camera (created in
-  // setupIPhoneCameraStream, nilled / reset in stopCameraStream).
+  // Hand tracking: owns the MediaPipe service. The pinch-drag recognizer
+  // and its plumbing (frame log, orientation log throttle, debug-provider
+  // forwards) live on `HandGestureService.shared` — see
+  // `HandTracking/HandGestureService.swift`. We just route MediaPipe
+  // results into it from the camera-frame closure below.
   var handLandmarkerService: HandLandmarkerService?
 
-  // Active recognizer (Milestone 2B) — pinch-drag-release in image space.
-  // Production overrides `releaseDebounceFrames` to 3 (default in
-  // `Config()` is 1 to keep unit tests deterministic).
-  var pinchDragRecognizer = PinchDragRecognizer(config: GeminiLiveSessionBase.pinchProductionConfig)
-
-  static var pinchProductionConfig: PinchDragRecognizer.Config {
-    var c = PinchDragRecognizer.Config()
-    c.releaseDebounceFrames = 3
-    return c
-  }
-
-  // Dormant — Milestone 2A, Meta XR thumb-on-index micro gestures.
-  // Kept compilable and on disk but never wired into the active session
-  // path. See HandTracking/MicroGestureRecognizer.swift if we need to
-  // resurrect it. Intentionally left instantiated so any remaining
-  // accessors don't crash while the UI migrates fully to pinchDrag.
-  // var microGestureRecognizer = MicroGestureRecognizer()
-  // @Published var recentMicroGestures: [MicroGestureLogEntry] = []
-
-  /// Published list of recent pinch-drag emissions, oldest → newest.
-  /// Drives the Ray-Ban HUD debug log.
-  @Published var recentPinchDragEvents: [PinchDragLogEntry] = []
-
-  /// Hard cap on retained log entries. Oldest are dropped when exceeded.
-  let pinchDragLogMaxHistory: Int = 50
-
-  /// Wall-clock timestamp of the most recent `[Orient]` console log.
-  /// Used to throttle orientation logging to ~1 line / second. When we
-  /// add the orientation gate to the recognizer this field can stay —
-  /// it's purely for log throttling, not detection logic.
-  var lastOrientationLogAt: Date?
-
-  /// Latest landmark frame delivered by MediaPipe. Updated every ~15 fps
-  /// while the camera is running. Drives the on-HUD debug overlay that
-  /// visualizes the 3 landmarks the recognizer operates on. Nil while the
-  /// camera is off or no hand has been detected yet.
-  @Published var latestHandFrame: HandLandmarkFrame?
-
-  /// Pinch thresholds, expressed as `thumb-index distance ÷ handSize` —
-  /// surfaced for the debug overlay to render the same gate the
-  /// recognizer applies. Scale-invariant against camera distance.
-  var indexPinchContactRatio: Float {
-    PinchDragRecognizer.Config().indexContactRatio
-  }
-  var indexPinchReleaseRatio: Float {
-    PinchDragRecognizer.Config().indexReleaseRatio
-  }
-
-  /// Orientation start-gate bounds, surfaced so the debug overlay renders
-  /// the same check the recognizer applies. Keep in sync if the recognizer's
-  /// defaults change.
-  var gatePalmFacingZMin: Float {
-    PinchDragRecognizer.Config().gatePalmFacingZMin
-  }
-  var gatePalmFacingZMax: Float {
-    PinchDragRecognizer.Config().gatePalmFacingZMax
-  }
-  var gateHandSizeMin: Float {
-    PinchDragRecognizer.Config().gateHandSizeMin
-  }
-
-  /// True while a deferred `.select` is still inside its double-tap
-  /// window. Surfaces the recognizer's internal state so the overlay can
-  /// show the "TAP 1/2" chip.
-  var pendingSelectActive: Bool {
-    pinchDragRecognizer.debugState.pendingSelectActive
-  }
-
-  /// Quadrant the thumb is currently occupying relative to the pinch
-  /// start, or nil while idle / inside the center dead zone. Drives the
-  /// cross-UI's lit box.
-  var currentHighlightQuadrant: PinchDragQuadrant? {
-    pinchDragRecognizer.debugState.currentHighlightQuadrant
-  }
-
-  /// Thumb position at the most recent pinch start. Read-through from the
-  /// active recognizer. Nil until first contact; persists across frames.
-  var lastContactStartPosition: CGPoint? { pinchDragRecognizer.lastContactStartPosition }
-
-  /// Thumb position at the most recent release / abort. Read-through from
-  /// the active recognizer. Nil until first release; persists until next
-  /// contact begins.
-  var lastContactReleasePosition: CGPoint? { pinchDragRecognizer.lastContactReleasePosition }
+  /// Fired when the gesture pipeline emits a `.back` event — a double
+  /// index-finger pinch detected by `PinchDragRecognizer`. Hosts (e.g.
+  /// `CoachingSessionView`) set this to drive the exit-confirmation
+  /// overlay. Equivalent semantically to `RayBanHUDEmulator`'s
+  /// `onLensBackGesture` finger-tap fallback — both inputs converge on
+  /// the same UI action. Wired through to `HandGestureService.shared`
+  /// in start/stop session so the call-site contract stays unchanged.
+  var onBackGesture: (() -> Void)?
 
   /// Preview layer bound to the live iPhone capture session, or nil when
   /// transport is `.glasses` or the camera hasn't been set up yet. Attaches
@@ -480,6 +416,7 @@ class GeminiLiveSessionBase: ObservableObject {
     tokenManager = nil
     sessionId = nil
     pendingToolCallIds.removeAll()
+    pendingToolCallNames.removeAll()
     lastVideoSendAt = nil
     isForwardingFrame = false
     learnerTurnOpen = false
@@ -598,46 +535,20 @@ class GeminiLiveSessionBase: ObservableObject {
       // log any emitted event. No HUD binding yet (deferred to the next
       // milestone once reliability is validated on-device).
       if HandTrackingConfig.isAvailable {
-        // Fresh recognizer per camera session so no stale state carries
-        // across restart. Clear the debug log too so it starts empty each
-        // time the user enters a coaching session.
-        self.pinchDragRecognizer = PinchDragRecognizer(config: Self.pinchProductionConfig)
-        self.recentPinchDragEvents.removeAll()
+        // Reset the shared gesture service so stale FSM state from any
+        // prior session doesn't carry across. Wire `.back` events to the
+        // VM's exposed `onBackGesture` so the existing call-site contract
+        // (`viewModel.onBackGesture = { … }` in views) keeps working.
+        HandGestureService.shared.reset()
+        HandGestureService.shared.onBackGesture = { [weak self] in
+          self?.onBackGesture?()
+        }
         let handService = HandLandmarkerService()
         do {
           try handService.start()
-          handService.onResult = { [weak self] frame in
+          handService.onResult = { frame in
             Task { @MainActor in
-              guard let self = self else { return }
-              // Publish every frame so the debug overlay can render the
-              // landmarks live.
-              self.latestHandFrame = frame
-
-              // Orientation log — throttled to ~1 line / sec so the
-              // console stays readable. Gives the user ground truth
-              // numbers to paste when tuning the start-gate range.
-              if let orient = frame.orientation {
-                let now = Date()
-                if self.lastOrientationLogAt == nil ||
-                   now.timeIntervalSince(self.lastOrientationLogAt!) >= 1.0 {
-                  self.lastOrientationLogAt = now
-                  print(String(
-                    format: "[Orient] palmAngle=%+7.1f°  palmFacingZ=%+.3f  handSize=%.3f  handedness=%@",
-                    orient.palmAngleDegrees,
-                    orient.palmFacingZ,
-                    orient.handSize,
-                    frame.handedness ?? "?"
-                  ))
-                }
-              }
-
-              guard let event = self.pinchDragRecognizer.ingest(frame) else { return }
-              print("[PinchDrag] \(event) ts=\(frame.timestampMs)")
-              self.recentPinchDragEvents.append(PinchDragLogEntry(event: event))
-              let overflow = self.recentPinchDragEvents.count - self.pinchDragLogMaxHistory
-              if overflow > 0 {
-                self.recentPinchDragEvents.removeFirst(overflow)
-              }
+              HandGestureService.shared.ingest(frame)
             }
           }
           self.handLandmarkerService = handService
@@ -697,6 +608,11 @@ class GeminiLiveSessionBase: ObservableObject {
       self.iPhonePreviewLayer = nil
       self.handLandmarkerService?.stop()
       self.handLandmarkerService = nil
+      // Clear the shared gesture service's hooks so a teardown doesn't
+      // leak this VM's closures into the next session (potentially in a
+      // different mode).
+      HandGestureService.shared.onBackGesture = nil
+      HandGestureService.shared.onEvent = nil
     }
   }
 
@@ -726,6 +642,7 @@ class GeminiLiveSessionBase: ObservableObject {
     guard let sid = sessionId else { return }
 
     pendingToolCallIds.insert(id)
+    pendingToolCallNames[id] = name
     audioManager?.clearPlaybackBuffer(reason: "tool-call")
 
     let startedAt = Date()
@@ -755,6 +672,7 @@ class GeminiLiveSessionBase: ObservableObject {
     }
 
     pendingToolCallIds.remove(id)
+    pendingToolCallNames.removeValue(forKey: id)
   }
 
   private func forwardToolCallToServer(
@@ -940,6 +858,13 @@ class GeminiLiveSessionBase: ObservableObject {
         }
       }
       .store(in: &cancellables)
+
+    audio.$aiOutputPeak
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] peak in
+        self?.aiOutputPeak = peak
+      }
+      .store(in: &cancellables)
   }
 
   // MARK: - Resumption
@@ -1007,8 +932,6 @@ class GeminiLiveSessionBase: ObservableObject {
   }
 }
 
-// Marker conformance — every property required by `HandGestureDebugProvider`
-// is already declared on the base class. Both `CoachingSessionViewModel`
-// and `DiagnosticSessionViewModel` inherit the conformance automatically,
-// so `HandGestureDebugStack` drives off either without special-casing.
-extension GeminiLiveSessionBase: HandGestureDebugProvider {}
+// `HandGestureDebugProvider` conformance now lives on `HandGestureService`,
+// not the VM. Views pass `HandGestureService.shared` as the provider.
+// See `HandTracking/HandGestureService.swift`.

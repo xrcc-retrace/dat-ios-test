@@ -4,8 +4,8 @@ import Foundation
 ///
 /// These exist so an expert recording a procedure gets the same kind of
 /// consistent in-screen coaching that the learner gets during a Gemini Live
-/// session — but without any AI on the wire. The rotator below advances
-/// through them on a timer + on manual swipe.
+/// session — but without any AI on the wire. Cycled by user gesture only
+/// (touch swipe or pinch-drag-release).
 struct ExpertNarrationTip: Identifiable, Equatable {
   let id: Int
   let title: String
@@ -50,7 +50,4 @@ enum ExpertCoachingTips {
       body: "Calling out a deviation from the 'normal' way teaches the learner when rules can bend."
     ),
   ]
-
-  /// Interval between auto-advances.
-  static let autoAdvanceInterval: TimeInterval = 12
 }

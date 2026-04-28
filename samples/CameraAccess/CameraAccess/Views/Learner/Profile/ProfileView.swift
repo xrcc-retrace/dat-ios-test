@@ -12,22 +12,7 @@ struct ProfileView: View {
 
       ScrollView {
         VStack(spacing: Spacing.screenPadding) {
-          // Profile header
-          VStack(spacing: Spacing.lg) {
-            Image(systemName: "person.circle.fill")
-              .font(.system(size: 64))
-              .foregroundColor(.iconForeground)
-              .background(
-                Circle()
-                  .fill(Color.iconSurface)
-                  .frame(width: 72, height: 72)
-              )
-
-            Text("Technician")
-              .font(.retraceFace(.semibold, size: 22))
-              .foregroundColor(.textPrimary)
-          }
-          .padding(.vertical, Spacing.xl)
+          TechnicianBadgeView()
 
           // Mode section (top — most prominent)
           settingsSection(title: "MODE") {

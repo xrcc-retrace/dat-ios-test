@@ -17,7 +17,7 @@ struct ExpertHUDRecordingStatusChip: View {
         .foregroundStyle(Color.white.opacity(0.98))
         .monospacedDigit()
 
-      ExpertHUDAudioMeter(peak: audioPeak)
+      RetraceAudioMeter(peak: audioPeak, tint: .white, intensity: .compact)
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 8)
@@ -52,39 +52,6 @@ private struct ExpertHUDRecordingDot: View {
   }
 }
 
-/// 3-bar audio meter. `peak` is 0...1 (smoothed by the view model).
-struct ExpertHUDAudioMeter: View {
-  let peak: Float
-
-  private let barCount = 3
-  private let thresholds: [Float] = [0.08, 0.24, 0.55]
-
-  var body: some View {
-    HStack(alignment: .bottom, spacing: 3) {
-      ForEach(0..<barCount, id: \.self) { index in
-        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-          .fill(barColor(index: index))
-          .frame(width: 3, height: barHeight(index: index))
-      }
-    }
-    .frame(height: 14, alignment: .bottom)
-    .animation(.easeOut(duration: 0.08), value: peak)
-  }
-
-  private func barHeight(index: Int) -> CGFloat {
-    let base: CGFloat = 5
-    let growth: CGFloat = 4.5
-    return base + growth * CGFloat(index)
-  }
-
-  private func barColor(index: Int) -> Color {
-    guard peak >= thresholds[index] else {
-      return Color.white.opacity(0.20)
-    }
-    return Color.white.opacity(0.95)
-  }
-}
-
 // MARK: - Mic source badge (top-trailing)
 
 struct ExpertHUDMicSourceBadge: View {
@@ -107,115 +74,140 @@ struct ExpertHUDMicSourceBadge: View {
   }
 }
 
-// MARK: - Stop-recording pill (hover-to-confirm)
+// MARK: - Stop-recording pill
 
-/// Mirrors `RayBanHUDExitPill` — a capsule that requires a 2-second hold to
-/// commit. Reuses the shared `HUDHoverCoordinator` via `.hoverSelectable`.
+/// Full-width stop-recording pill anchored at the bottom of the lens.
+/// **Two-stage commit on touch**: first tap highlights (cursor lands);
+/// second tap (while highlighted) opens the confirmation overlay. The
+/// overlay then carries a 3-second auto-confirm countdown with an X
+/// to cancel — three layers of protection against accidental stops.
+/// Pinch users get the same flow for free: pinch-drag lands the
+/// cursor, pinch-select fires `onTrigger`.
 struct ExpertHUDStopPill: View {
-  let isSelected: () -> Bool
-  let onHoldStart: () -> Void
-  let onHoldEnd: () -> Void
+  let onTrigger: () -> Void
 
   var body: some View {
     HStack(spacing: 10) {
       Image(systemName: "stop.circle.fill")
-        .font(.system(size: 20, weight: .medium))
-        .frame(
-          width: RayBanHUDLayoutTokens.iconFrame,
-          height: RayBanHUDLayoutTokens.iconFrame
-        )
+        .font(.system(size: 18, weight: .medium))
 
       Text("Stop recording")
         .font(.inter(.medium, size: 14))
         .lineLimit(1)
     }
     .foregroundStyle(Color.white.opacity(0.98))
-    .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 10)
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 9)
     .rayBanHUDPanel(shape: .capsule)
-    .hoverSelectable(.expertStopRecording, shape: .capsule, behavior: .selectOnly) {}
-    .simultaneousGesture(
-      DragGesture(minimumDistance: 0)
-        .onChanged { _ in
-          guard isSelected() else { return }
-          onHoldStart()
-        }
-        .onEnded { _ in
-          onHoldEnd()
-        }
-    )
+    .hoverSelectable(.expertStopRecording, shape: .capsule, behavior: .confirmOnSecondTap) {
+      onTrigger()
+    }
   }
 }
 
-/// Hold-countdown overlay shown while the user is holding the stop pill.
-/// Cloned from `RayBanHUDExitOverlay` with different copy.
+/// Auto-confirm overlay shown after the user triggers stop on the
+/// Expert HUD. Layered on top of the (recessed) page content via the
+/// recede-and-arrive pattern — see `DESIGN.md`. Counts down for
+/// `duration` seconds; if the user taps the X (or pinch-back / pinch-
+/// selects the X via the focus engine) before the timer expires,
+/// `onCancel` fires and recording continues. Otherwise the timer
+/// auto-fires `onConfirm`.
+///
+/// The auto-confirm is owned by the parent page (it schedules the
+/// commit Task and clears it on cancel) — this view only renders the
+/// progress bar + cancel affordance.
 struct ExpertHUDStopOverlay: View {
-  let progress: CGFloat
+  let startedAt: Date
+  let duration: TimeInterval
   let onCancel: () -> Void
 
+  @State private var fillProgress: CGFloat = 0
+
   var body: some View {
-    VStack {
-      Spacer(minLength: 0)
+    VStack(alignment: .leading, spacing: 12) {
+      header
 
-      VStack(alignment: .leading, spacing: 16) {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-          Text("Stop recording")
-            .font(.inter(.bold, size: 20))
-            .foregroundStyle(Color.white.opacity(0.98))
+      GeometryReader { geometry in
+        ZStack(alignment: .leading) {
+          Capsule()
+            .fill(Color.black.opacity(0.35))
 
-          Spacer(minLength: 0)
-
-          Text("\(remainingSeconds) sec left")
-            .font(.inter(.medium, size: 12))
-            .foregroundStyle(Color.white.opacity(0.92))
+          Capsule()
+            .fill(Color(red: 0.96, green: 0.26, blue: 0.21))
+            .frame(width: geometry.size.width * fillProgress)
         }
-
-        GeometryReader { geometry in
-          ZStack(alignment: .leading) {
-            Capsule()
-              .fill(Color.black.opacity(0.35))
-
-            Capsule()
-              .fill(Color(red: 0.96, green: 0.26, blue: 0.21))
-              .frame(width: geometry.size.width * clampedProgress)
-          }
-        }
-        .frame(height: 5)
       }
-      .padding(RayBanHUDLayoutTokens.contentPadding)
-      .frame(maxWidth: .infinity)
-      .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-      .contentShape(
-        RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous)
-      )
-      .onTapGesture(perform: onCancel)
-
-      Spacer(minLength: 0)
+      .frame(height: 5)
+    }
+    .padding(RayBanHUDLayoutTokens.contentPadding)
+    .frame(maxWidth: 280)
+    // Standard panel surface — the recede recipe on the underlying
+    // page (scale 0.92, opacity 0.32, blur 6) is what makes the
+    // overlay read as foreground.
+    .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
+    .onAppear {
+      withAnimation(.linear(duration: duration)) {
+        fillProgress = 1
+      }
     }
   }
 
-  private var clampedProgress: CGFloat { max(0, min(progress, 1)) }
+  private var header: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 10) {
+      Text("Stop recording")
+        .font(.inter(.bold, size: 18))
+        .foregroundStyle(Color.white.opacity(0.98))
 
-  private var remainingSeconds: Int {
-    let remaining = max(
-      0,
-      RayBanHUDLayoutTokens.exitHoldDuration
-        - (RayBanHUDLayoutTokens.exitHoldDuration * Double(clampedProgress))
-    )
-    return Int(ceil(remaining))
+      Spacer(minLength: 0)
+
+      TimelineView(.animation(minimumInterval: 0.25)) { context in
+        Text("\(remainingSeconds(at: context.date)) sec")
+          .font(.inter(.medium, size: 12))
+          .foregroundStyle(Color.white.opacity(0.92))
+          .monospacedDigit()
+      }
+
+      cancelButton
+    }
+  }
+
+  private var cancelButton: some View {
+    Image(systemName: "xmark")
+      .font(.system(size: 13, weight: .bold))
+      .foregroundStyle(Color.white.opacity(0.92))
+      .frame(width: 28, height: 28)
+      .background(
+        Circle().fill(Color.white.opacity(0.12))
+      )
+      .contentShape(Circle())
+      // `.tapToFire` so a touch tap cancels in one motion. Pinch users
+      // get the same path via the focus engine — the overlay handler
+      // default-focuses this control.
+      .hoverSelectable(.expertStopCancel, shape: .capsule, behavior: .tapToFire) {
+        onCancel()
+      }
+  }
+
+  private func remainingSeconds(at now: Date) -> Int {
+    let elapsed = now.timeIntervalSince(startedAt)
+    return max(0, Int(ceil(duration - elapsed)))
   }
 }
 
 // MARK: - Narration tip card
 
-/// Primary bottom-cluster card. Rotates through static tips automatically
-/// and responds to horizontal swipes. Same minimum-distance / commit-threshold
-/// tokens as the learner step card so the gesture feel is identical.
+/// Primary lens card. Pure presentational view of one tip — fixed
+/// height regardless of content length so neighbouring carousel cards
+/// don't pop up/down as the user pages through. The carousel mechanics
+/// (offset / drag / commit animation) live in `ExpertNarrationTipPage`,
+/// not here.
+///
+/// Title + body are line-limited so the card height stays constant —
+/// long copy truncates instead of growing the card. Picking the tip
+/// pool wisely matters more than allowing variable height (per the
+/// design system: card sizes don't reflow during a session).
 struct ExpertHUDNarrationTipCard: View {
   let tip: ExpertNarrationTip
-  let horizontalOffset: CGFloat
-  let onDragChanged: (DragGesture.Value) -> Void
-  let onDragEnded: (DragGesture.Value) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -227,26 +219,26 @@ struct ExpertHUDNarrationTipCard: View {
       Text(tip.title)
         .font(.inter(.bold, size: 20))
         .foregroundStyle(Color.white.opacity(0.98))
-        .fixedSize(horizontal: false, vertical: true)
+        .lineLimit(2)
+        .truncationMode(.tail)
 
       Text(tip.body)
         .font(.inter(.medium, size: 14))
         .foregroundStyle(Color.white.opacity(0.96))
         .lineSpacing(2)
-        .fixedSize(horizontal: false, vertical: true)
+        .lineLimit(3)
+        .truncationMode(.tail)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(RayBanHUDLayoutTokens.contentPadding)
-    .frame(minHeight: RayBanHUDLayoutTokens.stepCardMinHeight, alignment: .center)
+    // Fill whatever vertical space the parent carousel hands us — the
+    // card is the visual focal point of the Expert lens, so claiming
+    // the room between the timer pill and stop pill is the right
+    // default. Text content stays centered inside the panel.
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
     .contentShape(
       RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous)
-    )
-    .offset(x: horizontalOffset)
-    .simultaneousGesture(
-      DragGesture(minimumDistance: RayBanHUDLayoutTokens.stepSwipeMinimumDistance)
-        .onChanged { value in onDragChanged(value) }
-        .onEnded { value in onDragEnded(value) }
     )
   }
 }

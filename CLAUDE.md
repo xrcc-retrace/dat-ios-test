@@ -87,6 +87,24 @@ Record a procedure end-to-end from the glasses or the iPhone, review the raw cap
 - **Progress** — session history (completed / abandoned / in-progress).
 - **Profile** — voice picker with audio previews fetched from the server (`/api/learner/voices`), plus an auto-advance toggle.
 - **Coaching** — the headline flow. Gemini Live voice coaching with PiP reference-clip overlay, activity feed (learner transcripts, AI replies, tool calls), mute, and live connection status.
+- **Troubleshoot** (`Views/Troubleshoot/`) — Parallel Live session backed by `/api/troubleshoot/*`. `TroubleshootSessionView` + `DiagnosticSessionViewModel` orchestrate the diagnose-then-coach flow: user describes a broken product, Gemini issues `identify_product` → `confirm_identification`, then `search_procedures`; on no-match the model calls `web_search_for_fix` (returns a procedure with cited sources) and finally `handoff_to_learner` to spawn a normal coaching session. Includes `DiagnosticPhaseBar`, `DiagnosticResolutionPanel`, `ManualUploadSheet`, `TroubleshootConfirmOverlay`, `TroubleshootPageHandler`, and HUD `Pages/`.
+
+### Onboarding
+
+`Views/Onboarding/` (container + Screens + Components) handles first-launch — permissions, capture-transport pick, and a quick orientation. Skip-on-launch logic is keyed off `UserDefaults`.
+
+### Hand tracking
+
+`HandTracking/` is the gesture substrate for the Ray-Ban HUD's hover-then-select pattern. Composed of:
+
+- `HandLandmarkerService` — wraps Apple Vision (or MediaPipe-style) hand-pose extraction.
+- `HandGestureService` — high-level state machine (`hover`, `select`, `idle`).
+- `MicroGestureRecognizer` + `PinchDragRecognizer` — concrete recognizers fed by the landmarker.
+- `HandTrackingConfig` — tuning knobs (smoothing, hysteresis, pinch thresholds).
+- `HandGestureDebugStack` — debug overlay; toggled from the Debug Menu.
+- `HandLandmarkFrame` — the per-frame data bag the recognizers consume.
+
+The HUD reads `HandGestureService.$state` to drive focus rings, the recede-and-arrive overlay, and hold-to-confirm. Coaching and troubleshoot sessions both consume it; recording paths don't (yet).
 
 ## Capture transports
 
@@ -149,8 +167,19 @@ samples/CameraAccess/
 │   ├── CameraAccess.entitlements
 │   ├── Assets.xcassets
 │   ├── TestResources/                 # plant.mp4, plant.png for MockDeviceKit
+│   ├── Resources/                     # Bundled fonts, icons, lottie/animation assets
+│   ├── DiamondLogoDither.metal        # Custom shader used by the splash + brand surfaces
+│   ├── HandTracking/                  # Hand-pose substrate for HUD hover-then-select
+│   │   ├── HandLandmarkerService.swift
+│   │   ├── HandGestureService.swift
+│   │   ├── HandTrackingConfig.swift
+│   │   ├── MicroGestureRecognizer.swift
+│   │   ├── PinchDragRecognizer.swift
+│   │   ├── HandLandmarkFrame.swift
+│   │   └── HandGestureDebugStack.swift
 │   ├── Models/
 │   │   ├── CaptureTransport.swift     # .glasses | .iPhone
+│   │   ├── DiagnosticModels.swift     # Codable mirrors of /api/troubleshoot (session, state, handoff, manual upload/status, candidate procedure, diagnostic log entry)
 │   │   └── ProcedureModels.swift      # Codable mirrors of server models (procedures, steps, session, voices, SessionRecord)
 │   ├── Services/
 │   │   ├── BonjourDiscovery.swift     # NWBrowser for _retrace._tcp; caches serverBaseURL
@@ -170,7 +199,9 @@ samples/CameraAccess/
 │   │   ├── StreamSessionViewModel.swift       # glasses stream preview
 │   │   ├── IPhoneExpertRecordingViewModel.swift
 │   │   ├── IPhoneCoachingCameraSource.swift
+│   │   ├── GeminiLiveSessionBase.swift        # Shared base — token lifecycle, reconnect-on-goAway, setup-complete gate. Used by Coaching + Diagnostic VMs.
 │   │   ├── CoachingSessionViewModel.swift     # the big one — Gemini Live orchestration, transport switch, transcripts, tool calls, resumption
+│   │   ├── DiagnosticSessionViewModel.swift   # Troubleshoot-mode Live session. Forwards tool calls to /api/troubleshoot/*; on handoff_to_learner, transitions into a fresh coaching session.
 │   │   ├── DiscoverViewModel.swift
 │   │   ├── LibraryViewModel.swift
 │   │   ├── WorkflowListViewModel.swift
@@ -184,7 +215,11 @@ samples/CameraAccess/
 │       ├── RegistrationView.swift
 │       ├── ServerSettingsView.swift   # Manual serverBaseURL override + glasses pairing management
 │       ├── DebugMenuView.swift
+│       ├── StreamView.swift / NonStreamView.swift / IPhoneCameraPreview.swift / PhotoPreviewView.swift / ExpertRecordingReviewView.swift  # Capture-side primitives reused by Expert + Coaching
 │       ├── Components/                # CardView, CategoryChip, ModeCard, StepProgressBar, GlassPanelModifier, etc.
+│       ├── Onboarding/                # OnboardingContainerView + Screens/ + Components/ — first-launch flow
+│       ├── RayBanHUD/                 # Lens design system — see DESIGN.md before touching lens UI
+│       ├── Troubleshoot/              # TroubleshootSessionView, TroubleshootIntroView, DiagnosticPhaseBar, DiagnosticResolutionPanel, ManualUploadSheet, TroubleshootConfirmOverlay, TroubleshootPageHandler, Pages/, Components/
 │       ├── Expert/                    # ExpertTabView, RecordTabView, IPhoneRecordingView, WorkflowListView, ProcedureDetailView, ProcedureEditView, StepEditView
 │       ├── MockDeviceKit/
 │       └── Learner/
@@ -261,6 +296,16 @@ project.save()
 Requires `pip install pbxproj` once in your environment.
 
 Do not skip this step. Do not wait for the user to ask. Do not just leave a reminder.
+
+## Ray-Ban HUD design system
+
+The simulated Meta Ray-Ban lens has its own visual language, layout grid, animation vocabulary, and interaction model. **Before adding or redesigning anything that renders inside the lens** (coaching pages, expert recording chrome, troubleshoot canvas, future overlays/notifications/transitions), read the design doc:
+
+📄 `samples/CameraAccess/CameraAccess/Views/RayBanHUD/DESIGN.md`
+
+It covers: glass-panel surface recipe, color palette, typography scale, square-viewport layout rules, panel/pill/card/overlay component patterns, hover-then-select interaction model, default-focus rules for destructive actions, the canonical recede-and-arrive overlay animation, the spring-token vocabulary, audio-reactive motion, anti-patterns to avoid, and worked examples (`CoachingExitConfirmationOverlay`, `CoachingStepPage` expansion, `RetraceAudioMeter`).
+
+When you ship a new pattern, **update the doc** so it stays authoritative.
 
 ## Critical Architecture Decisions
 

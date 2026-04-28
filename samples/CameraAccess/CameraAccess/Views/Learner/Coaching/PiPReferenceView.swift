@@ -7,13 +7,37 @@ struct PiPReferenceView: View {
   @State private var offset: CGSize = .zero
   @State private var lastOffset: CGSize = .zero
 
+  /// Manual-derived steps point at a rendered PDF page (PNG/JPEG); video-
+  /// recorded steps point at an MP4 clip. Branch on path extension so the
+  /// PiP renders an image or a video without changing the wire schema.
+  private var isImage: Bool {
+    ["png", "jpg", "jpeg"].contains(url.pathExtension.lowercased())
+  }
+
   var body: some View {
     VStack {
       HStack {
         Spacer()
 
         Group {
-          if let player {
+          if isImage {
+            AsyncImage(url: url) { phase in
+              switch phase {
+              case .success(let image):
+                image.resizable().aspectRatio(contentMode: .fit)
+              case .failure:
+                Color.black.overlay(
+                  Image(systemName: "doc.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.white.opacity(0.6))
+                )
+              case .empty:
+                Color.black.overlay(ProgressView().tint(.white.opacity(0.6)))
+              @unknown default:
+                Color.black
+              }
+            }
+          } else if let player {
             VideoPlayer(player: player)
           } else {
             ZStack {

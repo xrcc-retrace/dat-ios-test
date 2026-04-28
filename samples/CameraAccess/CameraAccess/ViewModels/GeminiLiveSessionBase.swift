@@ -233,7 +233,12 @@ class GeminiLiveSessionBase: ObservableObject {
   // MARK: - Public control
 
   func toggleMute() {
-    isMuted.toggle()
+    setMuted(!isMuted)
+  }
+
+  func setMuted(_ muted: Bool) {
+    guard isMuted != muted else { return }
+    isMuted = muted
     isSendingAudio = !isMuted
     if isMuted {
       voiceStatus = "Muted"

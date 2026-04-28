@@ -17,11 +17,9 @@ import SwiftUI
 /// expansion resets to `.collapsed` so the user starts each step from the
 /// default view.
 ///
-/// Exit happens via `RayBanHUDEmulator`'s `onLensBackGesture` callback
-/// wired from `CoachingSessionView` — no in-page exit affordance lives
-/// here. The back gesture is a MediaPipe double index-finger pinch on
-/// the real device; until that recognizer ships, a screen double-tap on
-/// lens background is the dev fallback.
+/// Exit happens either via the bottom-right Exit capsule or via
+/// `RayBanHUDEmulator`'s `onLensBackGesture` callback wired from
+/// `CoachingSessionView`. Both paths open the same confirmation overlay.
 /// Step transitions remain driven by Gemini Live tool calls
 /// (`advance_step`).
 struct CoachingStepPage: RayBanHUDView {
@@ -87,6 +85,9 @@ struct CoachingStepPage: RayBanHUDView {
             return !step.populatedInsightCategories.isEmpty
           },
           isReferenceExpanded: { expansion == .referenceExpanded },
+          onSetMuted: { muted in
+            viewModel.setMuted(muted)
+          },
           onShowExitConfirmation: onShowExitConfirmation
         )
       }
@@ -98,17 +99,9 @@ struct CoachingStepPage: RayBanHUDView {
     VStack(spacing: 8) {
       topAffordances
 
-      audioPill
-
       contentArea
 
-      // When the step description is expanded, the step card claims all
-      // remaining vertical room so its inner ScrollView has a bounded
-      // viewport to scroll within. Other modes keep the spacer to let
-      // the card breathe at its natural height.
-      if expansion != .stepExpanded {
-        Spacer(minLength: 0)
-      }
+      bottomActionRow
     }
     .padding(RayBanHUDLayoutTokens.contentPadding)
   }
@@ -152,31 +145,77 @@ struct CoachingStepPage: RayBanHUDView {
         toggleExpansion(.insightsExpanded)
       }
     }
-    .frame(height: 28)
+    .frame(height: 32)
   }
 
-  /// Voice indicator — sits in its own row right above the step card,
-  /// wrapped in a glass capsule for harder bar contrast. Mirrors the
-  /// audio pill pattern across Troubleshoot lens pages so both flows
-  /// surface the AI's voice activity in the same visual slot. The
-  /// meter dims to ~35% at silence and ramps to full opacity as Gemini
-  /// speaks — no timer, no idle pulse, fully amplitude-driven via
-  /// `viewModel.aiOutputPeak`.
-  @ViewBuilder
-  private var audioPill: some View {
-    HStack {
+  /// Bottom-of-lens action row. Mute and Exit are the two selectable
+  /// surfaces; the wide waveform between them is passive status only so
+  /// it cannot be mistaken for a mic control.
+  private var bottomActionRow: some View {
+    HStack(alignment: .bottom, spacing: 12) {
+      muteCapsule
+
       Spacer(minLength: 0)
-      RetraceAudioMeter(
-        aiPeak: viewModel.aiOutputPeak,
-        userPeak: viewModel.userInputPeak,
-        tint: .white,
-        intensity: .compact
-      )
-      .accessibilityHidden(true)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 6)
-      .rayBanHUDPanel(shape: .capsule)
+
+      wideAudioMeter
+
       Spacer(minLength: 0)
+
+      exitCapsule
+    }
+    .frame(height: 34)
+  }
+
+  private var muteCapsule: some View {
+    HStack(spacing: 6) {
+      Image(systemName: viewModel.isMuted ? "mic.slash.fill" : "mic.fill")
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(
+          viewModel.isMuted ? Color.white.opacity(0.55) : Color.white.opacity(0.95)
+        )
+
+      Text(viewModel.isMuted ? "Unmute" : "Mute")
+        .font(.inter(.medium, size: 13))
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 7)
+    .layoutPriority(1)
+    .rayBanHUDPanel(shape: .capsule)
+    .hoverSelectable(.toggleMute, shape: .capsule) {
+      viewModel.toggleMute()
+    }
+  }
+
+  private var wideAudioMeter: some View {
+    RetraceAudioMeter(
+      aiPeak: viewModel.aiOutputPeak,
+      userPeak: viewModel.userInputPeak,
+      tint: .white,
+      intensity: .wide
+    )
+    .accessibilityHidden(true)
+    .padding(.bottom, 7)
+  }
+
+  private var exitCapsule: some View {
+    HStack(spacing: 6) {
+      Image(systemName: "rectangle.portrait.and.arrow.forward")
+        .font(.system(size: 13, weight: .semibold))
+      Text("Exit")
+        .font(.inter(.medium, size: 13))
+    }
+    .foregroundStyle(Color.white.opacity(0.96))
+    .padding(.horizontal, 13)
+    .padding(.vertical, 7)
+    .background(
+      Capsule()
+        .fill(Color(red: 0.62, green: 0.16, blue: 0.18).opacity(0.55))
+    )
+    .rayBanHUDPanel(shape: .capsule)
+    .hoverSelectable(.exitWorkflowButton, shape: .capsule) {
+      onShowExitConfirmation()
     }
   }
 
@@ -199,22 +238,22 @@ struct CoachingStepPage: RayBanHUDView {
   ) -> some View {
     HStack(spacing: 6) {
       Image(systemName: icon)
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: 13, weight: .semibold))
       Text(label)
-        .font(.inter(.medium, size: 11))
+        .font(.inter(.medium, size: 13))
         .lineLimit(1)
       if let statusDot {
         Circle()
           .fill(color(for: statusDot, isActive: isActive))
-          .frame(width: 7, height: 7)
+          .frame(width: 8, height: 8)
           .accessibilityHidden(true)
       }
     }
     .foregroundStyle(
       isActive ? Color.black.opacity(0.88) : Color.white.opacity(0.94)
     )
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 7)
     .background(
       Capsule()
         .fill(isActive ? Color.white.opacity(0.95) : Color.clear)
@@ -274,6 +313,7 @@ struct CoachingStepPage: RayBanHUDView {
 
       stepCard
     }
+    .frame(maxHeight: expansion == .stepExpanded ? .infinity : nil)
   }
 
   // MARK: - Step card

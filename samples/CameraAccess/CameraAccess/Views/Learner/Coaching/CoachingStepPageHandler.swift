@@ -34,6 +34,7 @@ final class CoachingStepPageHandler: HUDInputHandler {
   /// toggle playback. When false, the graph stays in collapsed shape
   /// (no `.referenceClip` entry).
   let isReferenceExpanded: () -> Bool
+  let onSetMuted: (Bool) -> Void
   let onShowExitConfirmation: () -> Void
 
   init(
@@ -43,6 +44,7 @@ final class CoachingStepPageHandler: HUDInputHandler {
     hasReference: @escaping () -> Bool,
     hasInsights: @escaping () -> Bool,
     isReferenceExpanded: @escaping () -> Bool,
+    onSetMuted: @escaping (Bool) -> Void,
     onShowExitConfirmation: @escaping () -> Void
   ) {
     self.coordinator = coordinator
@@ -51,6 +53,7 @@ final class CoachingStepPageHandler: HUDInputHandler {
     self.hasReference = hasReference
     self.hasInsights = hasInsights
     self.isReferenceExpanded = isReferenceExpanded
+    self.onSetMuted = onSetMuted
     self.onShowExitConfirmation = onShowExitConfirmation
   }
 
@@ -66,7 +69,7 @@ final class CoachingStepPageHandler: HUDInputHandler {
   ///
   /// In `.referenceExpanded` state the clip panel sits in the middle
   /// of the lens; up/down chain becomes:
-  /// `top affordances ↔ .referenceClip ↔ .stepCard`.
+  /// `top affordances ↔ .referenceClip ↔ .stepCard ↔ bottom actions`.
   ///
   /// `hasReference` / `hasInsights` callbacks are kept for the
   /// expansion branching below and for future per-content behavior.
@@ -76,7 +79,8 @@ final class CoachingStepPageHandler: HUDInputHandler {
     let referenceExpanded = isReferenceExpanded() && hasReference()
 
     graph[.stepCard] = FocusNeighbors(
-      up: referenceExpanded ? .referenceClip : .toggleReference
+      up: referenceExpanded ? .referenceClip : .toggleReference,
+      down: .toggleMute
     )
 
     graph[.toggleReference] = FocusNeighbors(
@@ -86,6 +90,14 @@ final class CoachingStepPageHandler: HUDInputHandler {
     graph[.toggleInsights] = FocusNeighbors(
       down: referenceExpanded ? .referenceClip : .stepCard,
       left: .toggleReference
+    )
+    graph[.toggleMute] = FocusNeighbors(
+      up: .stepCard,
+      right: .exitWorkflowButton
+    )
+    graph[.exitWorkflowButton] = FocusNeighbors(
+      up: .stepCard,
+      left: .toggleMute
     )
 
     if referenceExpanded {
@@ -149,6 +161,8 @@ final class CoachingStepPageHandler: HUDInputHandler {
       "hide reference": { [weak self] in self?.coordinator.fireConfirm(for: .toggleReference) },
       "show insights":  { [weak self] in self?.coordinator.fireConfirm(for: .toggleInsights) },
       "hide insights":  { [weak self] in self?.coordinator.fireConfirm(for: .toggleInsights) },
+      "mute":           { [weak self] in self?.onSetMuted(true) },
+      "unmute":         { [weak self] in self?.onSetMuted(false) },
       "exit":           { [weak self] in self?.onShowExitConfirmation() },
       "exit workflow":  { [weak self] in self?.onShowExitConfirmation() },
     ]

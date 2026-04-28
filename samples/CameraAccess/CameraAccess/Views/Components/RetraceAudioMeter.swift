@@ -250,39 +250,41 @@ struct RetraceAudioMeter: View {
 extension RetraceAudioMeter {
   enum Intensity {
     case compact
+    case wide
     case standard
 
     var barCount: Int {
       switch self {
       case .compact: return 9
+      case .wide: return 27
       case .standard: return 11
       }
     }
 
     var barWidth: CGFloat {
       switch self {
-      case .compact: return 2
+      case .compact, .wide: return 2
       case .standard: return 2.5
       }
     }
 
     var barSpacing: CGFloat {
       switch self {
-      case .compact: return 1.5
+      case .compact, .wide: return 1.5
       case .standard: return 2
       }
     }
 
     var frameHeight: CGFloat {
       switch self {
-      case .compact: return 12
+      case .compact, .wide: return 12
       case .standard: return 16
       }
     }
 
     var minFraction: Float {
       switch self {
-      case .compact: return 0.10
+      case .compact, .wide: return 0.10
       case .standard: return 0.08
       }
     }
@@ -291,7 +293,7 @@ extension RetraceAudioMeter {
 
     var cornerRadius: CGFloat {
       switch self {
-      case .compact: return 1
+      case .compact, .wide: return 1
       case .standard: return 1.5
       }
     }

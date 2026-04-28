@@ -36,7 +36,7 @@ enum RayBanHUDLayoutTokens {
   /// Compact step-card description truncation cutoff before "Read more" kicks in.
   /// Sized so the prefix + "… Read more" fits inside `lineLimit(2)` at the
   /// 18 pt body weight without clipping the affordance.
-  static let stepDescriptionCharacterLimit: Int = 55
+  static let stepDescriptionCharacterLimit: Int = 60
   /// Single half-cycle of the green completion pulse. Full pulse = 2× this (autoreverse).
   static let completionPulseDuration: Double = 0.70
   /// Maximum width of the Exit workflow pill.

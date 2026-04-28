@@ -49,6 +49,61 @@ The app runs an `NWBrowser` on Bonjour (`_retrace._tcp`) and auto-discovers the 
 
 Debug builds include `MockDeviceKit`. Use the in-app debug menu (shake-gesture overlay) to pair a simulated Ray-Ban Meta. XCUITests with `--ui-testing` auto-pair `MockRaybanMeta` with bundled `plant.mp4` / `plant.png` resources.
 
+## TestFlight deployment
+
+Releases are fully automated. **A `v*` git tag pushed to `origin` triggers a GitHub Actions workflow that archives, signs, uploads to App Store Connect, and lands the build in TestFlight ~12-20 min later.** No Xcode UI, no Organizer, no manual signing.
+
+### To ship a TestFlight build
+
+When the user says "push to TestFlight" / "ship a TestFlight build" / "release a build", run:
+
+```bash
+cd dat-ios-test
+git fetch --tags origin
+git tag --sort=-v:refname | head -5    # find the latest v* tag
+git tag vX.Y.Z                         # bump patch unless told otherwise
+git push origin vX.Y.Z
+```
+
+That's the entire release process. The user does not need to open Xcode or App Store Connect for a routine build.
+
+Manual fallback: GitHub Actions UI → **TestFlight Deploy** → **Run workflow** (button on the right). Useful if a tag was pushed but never triggered (rare).
+
+### What runs in CI
+
+- **Workflow:** `.github/workflows/testflight.yml`, runs on `macos-latest` with `latest-stable` Xcode (matches local Xcode 26.x)
+- **Fastlane:** `samples/CameraAccess/fastlane/Fastfile`, `deploy` lane
+- **Signing:** Fastlane `match` (readonly) pulls encrypted certs from the private repo `xrcc-retrace/ios-signing-certs`. Distribution cert + provisioning profile (`match AppStore com.xrcc.retrace.ios.v1`).
+- **Code signing override:** `update_code_signing_settings` flips the project to `CODE_SIGN_STYLE = Manual` + `CODE_SIGN_IDENTITY = Apple Distribution` in the CI workspace only (local `project.pbxproj` is untouched, stays on Automatic for Xcode UI builds).
+- **Build number:** auto-incremented from `latest_testflight_build_number(app_identifier:) + 1`. Never manually bumped.
+- **Upload:** App Store Connect API key (`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` GitHub Secrets). The Apple ID password never enters CI.
+
+### App identity
+
+- **Bundle ID:** `com.xrcc.retrace.ios.v1`
+- **Team ID:** `V56DG94ZL5`
+- **App Store Connect record:** Retrace, SKU `retrace-ios-2026`
+
+### External testers DO NOT auto-receive new builds
+
+Each tag-triggered build lands in App Store Connect's TestFlight tab and waits there. To distribute to external testers, you (the human) must manually:
+
+1. App Store Connect → Retrace → TestFlight → External Testing → group → **Add Build**
+2. First build to a group requires Beta App Review (~24-48 hr)
+
+This is intentional. Pushing tags is safe — it cannot accidentally distribute to judges or beta testers without an explicit click in App Store Connect. There is an "Automatic Distribution" toggle in the External Testing group settings that would change this; **leave it off**.
+
+### Required Build Phase: "Patch MediaPipeTasksVision Info.plist"
+
+The `SwiftTasksVision` SPM package's `MediaPipeTasksVision.framework` ships with a malformed `Info.plist` (missing `CFBundleVersion`, `CFBundleShortVersionString`, `MinimumOSVersion`). App Store validation rejects any build containing it. The Run Script Build Phase positioned **after** Embed Frameworks patches the plist and re-signs the framework. Do not delete or reorder this build phase — every TestFlight build needs it.
+
+### Common failure modes
+
+- **Tag pushed but no workflow ran** → tag was created but not pushed; verify with `git ls-remote --tags origin`. Or push the tag again.
+- **"No matching provisioning profile"** in CI → match cert was revoked or the certs repo was wiped. Locally run `bundle exec fastlane match appstore` to regenerate.
+- **"Build number must be greater than..."** → ASC and the workflow disagree on the latest build number. Re-running the same tag fixes it (the increment fetches fresh ASC state).
+- **Beta App Review rejection** → external testing only. Iterate the build, push a new tag, and resubmit.
+
 ## App Flow
 
 ```

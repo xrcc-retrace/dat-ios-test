@@ -19,6 +19,16 @@ platform :ios do
       app_identifier: "com.xrcc.retrace.ios.v1"
     )
 
+    update_code_signing_settings(
+      path: "CameraAccess.xcodeproj",
+      use_automatic_signing: false,
+      team_id: "V56DG94ZL5",
+      bundle_identifier: "com.xrcc.retrace.ios.v1",
+      code_sign_identity: "Apple Distribution",
+      profile_name: "match AppStore com.xrcc.retrace.ios.v1",
+      targets: ["CameraAccess"]
+    )
+
     increment_build_number(
       build_number: latest_testflight_build_number(
         app_identifier: "com.xrcc.retrace.ios.v1"
@@ -32,7 +42,6 @@ platform :ios do
       configuration: "Release",
       export_method: "app-store",
       clean: true,
-      xcargs: "CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER='match AppStore com.xrcc.retrace.ios.v1'",
       export_options: {
         provisioningProfiles: {
           "com.xrcc.retrace.ios.v1" => "match AppStore com.xrcc.retrace.ios.v1"

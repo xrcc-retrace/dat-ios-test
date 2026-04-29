@@ -97,6 +97,7 @@ struct DebugSettingsSection: View {
       .padding(14)
       .background(Color.surfaceRaised)
       .cornerRadius(Radius.md)
+
     }
     .padding(.top, Spacing.xl)
   }

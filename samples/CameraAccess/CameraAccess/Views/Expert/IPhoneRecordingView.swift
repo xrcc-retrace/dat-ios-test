@@ -24,17 +24,20 @@ struct IPhoneRecordingView: View {
   let wearables: WearablesInterface
   let uploadService: UploadService
   let onAcknowledgeProcedure: () -> Void
+  let onRecordingComplete: (URL, TimeInterval) -> Void
 
   init(
     transport: CaptureTransport,
     wearables: WearablesInterface,
     uploadService: UploadService,
-    onAcknowledgeProcedure: @escaping () -> Void
+    onAcknowledgeProcedure: @escaping () -> Void,
+    onRecordingComplete: @escaping (URL, TimeInterval) -> Void
   ) {
     self.transport = transport
     self.wearables = wearables
     self.uploadService = uploadService
     self.onAcknowledgeProcedure = onAcknowledgeProcedure
+    self.onRecordingComplete = onRecordingComplete
   }
 
   var body: some View {
@@ -42,13 +45,15 @@ struct IPhoneRecordingView: View {
     case .iPhone:
       IPhoneRecordingEngine(
         uploadService: uploadService,
-        onAcknowledgeProcedure: onAcknowledgeProcedure
+        onAcknowledgeProcedure: onAcknowledgeProcedure,
+        onRecordingComplete: onRecordingComplete
       )
     case .glasses:
       GlassesRecordingEngine(
         wearables: wearables,
         uploadService: uploadService,
-        onAcknowledgeProcedure: onAcknowledgeProcedure
+        onAcknowledgeProcedure: onAcknowledgeProcedure,
+        onRecordingComplete: onRecordingComplete
       )
     }
   }
@@ -62,6 +67,7 @@ struct IPhoneRecordingView: View {
 /// switch) costs nothing for the inactive transport.
 private struct IPhoneRecordingEngine: View {
   let onAcknowledgeProcedure: () -> Void
+  let onRecordingComplete: (URL, TimeInterval) -> Void
 
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var appOrientationController: AppOrientationController
@@ -74,12 +80,14 @@ private struct IPhoneRecordingEngine: View {
 
   init(
     uploadService: UploadService,
-    onAcknowledgeProcedure: @escaping () -> Void
+    onAcknowledgeProcedure: @escaping () -> Void,
+    onRecordingComplete: @escaping (URL, TimeInterval) -> Void
   ) {
     self._viewModel = StateObject(
       wrappedValue: IPhoneExpertRecordingViewModel(uploadService: uploadService)
     )
     self.onAcknowledgeProcedure = onAcknowledgeProcedure
+    self.onRecordingComplete = onRecordingComplete
   }
 
   var body: some View {
@@ -92,7 +100,20 @@ private struct IPhoneRecordingEngine: View {
         debugMode: debugMode,
         hudAdditiveBlend: hudAdditiveBlend,
         pageIndex: $expertPageIndex,
-        onStop: { viewModel.stopRecording() }
+        onStop: {
+          // Stop = capture mode is over. Finalize the mp4, then hand the
+          // URL up so the parent can dismiss this view (camera + audio
+          // teardown fires on `onDisappear`) and present the review as
+          // a sibling full-screen cover. No camera running underneath
+          // the review — that was the old sheet-on-top-of-recording-view
+          // pattern, which kept the AVCaptureSession alive for the full
+          // upload + procedure-review flow.
+          Task {
+            if let result = await viewModel.stopRecording() {
+              onRecordingComplete(result.0, result.1)
+            }
+          }
+        }
       )
     } chrome: {
       expertRecordingChrome(
@@ -125,7 +146,7 @@ private struct IPhoneRecordingEngine: View {
       viewModel.camera.setPreviewInterfaceOrientation(resolved)
     }
     .onDisappear {
-      viewModel.teardown()
+      Task { await viewModel.teardown() }
       UIDevice.current.endGeneratingDeviceOrientationNotifications()
       appOrientationController.unlock()
     }
@@ -139,23 +160,6 @@ private struct IPhoneRecordingEngine: View {
     } message: {
       Text(viewModel.errorMessage)
     }
-    .sheet(isPresented: $viewModel.showRecordingReview) {
-      if let recordingURL = viewModel.recordingManager.recordingURL {
-        ExpertRecordingReviewView(
-          recordingURL: recordingURL,
-          duration: viewModel.recordingManager.recordingDuration,
-          uploadService: viewModel.uploadService,
-          onDismiss: {
-            viewModel.showRecordingReview = false
-            dismiss()
-          },
-          onAcknowledgeResult: {
-            onAcknowledgeProcedure()
-            dismiss()
-          }
-        )
-      }
-    }
   }
 }
 
@@ -166,6 +170,7 @@ private struct IPhoneRecordingEngine: View {
 /// fact that there's no AVCaptureSession orientation to forward.
 private struct GlassesRecordingEngine: View {
   let onAcknowledgeProcedure: () -> Void
+  let onRecordingComplete: (URL, TimeInterval) -> Void
 
   @Environment(\.dismiss) private var dismiss
   @StateObject private var viewModel: StreamSessionViewModel
@@ -177,9 +182,11 @@ private struct GlassesRecordingEngine: View {
   init(
     wearables: WearablesInterface,
     uploadService: UploadService,
-    onAcknowledgeProcedure: @escaping () -> Void
+    onAcknowledgeProcedure: @escaping () -> Void,
+    onRecordingComplete: @escaping (URL, TimeInterval) -> Void
   ) {
     self.onAcknowledgeProcedure = onAcknowledgeProcedure
+    self.onRecordingComplete = onRecordingComplete
     self._viewModel = StateObject(
       wrappedValue: StreamSessionViewModel(wearables: wearables, uploadService: uploadService)
     )
@@ -195,7 +202,18 @@ private struct GlassesRecordingEngine: View {
         debugMode: debugMode,
         hudAdditiveBlend: hudAdditiveBlend,
         pageIndex: $expertPageIndex,
-        onStop: { viewModel.stopRecording() }
+        onStop: {
+          // See IPhoneRecordingEngine — same hand-off pattern: stop
+          // finalizes the mp4, then we hand the URL up so the parent
+          // can dismiss this view (teardown stops the glasses stream
+          // and hand-tracking) and present the review as a sibling
+          // full-screen cover with no glasses pipeline running.
+          Task {
+            if let result = await viewModel.stopRecording() {
+              onRecordingComplete(result.0, result.1)
+            }
+          }
+        }
       )
     } chrome: {
       expertRecordingChrome(
@@ -212,29 +230,12 @@ private struct GlassesRecordingEngine: View {
       await viewModel.prepare()
     }
     .onDisappear {
-      viewModel.teardown()
+      Task { await viewModel.teardown() }
     }
     .alert("Error", isPresented: $viewModel.showError) {
       Button("OK") { viewModel.dismissError() }
     } message: {
       Text(viewModel.errorMessage)
-    }
-    .sheet(isPresented: $viewModel.showRecordingReview) {
-      if let recordingURL = viewModel.recordingManager.recordingURL {
-        ExpertRecordingReviewView(
-          recordingURL: recordingURL,
-          duration: viewModel.recordingManager.recordingDuration,
-          uploadService: viewModel.uploadService,
-          onDismiss: {
-            viewModel.showRecordingReview = false
-            dismiss()
-          },
-          onAcknowledgeResult: {
-            onAcknowledgeProcedure()
-            dismiss()
-          }
-        )
-      }
     }
   }
 }

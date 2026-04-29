@@ -53,6 +53,14 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     case searchingLibrary
     case libraryMissed
     case searchingWeb
+    /// Step 1 (grounded search) finished; step 2 synthesis is running.
+    /// Carries the server-reported source count so the surface can read
+    /// "Found N sources …".
+    case synthesizing(sourceCount: Int)
+    /// Server-side `complete` — procedure persisted, just before the
+    /// resolution panel takes over. Held briefly (~1.0s, controlled by
+    /// the tool-result handler) so the user registers the success.
+    case foundFix(sourceCount: Int)
   }
 
   /// Owns the 3-second `.libraryMissed` hold. While non-nil, the
@@ -67,10 +75,35 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   /// `web_search_for_fix` returns in <3s.
   private var pendingResolution: DiagnosticResolution?
 
-  /// Hard-floor for the `.libraryMissed` moment. 3.0s — long enough
+  /// Hard-floor for the `.libraryMissed` moment. 2.0s — long enough
   /// to read "No procedure found in your library." comfortably,
   /// short enough not to feel stalled.
-  private static let libraryMissedHoldSeconds: UInt64 = 3_000_000_000
+  private static let libraryMissedHoldSeconds: UInt64 = 2_000_000_000
+
+  /// Background poll of `/api/troubleshoot/session/{id}/state`, alive
+  /// only while `web_search_for_fix` is in flight. Drives the
+  /// `.synthesizing` and `.foundFix` narration substages.
+  private var webSearchPollTask: Task<Void, Never>?
+
+  /// Forward-only ratchet so a late poll can't rewind the surface.
+  /// `searching_web < synthesizing < {complete | no_fix_found | error}`.
+  private var lastPolledPhase: String?
+
+  /// Source count from the most recent successful poll. Cached so the
+  /// libraryMissed drain step can chain through `.foundFix` with the
+  /// correct count even when the result handler hasn't fired yet.
+  private var lastPolledSourceCount: Int?
+
+  /// Hard-floor on the `.foundFix` success flash. Started when web
+  /// search reaches the `complete` phase (whichever signal arrives
+  /// first — poll or tool result) and buffers the resolution until the
+  /// floor elapses, mirroring the `libraryMissHoldTask` pattern.
+  private var foundFixHoldTask: Task<Void, Never>?
+  private static let foundFixHoldSeconds: UInt64 = 2_500_000_000
+
+  /// 800 ms — web search runs ~10-20s with two natural transitions, so
+  /// this gives ≤1.5s lag at each boundary while keeping load light.
+  private static let webSearchPollIntervalNanos: UInt64 = 800_000_000
 
   /// Transport chosen on the Troubleshoot intro picker. iPhone routes
   /// through the camera-first drawer layout; glasses keeps the current
@@ -124,6 +157,9 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
         if activeNames.contains("search_procedures") {
           self.libraryMissHoldTask?.cancel()
           self.libraryMissHoldTask = nil
+          self.foundFixHoldTask?.cancel()
+          self.foundFixHoldTask = nil
+          self.cancelWebSearchProgressPolling()
           self.pendingResolution = nil
           self.resolution = nil
           self.searchNarration = .searchingLibrary
@@ -140,9 +176,14 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
             self.resolution = nil
             self.searchNarration = .searchingWeb
           }
+          // Start polling regardless of the hold — the apply step
+          // self-suppresses while the hold is active and applies the
+          // latest phase once the floor elapses.
+          self.startWebSearchProgressPolling()
+        } else {
+          // Tool calls drained. If web search was active, stop polling.
+          self.cancelWebSearchProgressPolling()
         }
-        // No-op when activeNames empties — narration is cleared
-        // explicitly by the result branches in handleToolCallExtras.
       }
       .store(in: &cancellables)
   }
@@ -164,7 +205,10 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     searchNarration = nil
     libraryMissHoldTask?.cancel()
     libraryMissHoldTask = nil
+    foundFixHoldTask?.cancel()
+    foundFixHoldTask = nil
     pendingResolution = nil
+    cancelWebSearchProgressPolling()
 
     await startGeminiLiveSession()
   }
@@ -206,6 +250,9 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     searchNarration = nil
     libraryMissHoldTask?.cancel()
     libraryMissHoldTask = nil
+    foundFixHoldTask?.cancel()
+    foundFixHoldTask = nil
+    cancelWebSearchProgressPolling()
     pendingConfirmation = false
     phase = .diagnosing
     Task {
@@ -227,7 +274,10 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     }
     libraryMissHoldTask?.cancel()
     libraryMissHoldTask = nil
+    foundFixHoldTask?.cancel()
+    foundFixHoldTask = nil
     pendingResolution = nil
+    cancelWebSearchProgressPolling()
     stopCameraStream()
     stopGeminiLiveSession()
   }
@@ -327,6 +377,102 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
   /// When the 3s elapses, the task either applies the buffered
   /// resolution (web finished during the hold) or transitions narration
   /// to `.searchingWeb` (web is still in flight or hasn't started).
+  // MARK: - Web search progress polling
+
+  /// Start polling `/api/troubleshoot/session/{id}/state` while
+  /// `web_search_for_fix` is in flight. Cancels any prior task. Idempotent
+  /// across rapid retries — the cancel + reset of `lastPolledPhase` makes a
+  /// re-fired web search start clean.
+  private func startWebSearchProgressPolling() {
+    webSearchPollTask?.cancel()
+    lastPolledPhase = nil
+    webSearchPollTask = Task { @MainActor [weak self] in
+      let api = ProcedureAPIService()
+      while !Task.isCancelled {
+        guard let self = self, let sid = self.sessionId else { return }
+        if let state = try? await api.fetchDiagnosticState(sessionId: sid),
+           let progress = state.webSearchProgress {
+          self.applyWebSearchProgress(progress)
+        }
+        try? await Task.sleep(nanoseconds: Self.webSearchPollIntervalNanos)
+      }
+    }
+  }
+
+  private func cancelWebSearchProgressPolling() {
+    webSearchPollTask?.cancel()
+    webSearchPollTask = nil
+    lastPolledPhase = nil
+  }
+
+  /// Map server `web_search_progress.phase` onto `searchNarration` with a
+  /// forward-only ratchet, so a slow poll arriving after the surface has
+  /// already advanced can't rewind it. Suppresses while the
+  /// `.libraryMissed` 3.0s floor owns the surface — the hold's drain step
+  /// will re-read the current phase and surface it then.
+  private func applyWebSearchProgress(_ progress: WebSearchProgress) {
+    let order: [String: Int] = [
+      "searching_web": 0,
+      "synthesizing": 1,
+      "complete": 2,
+      "no_fix_found": 2,
+      "error": 2,
+    ]
+    guard let nextRank = order[progress.phase] else { return }
+    if let last = lastPolledPhase, let lastRank = order[last], nextRank < lastRank {
+      return
+    }
+    lastPolledPhase = progress.phase
+
+    // Cache the latest source count so the libraryMiss drain step (or any
+    // other late hand-off) can render the right "Found N sources" text
+    // without re-polling.
+    if let count = progress.sourceCount {
+      lastPolledSourceCount = count
+    }
+
+    if libraryMissHoldTask != nil { return }
+
+    switch progress.phase {
+    case "synthesizing":
+      searchNarration = .synthesizing(sourceCount: progress.sourceCount ?? 0)
+    case "complete":
+      ensureFoundFixHold(sourceCount: progress.sourceCount ?? lastPolledSourceCount ?? 0)
+    case "no_fix_found", "error":
+      // Tool-result handler drives `resolution = .noMatch`; the existing
+      // `TroubleshootNoSolutionPage` is the surface for both terminals.
+      break
+    case "searching_web":
+      if searchNarration != .searchingWeb { searchNarration = .searchingWeb }
+    default:
+      break
+    }
+  }
+
+  /// Show the `.foundFix` flash and hold for 1.5s before letting the
+  /// resolution panel take over. Called by both the poll path (server
+  /// phase reaches `complete`) and the tool-result path (whichever
+  /// arrives first wins the start; subsequent calls refresh the count
+  /// only). Buffers `pendingResolution` until the floor elapses.
+  private func ensureFoundFixHold(sourceCount: Int) {
+    if foundFixHoldTask != nil {
+      // Already holding — refresh the count if it changed.
+      searchNarration = .foundFix(sourceCount: sourceCount)
+      return
+    }
+    searchNarration = .foundFix(sourceCount: sourceCount)
+    foundFixHoldTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: Self.foundFixHoldSeconds)
+      guard let self = self, !Task.isCancelled else { return }
+      self.foundFixHoldTask = nil
+      if let buffered = self.pendingResolution {
+        self.pendingResolution = nil
+        self.resolution = buffered
+      }
+      self.searchNarration = nil
+    }
+  }
+
   private func startLibraryMissedHold() {
     libraryMissHoldTask?.cancel()
     pendingResolution = nil
@@ -338,11 +484,34 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
       self.libraryMissHoldTask = nil
 
       if let buffered = self.pendingResolution {
-        self.pendingResolution = nil
-        self.resolution = buffered
-        self.searchNarration = nil
+        if case .generatedSOP = buffered {
+          // Chain a successful web search through the `.foundFix` flash
+          // so the user sees the success beat even when web returned
+          // during the libraryMissed floor. Re-buffer; foundFix's drain
+          // applies the resolution.
+          let count = self.lastPolledSourceCount ?? 0
+          self.ensureFoundFixHold(sourceCount: count)
+        } else {
+          // .noMatch — straight to the no-solution panel, no flash.
+          self.pendingResolution = nil
+          self.resolution = buffered
+          self.searchNarration = nil
+        }
       } else {
-        self.searchNarration = .searchingWeb
+        // Web is still in flight. The poll has been ticking during the
+        // hold so `lastPolledPhase` may already be ahead of
+        // `searching_web`; honor it so we don't visually rewind.
+        switch self.lastPolledPhase {
+        case "synthesizing":
+          // Source count isn't cached on the VM; the next poll tick
+          // (≤800 ms away) will overwrite with the live count. Seed
+          // with 0 so the surface lands immediately.
+          self.searchNarration = .synthesizing(sourceCount: 0)
+        case "complete":
+          self.searchNarration = .foundFix(sourceCount: 0)
+        default:
+          self.searchNarration = .searchingWeb
+        }
       }
     }
   }
@@ -404,13 +573,32 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
       }()
       guard let pending = pending else { break }
       phase = .resolving
+      let isGenerated: Bool = {
+        if case .generatedSOP = pending { return true }
+        return false
+      }()
+      let toolSourceCount = (result["sources_count"] as? Int)
+        ?? lastPolledSourceCount
+        ?? 0
+
       if libraryMissHoldTask != nil {
-        // 3-second .libraryMissed hold is still active. Buffer the
-        // resolution; the hold task will apply it when the floor
-        // elapses. Without this the resolution panel would pop in
-        // mid-hold and the user would never read the miss line.
+        // libraryMissed hold owns the surface. Buffer; its drain step
+        // chains a .generatedSOP through `.foundFix` (and applies a
+        // .noMatch directly).
         pendingResolution = pending
+      } else if isGenerated {
+        // Success — show the `.foundFix` flash for at least 1.5s
+        // before letting the resolution panel arrive. ensureFoundFixHold
+        // is idempotent: if the poll already started the hold, this
+        // just refreshes the count.
+        pendingResolution = pending
+        ensureFoundFixHold(sourceCount: toolSourceCount)
       } else {
+        // .noMatch (no_fix_found / error). Cancel any stale foundFix
+        // hold (rare — would mean we got `complete` from poll then
+        // an error from the tool) and apply directly.
+        foundFixHoldTask?.cancel()
+        foundFixHoldTask = nil
         resolution = pending
         searchNarration = nil
       }

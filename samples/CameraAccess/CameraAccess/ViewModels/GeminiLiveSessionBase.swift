@@ -63,6 +63,16 @@ class GeminiLiveSessionBase: ObservableObject {
   /// state of `RetraceAudioMeter` — pinned to 0 while muted so a paused mic
   /// can't read as "listening".
   @Published private(set) var userInputPeak: Float = 0
+  /// Mirrored from `AudioSessionManager.lastAudioActivityAt`. Coaching's
+  /// heartbeat reads this to enforce a quiet-streak window — peaks flicker
+  /// off in inter-chunk gaps, but this timestamp only moves forward when
+  /// real audio activity happens.
+  @Published private(set) var lastAudioActivityAt: Date = .distantPast
+  /// Mirrored from `GeminiLiveService.modelGenerationActive`. Wire-level
+  /// truth for "Gemini is producing a turn right now" — independent of
+  /// local playback. Coaching's heartbeat gate uses it to never ship
+  /// `[check]` while the model is mid-generation.
+  @Published private(set) var isModelGenerating: Bool = false
   @Published var geminiConnectionState: GeminiLiveService.ConnectionState = .disconnected
   @Published var activity: [ActivityEntry] = []
 
@@ -162,6 +172,32 @@ class GeminiLiveSessionBase: ObservableObject {
   init(wearables: WearablesInterface, serverBaseURL: String) {
     self.wearables = wearables
     self.serverBaseURL = serverBaseURL
+  }
+
+  /// Backstop for the abnormal-dismiss path: if the owning view is dropped
+  /// without `.onDisappear` firing (memory pressure, scene yank, fullScreenCover
+  /// host removed), `endSession()` never runs and the WebSocket / audio
+  /// session / capture session keep going until ARC catches up. The happy
+  /// path still tears down via `endSession()` first; this only fires when
+  /// that didn't happen.
+  ///
+  /// Capturing services by value (concrete reference types) keeps them
+  /// alive long enough for the heap-allocated `Task` to run. Cancelling
+  /// `cameraLifecycleTask` is critical — without it, a setup-in-flight
+  /// closure spins up a new `IPhoneCameraCapture` even after the VM is
+  /// gone, and the deinit-time `cam` would be nil when that camera is
+  /// finally born.
+  deinit {
+    let task = cameraLifecycleTask
+    let svc = geminiService
+    let audio = audioManager
+    let cam = iPhoneCamera
+    task?.cancel()
+    Task { @MainActor in
+      svc?.disconnect()
+      audio?.stopCapture()
+      await cam?.stop()
+    }
   }
 
   // MARK: - Template-method hooks (override in subclass)
@@ -564,7 +600,7 @@ class GeminiLiveSessionBase: ObservableObject {
 
       self.iPhoneCamera?.onSampleBuffer = nil
       self.iPhoneCamera?.onHandSampleBuffer = nil
-      self.iPhoneCamera?.stop()
+      await self.iPhoneCamera?.stop()
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
       self.iPhonePreviewLayer = nil
@@ -676,7 +712,7 @@ class GeminiLiveSessionBase: ObservableObject {
 
       self.iPhoneCamera?.onSampleBuffer = nil
       self.iPhoneCamera?.onHandSampleBuffer = nil
-      self.iPhoneCamera?.stop()
+      await self.iPhoneCamera?.stop()
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
       self.iPhonePreviewLayer = nil
@@ -903,6 +939,13 @@ class GeminiLiveSessionBase: ObservableObject {
         }
       }
       .store(in: &cancellables)
+
+    gemini.$modelGenerationActive
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] active in
+        self?.isModelGenerating = active
+      }
+      .store(in: &cancellables)
   }
 
   /// Fires after the base's .connected transition. Coaching overrides to
@@ -949,6 +992,13 @@ class GeminiLiveSessionBase: ObservableObject {
         // Pin to 0 while muted — mic may still capture frames for VAD/AEC,
         // but visually we're not "listening".
         self.userInputPeak = self.isMuted ? 0 : peak
+      }
+      .store(in: &cancellables)
+
+    audio.$lastAudioActivityAt
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] ts in
+        self?.lastAudioActivityAt = ts
       }
       .store(in: &cancellables)
   }

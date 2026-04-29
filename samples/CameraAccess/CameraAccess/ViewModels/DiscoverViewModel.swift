@@ -10,6 +10,12 @@ class DiscoverViewModel: ObservableObject {
 
   private let api = ProcedureAPIService()
 
+  /// While any row is `status == "processing"` we re-fetch every 5 s so
+  /// the card auto-flips to "Analyzing…" → real procedure once the
+  /// server commits. Mirrors WorkflowListViewModel for parity.
+  private var pollingTask: Task<Void, Never>?
+  private static let pollingInterval: UInt64 = 5_000_000_000  // 5 s
+
   // Canonical chip list — must stay in sync with the backend's
   // ProcedureCategory Literal in models/procedure.py. "All" is a UI
   // affordance only (server never assigns it). Server defaults to "Other"
@@ -37,10 +43,46 @@ class DiscoverViewModel: ObservableObject {
     errorMessage = nil
     do {
       procedures = try await api.fetchProcedures(forceRefresh: forceRefresh)
+      ensurePollingMatchesState()
     } catch {
       errorMessage = error.localizedDescription
     }
     isLoading = false
+  }
+
+  /// Idempotent — start polling iff at least one row is processing,
+  /// stop iff none. Same shape as WorkflowListViewModel.
+  private func ensurePollingMatchesState() {
+    let anyProcessing = procedures.contains { $0.status == "processing" }
+    if anyProcessing {
+      if pollingTask == nil {
+        pollingTask = Task { [weak self] in await self?.pollLoop() }
+      }
+    } else {
+      pollingTask?.cancel()
+      pollingTask = nil
+    }
+  }
+
+  private func pollLoop() async {
+    while !Task.isCancelled {
+      try? await Task.sleep(nanoseconds: Self.pollingInterval)
+      guard !Task.isCancelled else { return }
+      do {
+        procedures = try await api.fetchProcedures(forceRefresh: true)
+      } catch {
+        // Quiet retry on next tick — don't surface transient network
+        // errors to the UI during background polling.
+      }
+      if !procedures.contains(where: { $0.status == "processing" }) {
+        pollingTask = nil
+        return
+      }
+    }
+  }
+
+  deinit {
+    pollingTask?.cancel()
   }
 
   var filteredProcedures: [ProcedureListItem] {

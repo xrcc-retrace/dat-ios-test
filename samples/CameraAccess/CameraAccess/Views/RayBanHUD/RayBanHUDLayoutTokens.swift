@@ -67,4 +67,11 @@ enum RayBanHUDLayoutTokens {
   /// reversal is instantaneous and reads as a smooth cycle that's hard
   /// to anchor against.
   static let autoScrollEdgeDwellDuration: TimeInterval = 1.0
+  /// Step-card content opacity while the green completion overlay is
+  /// playing. 0.15 keeps the silhouette readable but pushes the body
+  /// text into the background so the white "Step completed" label is
+  /// the dominant element on the card. Synchronized fade-in/out timing
+  /// with the overlay's tint via `stepCompletionFadeDuration`.
+  static let stepCompletionContentDimOpacity: Double = 0.15
+  static let stepCompletionFadeDuration: TimeInterval = 0.20
 }

@@ -18,6 +18,20 @@ class GeminiLiveService: ObservableObject {
   /// reopen the session with compressed context intact after GoAway or drops.
   @Published private(set) var resumptionHandle: String?
 
+  /// Wire-level "model is producing audio for the current turn" signal.
+  /// Flips true on the first inbound audio chunk (raw-PCM binary frame OR
+  /// base64 `modelTurn.parts[].inlineData`); flips false on `turnComplete`,
+  /// `interrupted`, or a 2.0s watchdog if the turn never closes cleanly.
+  /// Independent of local `AVAudioPlayerNode` state so it can't be fooled
+  /// by inter-chunk gaps in the playback queue.
+  @Published private(set) var modelGenerationActive: Bool = false
+
+  /// Cancelled + rearmed on every audio chunk. Clears `modelGenerationActive`
+  /// after silence so a malformed turn (no `turnComplete` / `interrupted`)
+  /// can't leave the flag stuck on.
+  private var modelGenerationWatchdog: Task<Void, Never>?
+  private static let modelGenerationWatchdogSeconds: UInt64 = 2
+
   private let tokenManager: GeminiTokenManager
   private var urlSession: URLSession?
   private var webSocketTask: URLSessionWebSocketTask?
@@ -329,6 +343,7 @@ class GeminiLiveService: ObservableObject {
     urlSession = nil
     delegateAdapter = nil
     binaryFramesLogged = 0
+    clearModelGenerating()
   }
 
   private func establishConnection(token: EphemeralTokenResponse) throws {
@@ -451,6 +466,7 @@ class GeminiLiveService: ObservableObject {
         let hex = preview.map { String(format: "%02x", $0) }.joined(separator: " ")
         print("[GeminiLive] ← binary/pcm #\(binaryFramesLogged): \(data.count) bytes hex=\(hex)")
       }
+      markModelGenerating()
       onAudioData?(data)
     @unknown default:
       break
@@ -458,6 +474,35 @@ class GeminiLiveService: ObservableObject {
 
     // Forward to generic handler for debugging
     onMessage?(message)
+  }
+
+  /// Flip `modelGenerationActive` true and (re)arm the watchdog. Called on
+  /// every inbound audio chunk — both raw-PCM binary frames and base64
+  /// `modelTurn.parts[].inlineData`. Re-arming is cheap (cancel + new
+  /// `Task.sleep`) and is what keeps the flag true across the natural gaps
+  /// between Gemini's audio chunks.
+  private func markModelGenerating() {
+    if !modelGenerationActive {
+      modelGenerationActive = true
+    }
+    modelGenerationWatchdog?.cancel()
+    modelGenerationWatchdog = Task { @MainActor [weak self] in
+      try? await Task.sleep(
+        nanoseconds: Self.modelGenerationWatchdogSeconds * 1_000_000_000
+      )
+      guard !Task.isCancelled, let self = self else { return }
+      self.modelGenerationActive = false
+    }
+  }
+
+  /// Cancel the watchdog and clear the flag. Called from `turnComplete`,
+  /// `interrupted`, and `tearDownConnection`.
+  private func clearModelGenerating() {
+    modelGenerationWatchdog?.cancel()
+    modelGenerationWatchdog = nil
+    if modelGenerationActive {
+      modelGenerationActive = false
+    }
   }
 
   private func parseJsonMessage(_ text: String) {
@@ -468,21 +513,14 @@ class GeminiLiveService: ObservableObject {
     // Token usage — surface context growth + detect compression.
     observeUsageMetadata(json)
 
-    // Handle server content (model turn with audio, turn complete)
+    // Handle server content (model turn with audio, turn complete).
+    //
+    // Block order matters for `modelGenerationActive`: we process audio
+    // chunks FIRST and terminal-state signals (turnComplete / interrupted)
+    // LAST, so that on a frame containing both an audio chunk AND a
+    // turn-end marker, the terminal `clearModelGenerating()` wins. The
+    // reverse order would leave the flag stuck on (until the 2s watchdog).
     if let serverContent = json["serverContent"] as? [String: Any] {
-      // Barge-in: Gemini's server VAD detected the learner talking over the
-      // model. It has cancelled generation; we must drain playback so the old
-      // reply doesn't keep coming out of the glasses speaker.
-      if let interrupted = serverContent["interrupted"] as? Bool, interrupted {
-        print("[GeminiLive] Interrupted — server detected barge-in, clearing playback")
-        onInterrupted?()
-      }
-
-      // Check for turn complete
-      if let turnComplete = serverContent["turnComplete"] as? Bool, turnComplete {
-        onTurnComplete?()
-      }
-
       // Check for model turn with audio parts
       if let modelTurn = serverContent["modelTurn"] as? [String: Any],
          let parts = modelTurn["parts"] as? [[String: Any]] {
@@ -496,9 +534,25 @@ class GeminiLiveService: ObservableObject {
               firstAudioReceivedLogged = true
               print("[GeminiLive] First audio from Gemini (\(audioData.count) bytes)")
             }
+            markModelGenerating()
             onAudioData?(audioData)
           }
         }
+      }
+
+      // Barge-in: Gemini's server VAD detected the learner talking over the
+      // model. It has cancelled generation; we must drain playback so the old
+      // reply doesn't keep coming out of the glasses speaker.
+      if let interrupted = serverContent["interrupted"] as? Bool, interrupted {
+        print("[GeminiLive] Interrupted — server detected barge-in, clearing playback")
+        clearModelGenerating()
+        onInterrupted?()
+      }
+
+      // Check for turn complete
+      if let turnComplete = serverContent["turnComplete"] as? Bool, turnComplete {
+        clearModelGenerating()
+        onTurnComplete?()
       }
 
       // Transcripts forward to the UI but aren't logged — the activity feed

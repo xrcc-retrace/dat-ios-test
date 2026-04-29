@@ -43,7 +43,7 @@ struct WorkflowListView: View {
       ProcedureDetailView(procedureId: procedureId)
     }
     .refreshable {
-      await viewModel.fetchProcedures()
+      await viewModel.fetchProcedures(forceRefresh: true)
     }
     .task {
       await viewModel.fetchProcedures()
@@ -74,21 +74,30 @@ struct WorkflowListView: View {
         .padding(.horizontal, Spacing.screenPadding)
         .padding(.top, Spacing.md)
 
-        // Procedure cards
+        // Procedure cards. Tap navigates to detail unless the row is
+        // still processing — the placeholder state is non-interactive
+        // (no chevron, no tap target) until the server flips status.
         ForEach(viewModel.procedures) { procedure in
-          NavigationLink(value: procedure.id) {
-            ProcedureCardView(
-              title: procedure.title,
-              description: procedure.description,
-              stepCount: procedure.stepCount ?? 0,
-              duration: procedure.totalDuration,
-              createdAt: procedure.createdAt,
-              status: procedure.status,
-              iconSymbol: procedure.iconSymbol,
-              iconEmoji: procedure.iconEmoji
-            )
+          let card = ProcedureCardView(
+            title: procedure.title,
+            description: procedure.description,
+            stepCount: procedure.stepCount ?? 0,
+            duration: procedure.totalDuration,
+            createdAt: procedure.createdAt,
+            status: procedure.status,
+            iconSymbol: procedure.iconSymbol,
+            iconEmoji: procedure.iconEmoji,
+            sourceType: procedure.sourceType,
+            errorMessage: procedure.errorMessage
+          )
+          if procedure.status == "processing" {
+            card.padding(.horizontal, Spacing.screenPadding)
+          } else {
+            NavigationLink(value: procedure.id) {
+              card
+            }
+            .padding(.horizontal, Spacing.screenPadding)
           }
-          .padding(.horizontal, Spacing.screenPadding)
         }
       }
       .padding(.bottom, Spacing.screenPadding)

@@ -68,7 +68,7 @@ struct CoachingSessionView: View {
       IPhoneCoachingLayout(
         viewModel: viewModel,
         drawerExpanded: $drawerExpanded,
-        showDrawer: currentInterfaceOrientation.isPortrait,
+        showDrawer: debugMode && currentInterfaceOrientation.isPortrait,
         cameraContent: {
           switch transport {
           case .iPhone:

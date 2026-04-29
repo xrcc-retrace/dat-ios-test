@@ -62,6 +62,7 @@ struct TroubleshootSessionState: Codable {
   let generatedProcedureId: String?
   let handoffTarget: String?
   let handoffLearnerSessionId: String?
+  let webSearchProgress: WebSearchProgress?
 
   enum CodingKeys: String, CodingKey {
     case sessionId = "session_id"
@@ -73,6 +74,29 @@ struct TroubleshootSessionState: Codable {
     case generatedProcedureId = "generated_procedure_id"
     case handoffTarget = "handoff_target"
     case handoffLearnerSessionId = "handoff_learner_session_id"
+    case webSearchProgress = "web_search_progress"
+  }
+}
+
+/// Mirrors `services.troubleshoot.session.update_web_search_progress`.
+/// Phase strings: "searching_web" → "synthesizing" → terminal
+/// ("complete" | "no_fix_found" | "error"). Server returns `null` outside
+/// of an in-flight `web_search_for_fix` call.
+struct WebSearchProgress: Codable, Equatable {
+  let phase: String
+  let sourceCount: Int?
+  let procedureId: String?
+  let errorMessage: String?
+  let startedAt: String
+  let updatedAt: String
+
+  enum CodingKeys: String, CodingKey {
+    case phase
+    case sourceCount = "source_count"
+    case procedureId = "procedure_id"
+    case errorMessage = "error_message"
+    case startedAt = "started_at"
+    case updatedAt = "updated_at"
   }
 }
 

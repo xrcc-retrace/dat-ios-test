@@ -85,6 +85,12 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   private var heartbeatEnabled = false
   private static let heartbeatIntervalSeconds: UInt64 = 5
   private static let heartbeatMarker = "[check]"
+  /// Quiet-streak window used by the heartbeat gate. The gate refuses to
+  /// send if `lastAudioActivityAt` is within this window. 1.5s comfortably
+  /// bridges the longest natural gaps between Gemini's audio chunks
+  /// (~0.3-0.5s at sentence boundaries) and the local playback tail, so
+  /// the gate cannot pass mid-utterance from either side.
+  private static let heartbeatQuietWindow: TimeInterval = 1.5
 
   // MARK: - Computed
 
@@ -124,9 +130,12 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
     celebratingStepIndex = fromIndex
     CompletionFeedback.playStepComplete()  // no-op stub; sound asset deferred
     transitionTask = Task { @MainActor [weak self] in
-      // 0.7s = 0.20 fade-in + 0.20 checkmark + 0.30 hold. Then swap the
-      // displayed index so SwiftUI runs the asymmetric slide transition.
-      try? await Task.sleep(nanoseconds: 700_000_000)
+      // 1.5s = 0.20 fade-in + 0.20 checkmark + 1.10 hold. The longer
+      // hold lets the success beat actually register before the slide;
+      // the prior 0.30 hold flashed by faster than the user could read
+      // "Step completed". Then swap the displayed index so SwiftUI runs
+      // the asymmetric slide transition.
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
       guard let self, !Task.isCancelled else { return }
       // Set slideDirection and displayedStepIndex in the same
       // transaction so the .transition value is current at the moment
@@ -446,12 +455,13 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
     heartbeatTask = Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: Self.heartbeatIntervalSeconds * 1_000_000_000)
       guard !Task.isCancelled, let self = self, self.heartbeatEnabled else { return }
-      // Safety gate: mic-initiated learner turn / tool call in flight / AI
-      // still speaking means the next onTurnComplete will come and
-      // re-schedule us. Skip this tick without firing.
-      guard self.isGeminiReady,
-            self.pendingToolCallIds.isEmpty,
-            !self.isAISpeaking else {
+      // Foolproof gate: never ship `[check]` while either side is
+      // producing audio. See `canSendHeartbeatNow` for the truth table.
+      guard self.canSendHeartbeatNow() else {
+        // Activity within the quiet window (or the model is mid-turn,
+        // or a tool is in flight). Bail this tick and let the fallback
+        // re-arm us so a stuck silent stretch doesn't stall forever.
+        self.scheduleHeartbeatFallback()
         return
       }
       await self.sendHeartbeat()
@@ -466,6 +476,24 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
       guard !Task.isCancelled, let self = self, self.heartbeatEnabled else { return }
       self.scheduleNextHeartbeat()
     }
+  }
+
+  /// Single source of truth for whether a heartbeat is safe to send right
+  /// now. Three independent gates — wire-level, local-playback, and
+  /// quiet-streak — must all be quiet. Any one alone has a known race;
+  /// together they're foolproof.
+  ///
+  /// - `isModelGenerating`: Gemini wire flag, set on each inbound audio
+  ///   chunk and cleared on `turnComplete` / `interrupted` / 2s watchdog.
+  ///   Independent of `AVAudioPlayerNode` so it can't be fooled by gaps.
+  /// - `isAISpeaking`: belt — local `scheduledBufferCount > 0`.
+  /// - quiet streak on `lastAudioActivityAt`: catches inter-chunk gaps,
+  ///   the playback tail, and active user speech (mic peak above floor).
+  private func canSendHeartbeatNow() -> Bool {
+    guard isGeminiReady, pendingToolCallIds.isEmpty else { return false }
+    guard !isModelGenerating, !isAISpeaking else { return false }
+    let sinceActivity = Date().timeIntervalSince(lastAudioActivityAt)
+    return sinceActivity >= Self.heartbeatQuietWindow
   }
 
   private func sendHeartbeat() async {

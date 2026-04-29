@@ -14,11 +14,12 @@ class ExpertRecordingManager: ObservableObject {
   /// were captured.
   @Published var isStarting = false
 
-  /// HUD-visibility gate. True from the instant the user taps Start (during
-  /// the async writer + audio bring-up) through the live recording. Lets the
-  /// Ray-Ban lens mount immediately on tap instead of waiting for the audio
-  /// engine to come up.
-  var isHUDActive: Bool { isStarting || isRecording }
+  /// HUD-visibility gate. Held until the audio engine is actually live so
+  /// the heavy SwiftUI / Metal mount doesn't compete with the audio-session
+  /// bring-up — main-thread contention during that ~250 ms window was
+  /// triggering the `-10868` race on the input AU's first format
+  /// validation. Trades a small post-tap lag for foolproof audio start.
+  var isHUDActive: Bool { isRecording }
 
   private var assetWriter: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
@@ -54,11 +55,32 @@ class ExpertRecordingManager: ObservableObject {
 
   // MARK: - Recording Control
 
+  /// Errors from `startRecording`. Today only `audioStartFailed` is
+  /// surfaced — any failure inside the AVAssetWriter setup still logs
+  /// and returns false (writer-side failures aren't retryable here).
+  enum StartRecordingError: LocalizedError {
+    case audioStartFailed(Error)
+    case writerSetupFailed
+
+    var errorDescription: String? {
+      switch self {
+      case .audioStartFailed(let underlying):
+        return "Audio failed to start. Tap Start again. (\(underlying.localizedDescription))"
+      case .writerSetupFailed:
+        return "Could not prepare the video writer. Tap Start again."
+      }
+    }
+  }
+
+  /// Returns nil on success. Returns a `StartRecordingError` if the
+  /// recording could not begin — the caller should surface that as an
+  /// alert and not flip into a recording-active UI state.
+  @discardableResult
   func startRecording(
     width: Int = ExpertRecordingManager.portraitSize.width,
     height: Int = ExpertRecordingManager.portraitSize.height
-  ) async {
-    guard !isRecording, !isStarting else { return }
+  ) async -> StartRecordingError? {
+    guard !isRecording, !isStarting else { return nil }
     isStarting = true
     defer { isStarting = false }
 
@@ -121,7 +143,7 @@ class ExpertRecordingManager: ObservableObject {
         return (writer, vInput, aInput)
       }.value
 
-    guard let built = built else { return }
+    guard let built = built else { return .writerSetupFailed }
 
     // Back on the main actor: publish the writer + clear stats.
     assetWriter = built.writer
@@ -135,7 +157,24 @@ class ExpertRecordingManager: ObservableObject {
     recordingURL = outputURL
 
     // Bring up audio capture off-main too (~200 ms on its own).
-    await audioSessionManager.startCaptureAsync()
+    // Throws on terminal failure (after one automatic retry) so we can
+    // surface "audio failed" instead of silently producing a silent mp4.
+    do {
+      try await audioSessionManager.startCaptureAsync()
+    } catch {
+      print("[Recording] Audio start failed: \(error.localizedDescription) — aborting")
+      // Tear down the writer we just stood up so the next Start tap
+      // re-creates a fresh AVAssetWriter (writers can't be restarted).
+      built.video.markAsFinished()
+      built.audio.markAsFinished()
+      built.writer.cancelWriting()
+      try? FileManager.default.removeItem(at: outputURL)
+      assetWriter = nil
+      videoInput = nil
+      audioInput = nil
+      recordingURL = nil
+      return .audioStartFailed(error)
+    }
 
     // Wire the audio buffer callback AFTER the engine is running — that
     // way we can't get a leftover buffer from a previous session racing
@@ -161,6 +200,7 @@ class ExpertRecordingManager: ObservableObject {
     }
 
     print("[Recording] Started recording to \(outputURL.lastPathComponent)")
+    return nil
   }
 
   func stopRecording() async -> URL? {

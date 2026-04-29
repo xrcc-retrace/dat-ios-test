@@ -13,8 +13,6 @@ enum HUDControl: Hashable {
   case referenceClip
   case exitWorkflow
   case completionSavedWorkflows
-  case completionTroubleshoot
-  case completionOk
   case insightsTab(InsightCategory)
   case expertStopRecording
   case expertTipCard

@@ -2,15 +2,14 @@ import Foundation
 
 /// Focus-engine handler for the Coaching completion page.
 ///
-/// Vertical chain through three action cards:
-///   `.completionOk` → `.completionSavedWorkflows` → `.completionTroubleshoot`
+/// Single focusable node: `.completionSavedWorkflows` (the "Return to
+/// workflows" pill). The summary card above it is decorative — not
+/// hover-selectable, so up/down has nowhere to traverse.
 ///
-/// Default focus = `.completionOk` (the natural starting position; user
-/// most often confirms-and-leaves on completion).
+/// Default focus = `.completionSavedWorkflows`.
 ///
-/// - **Up/down** → traverse the chain.
-/// - **Left/right** → no-op (vertical layout, no horizontal neighbors).
-/// - **Select** → fire focused action card's `onConfirm`.
+/// - **Up/down/left/right** → no-op (single-node graph).
+/// - **Select** → fire the focused pill's `onConfirm` (exits the session).
 /// - **Dismiss** → no-op; the page handler doesn't claim dismiss because
 ///   the procedure is already complete and exit is the intended outcome
 ///   anyway. `coordinator.dispatch(.dismiss)` returns false; the lens
@@ -23,20 +22,11 @@ final class CoachingCompletionPageHandler: HUDInputHandler {
     self.coordinator = coordinator
   }
 
-  var defaultFocus: HUDControl? { .completionOk }
+  var defaultFocus: HUDControl? { .completionSavedWorkflows }
 
   var focusGraph: FocusGraph {
     [
-      .completionOk: FocusNeighbors(
-        down: .completionSavedWorkflows
-      ),
-      .completionSavedWorkflows: FocusNeighbors(
-        up: .completionOk,
-        down: .completionTroubleshoot
-      ),
-      .completionTroubleshoot: FocusNeighbors(
-        up: .completionSavedWorkflows
-      ),
+      .completionSavedWorkflows: FocusNeighbors(),
     ]
   }
 
@@ -58,10 +48,10 @@ final class CoachingCompletionPageHandler: HUDInputHandler {
 
   var voiceCommands: [String: () -> Void] {
     [
-      "done":             { [weak self] in self?.coordinator.fireConfirm(for: .completionOk) },
-      "saved workflows":  { [weak self] in self?.coordinator.fireConfirm(for: .completionSavedWorkflows) },
-      "library":          { [weak self] in self?.coordinator.fireConfirm(for: .completionSavedWorkflows) },
-      "troubleshoot":     { [weak self] in self?.coordinator.fireConfirm(for: .completionTroubleshoot) },
+      "return to workflows":  { [weak self] in self?.coordinator.fireConfirm(for: .completionSavedWorkflows) },
+      "workflows":            { [weak self] in self?.coordinator.fireConfirm(for: .completionSavedWorkflows) },
+      "library":              { [weak self] in self?.coordinator.fireConfirm(for: .completionSavedWorkflows) },
+      "done":                 { [weak self] in self?.coordinator.fireConfirm(for: .completionSavedWorkflows) },
     ]
   }
 }

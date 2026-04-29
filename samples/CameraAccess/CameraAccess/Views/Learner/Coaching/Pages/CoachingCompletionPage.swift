@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Replaces every other page when `viewModel.isCompleted` flips true.
-/// Renders the completion summary + the two action cards (Saved Workflows,
-/// Troubleshoot). Tapping any pill exits the session — the parent decides
-/// where to route from there.
+/// Renders the completion summary + a single "Return to workflows" action
+/// card. Tapping the pill (or the summary card) exits the session — the
+/// parent decides where to route from there.
 struct CoachingCompletionPage: RayBanHUDView {
   let onExit: () -> Void
 
@@ -11,19 +11,12 @@ struct CoachingCompletionPage: RayBanHUDView {
     VStack(spacing: RayBanHUDLayoutTokens.stackSpacing) {
       Spacer(minLength: 0)
 
-      RayBanHUDCompletionSummaryCard(onConfirm: onExit)
+      RayBanHUDCompletionSummaryCard()
 
       RayBanHUDCompletionActionCard(
         icon: "sparkles.rectangle.stack.fill",
-        label: "Saved Workflows",
+        label: "Return to workflows",
         id: .completionSavedWorkflows,
-        onConfirm: onExit
-      )
-
-      RayBanHUDCompletionActionCard(
-        icon: "stethoscope",
-        label: "Troubleshoot",
-        id: .completionTroubleshoot,
         onConfirm: onExit
       )
 

@@ -44,6 +44,12 @@ struct RayBanHUDStepCard: View {
   @Binding var autoScrollIsUserPaused: Bool
   @Binding var autoScrollIsOverflowing: Bool
   let autoScrollIsExternallySuspended: Bool
+  /// True while the step-completion celebration overlay is on top of
+  /// this card. Drives a content-only opacity fade so the body text
+  /// underneath the green tint stops competing with the white "Step
+  /// completed" label. Defaulted to false so non-Coaching call sites
+  /// (Expert / Troubleshoot / previews) don't need to wire it.
+  let isCelebrating: Bool
 
   @State private var selectedInsightCategory: InsightCategory?
 
@@ -51,16 +57,27 @@ struct RayBanHUDStepCard: View {
     mode: RayBanHUDStepCardMode,
     autoScrollIsUserPaused: Binding<Bool> = .constant(false),
     autoScrollIsOverflowing: Binding<Bool> = .constant(false),
-    autoScrollIsExternallySuspended: Bool = false
+    autoScrollIsExternallySuspended: Bool = false,
+    isCelebrating: Bool = false
   ) {
     self.mode = mode
     self._autoScrollIsUserPaused = autoScrollIsUserPaused
     self._autoScrollIsOverflowing = autoScrollIsOverflowing
     self.autoScrollIsExternallySuspended = autoScrollIsExternallySuspended
+    self.isCelebrating = isCelebrating
   }
 
   var body: some View {
     cardSurface
+      // Content-only fade during the green-overlay celebration. Applied
+      // BEFORE `.rayBanHUDPanel` so the glass surface stays at full
+      // opacity (preserving the card silhouette + giving the overlay's
+      // green tint a substrate); only title/description/insights dim.
+      .opacity(isCelebrating ? RayBanHUDLayoutTokens.stepCompletionContentDimOpacity : 1.0)
+      .animation(
+        .easeInOut(duration: RayBanHUDLayoutTokens.stepCompletionFadeDuration),
+        value: isCelebrating
+      )
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(RayBanHUDLayoutTokens.contentPadding)
       .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
@@ -368,9 +385,11 @@ struct RayBanHUDDetailPanel: View {
   }
 }
 
+/// Decorative summary panel on the Coaching completion page. NOT
+/// hover-selectable — the only actionable element on the completion page
+/// is the "Return to workflows" pill below it. The page handler's focus
+/// graph anchors on that pill alone (no up/down chain).
 struct RayBanHUDCompletionSummaryCard: View {
-  let onConfirm: () -> Void
-
   var body: some View {
     VStack(spacing: 16) {
       Image(systemName: "checkmark.circle.fill")
@@ -387,7 +406,6 @@ struct RayBanHUDCompletionSummaryCard: View {
     .frame(height: RayBanHUDLayoutTokens.completionHeight)
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
     .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-    .hoverSelectable(.completionOk, shape: .rounded(RayBanHUDLayoutTokens.cardRadius), onConfirm: onConfirm)
   }
 
   private var completionGradient: RadialGradient {

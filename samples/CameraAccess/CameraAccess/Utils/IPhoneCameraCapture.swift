@@ -104,16 +104,17 @@ final class IPhoneCameraCapture: NSObject, ObservableObject {
     }
   }
 
-  func stop() {
+  func stop() async {
     guard session.isRunning else {
       isRunning = false
       return
     }
-    // `stopRunning` also blocks; keep it off MainActor.
+    // `stopRunning` blocks; keep it off MainActor and `await` it so callers
+    // can serialize a fast restart against the prior stop completing.
     let s = session
-    Task.detached(priority: .userInitiated) {
+    await Task.detached(priority: .userInitiated) {
       s.stopRunning()
-    }
+    }.value
     isRunning = false
   }
 

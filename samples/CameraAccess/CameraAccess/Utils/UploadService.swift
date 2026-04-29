@@ -8,8 +8,25 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
   @Published var uploadResult: ProcedureResponse?
   @Published var uploadError: String?
 
+  /// True iff the user explicitly tapped "Keep working in the background"
+  /// on the recording-review cover (replacing the old toolbar X). Gates
+  /// the `ExpertTabView`-level auto-pop of `ProcedureReviewView` when
+  /// `uploadResult` lands — so the in-cover "Review workflow" link path
+  /// doesn't double up with the auto-pop. Cleared on `reset()` and on a
+  /// fresh `uploadRecording(...)` call.
+  @Published private(set) var wasBackgrounded: Bool = false
+
   var serverBaseURL: String {
     ServerEndpoint.shared.resolvedBaseURL
+  }
+
+  /// Tag this upload as "user explicitly backgrounded it." The recording
+  /// review's "Keep working in the background" button calls this before
+  /// dismissing the cover so the auto-pop logic at `ExpertTabView` can
+  /// distinguish backgrounded uploads (auto-pop) from in-cover paths
+  /// (existing NavigationLink, no auto-pop).
+  func markBackgrounded() {
+    wasBackgrounded = true
   }
 
   private lazy var session: URLSession = {
@@ -30,6 +47,7 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
     uploadProgress = 0
     uploadResult = nil
     uploadError = nil
+    wasBackgrounded = false
 
     guard let url = URL(string: "\(serverBaseURL)/api/expert/upload") else {
       uploadError = "Invalid server URL"
@@ -94,6 +112,20 @@ class UploadService: NSObject, ObservableObject, URLSessionTaskDelegate {
       print("[Upload] Error: \(error)")
       isUploading = false
     }
+  }
+
+  /// Drops state from a prior upload so the next review opens clean.
+  /// If a poll loop is running, flipping `isProcessing=false` ends it on the
+  /// next iteration. Does not cancel an in-flight upload-side URLSessionTask.
+  /// Also clears `wasBackgrounded` so the auto-pop won't re-fire on a stale
+  /// result.
+  func reset() {
+    isUploading = false
+    isProcessing = false
+    uploadProgress = 0
+    uploadResult = nil
+    uploadError = nil
+    wasBackgrounded = false
   }
 
   private func pollForResult(procedureId: String) async {

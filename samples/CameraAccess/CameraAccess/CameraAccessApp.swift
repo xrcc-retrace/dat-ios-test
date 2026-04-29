@@ -27,6 +27,7 @@ import MWDATMockDevice
 struct CameraAccessApp: App {
   @UIApplicationDelegateAdaptor(RetraceAppDelegate.self) private var appDelegate
   @StateObject private var appOrientationController = AppOrientationController.shared
+  @Environment(\.scenePhase) private var scenePhase
 
   private let wearables: WearablesInterface
   @StateObject private var wearablesViewModel: WearablesViewModel
@@ -39,6 +40,19 @@ struct CameraAccessApp: App {
       diskCapacity:   256 * 1024 * 1024,
       diskPath:       "RetraceURLCache"
     )
+
+    // One-time eviction of any stale procedures-list responses sitting on
+    // disk from before the server started sending Cache-Control: no-store.
+    // The disk cache survives app rebuilds, so without this users see a
+    // snapshot of the procedures list from whenever they last had the app
+    // open and a freshly-uploaded procedure won't appear. The cost is
+    // a single tab-switch network round-trip on launch — negligible.
+    // Stamped against a UserDefaults key so we only do it once per install.
+    let cacheNukeKey = "retrace.urlcache.nukedForNoStore.v1"
+    if !UserDefaults.standard.bool(forKey: cacheNukeKey) {
+      URLCache.shared.removeAllCachedResponses()
+      UserDefaults.standard.set(true, forKey: cacheNukeKey)
+    }
 
     let arguments = ProcessInfo.processInfo.arguments
     if arguments.contains("--ui-testing-reset-onboarding") {
@@ -98,6 +112,21 @@ struct CameraAccessApp: App {
         }
         .overlay {
           RegistrationView(viewModel: wearablesViewModel)
+        }
+        // Pair Bonjour discovery with scene phase. `startBrowsing` is
+        // already called once at launch in `init()`; the guard inside it
+        // makes re-entry idempotent. Stopping on background releases the
+        // NWBrowser so a Wi-Fi switch or DHCP rotation re-resolves cleanly
+        // on the next foreground.
+        .onChange(of: scenePhase) { _, newPhase in
+          switch newPhase {
+          case .active:
+            BonjourDiscovery.shared.startBrowsing()
+          case .background:
+            BonjourDiscovery.shared.stopBrowsing()
+          default:
+            break
+          }
         }
     }
   }

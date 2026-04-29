@@ -264,24 +264,34 @@ struct DiscoverView: View {
   private var procedureList: some View {
     VStack(spacing: Spacing.lg) {
       ForEach(viewModel.filteredProcedures) { procedure in
-        NavigationLink {
-          LearnerProcedureDetailView(
-            procedureId: procedure.id,
-            wearables: wearables,
-            wearablesVM: wearablesVM,
-            progressStore: progressStore
-          )
-        } label: {
-          ProcedureCardView(
-            title: procedure.title,
-            description: procedure.description,
-            stepCount: procedure.stepCount ?? 0,
-            duration: procedure.totalDuration,
-            createdAt: procedure.createdAt,
-            status: procedure.status,
-            iconSymbol: procedure.iconSymbol,
-            iconEmoji: procedure.iconEmoji
-          )
+        let card = ProcedureCardView(
+          title: procedure.title,
+          description: procedure.description,
+          stepCount: procedure.stepCount ?? 0,
+          duration: procedure.totalDuration,
+          createdAt: procedure.createdAt,
+          status: procedure.status,
+          iconSymbol: procedure.iconSymbol,
+          iconEmoji: procedure.iconEmoji,
+          sourceType: procedure.sourceType,
+          errorMessage: procedure.errorMessage
+        )
+        // Tap navigates to detail unless the row is still processing —
+        // the placeholder state is non-interactive (no chevron, no tap
+        // target) until the server flips status.
+        if procedure.status == "processing" {
+          card
+        } else {
+          NavigationLink {
+            LearnerProcedureDetailView(
+              procedureId: procedure.id,
+              wearables: wearables,
+              wearablesVM: wearablesVM,
+              progressStore: progressStore
+            )
+          } label: {
+            card
+          }
         }
       }
     }

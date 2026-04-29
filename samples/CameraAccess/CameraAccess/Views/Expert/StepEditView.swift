@@ -207,9 +207,16 @@ struct StepEditView: View {
         errorCriteria: cleanErrorCriteria,
         clipUrl: step.clipUrl
       )
-      localSaveHandler(updated)
+      // Dismiss before propagating the merge. If we mutate the parent's
+      // `steps` array first, the parent re-renders and the NavigationLink
+      // destination's identity churns — `dismiss()` then no-ops because
+      // the pop target has shifted out from under us. (Cancel works
+      // today because it does nothing but dismiss.) Closures captured by
+      // value survive the dismiss, so calling localSaveHandler after
+      // pop is safe.
       isSaving = false
       dismiss()
+      localSaveHandler(updated)
       return
     }
 
@@ -223,8 +230,13 @@ struct StepEditView: View {
 
     do {
       _ = try await api.updateStep(procedureId: procedureId, stepNumber: step.stepNumber, update: update)
-      onSaved()
+      // Same dismiss-first pattern as the localSaveHandler path:
+      // onSaved() typically triggers a parent refetch that re-renders
+      // the NavigationLink chain and can race with dismiss.
+      isSaving = false
       dismiss()
+      onSaved()
+      return
     } catch {
       errorMessage = error.localizedDescription
     }

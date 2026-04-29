@@ -65,9 +65,10 @@ final class HandGestureService: ObservableObject {
   /// `releaseDebounceFrames = 3`. If we ever need different configs per
   /// mode, add a `setConfig(_:)` method instead of multiplying instances.
   ///
-  /// `gateHandSizeMin` is bumped to `0.18` (vs the recognizer default of
-  /// 0.15) — just-large-enough that landmark fitting is reliable, with
-  /// a small margin so far-from-camera hands don't accidentally arm.
+  /// `gateHandSizeMin` is `0.23` (vs the recognizer default of `0.15`).
+  /// Tightened beyond the prior `0.18` to require a clearly close hand
+  /// before the FSM arms — far-from-camera hands and incidental
+  /// background hands no longer trigger pinches.
   ///
   /// `gatePalmAngle` is narrowed to `[-135°, -75°]` (recognizer default
   /// is the full circle). This requires the hand to be pointing roughly
@@ -79,7 +80,7 @@ final class HandGestureService: ObservableObject {
   static func productionConfig() -> PinchDragRecognizer.Config {
     var c = PinchDragRecognizer.Config()
     c.releaseDebounceFrames = 3
-    c.gateHandSizeMin = 0.18
+    c.gateHandSizeMin = 0.23
     c.gatePalmAngleMin = -135.0
     c.gatePalmAngleMax = -75.0
     return c
@@ -160,6 +161,15 @@ final class HandGestureService: ObservableObject {
     let overflow = recentPinchDragEvents.count - logMaxHistory
     if overflow > 0 {
       recentPinchDragEvents.removeFirst(overflow)
+    }
+
+    // TEMP (deprecated for this build): double-pinch `.back` is suppressed.
+    // Exit options exist on every page already and the gesture felt
+    // gimmicky. Re-enable by removing this guard. Recognizer + log above
+    // are intentionally preserved so debug telemetry still shows the
+    // recognition firing.
+    if event == .back {
+      return
     }
 
     onEvent?(event)

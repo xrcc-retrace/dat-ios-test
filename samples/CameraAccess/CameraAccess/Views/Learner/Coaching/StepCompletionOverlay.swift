@@ -8,9 +8,10 @@ import SwiftUI
 /// declarative and don't depend on Timer / @State polling.
 ///
 /// Sequence (matches the plan):
-///   - 0.00 → 0.20s : green fill fades in (opacity 0 → 0.35)
+///   - 0.00 → 0.20s : green fill fades in (opacity 0 → 0.65) +
+///                    underlying card content fades to 0.15 in parallel
 ///   - 0.20 → 0.40s : checkmark + "Step completed" arrive (fade + scale)
-///   - 0.40 → 0.70s : hold (overlay stays at full intensity)
+///   - 0.40 → 1.50s : hold (overlay stays at full intensity)
 ///   - the 0.30s slide afterwards is owned by the parent's `.transition`
 ///
 /// The view model keeps `celebratingStepIndex == fromIndex` for the full
@@ -33,7 +34,7 @@ struct StepCompletionOverlay: View {
       cornerRadius: RayBanHUDLayoutTokens.cardRadius,
       style: .continuous
     )
-    .fill(Color.green.opacity(isCelebrating ? 0.35 : 0))
+    .fill(Color.green.opacity(isCelebrating ? 0.65 : 0))
     // Phase 1 — green tint comes first. easeInOut keeps the leading edge
     // soft so it doesn't read as a flashbulb pop.
     .animation(.easeInOut(duration: 0.20), value: isCelebrating)

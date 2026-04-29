@@ -352,7 +352,8 @@ struct CoachingStepPage: RayBanHUDView {
           mode: stepCardMode,
           autoScrollIsUserPaused: $autoScrollIsUserPaused,
           autoScrollIsOverflowing: $autoScrollIsOverflowing,
-          autoScrollIsExternallySuspended: isOverlayActive
+          autoScrollIsExternallySuspended: isOverlayActive,
+          isCelebrating: isCelebratingThisStep
         )
           // Expanded mode: claim the remaining lens height so the card's
           // inner `ScrollView` has space to scroll. Collapsed mode keeps
@@ -366,13 +367,15 @@ struct CoachingStepPage: RayBanHUDView {
       }
     }
     // Step-completion celebration overlay. `celebratingStepIndex` is set
-    // to the OLD step index for the full ~1.0s window (0.7s overlay
+    // to the OLD step index for the full ~1.8s window (1.5s overlay
     // playback + 0.3s slide), so this card is the one that "wears" the
     // green + checkmark; the incoming card matches a different index
-    // and stays clean.
+    // and stays clean. The same flag also dims the card's content via
+    // `RayBanHUDStepCard(isCelebrating:)` so the body text doesn't
+    // compete with the white "Step completed" label.
     .overlay(
       StepCompletionOverlay(
-        isCelebrating: viewModel.celebratingStepIndex == viewModel.displayedStepIndex
+        isCelebrating: isCelebratingThisStep
       )
     )
     // Modifier order is deliberate: `.transition` MUST come before
@@ -410,6 +413,17 @@ struct CoachingStepPage: RayBanHUDView {
         toggleExpansion(.stepExpanded)
       }
     }
+  }
+
+  /// Single source of truth for the step-completion celebration trigger.
+  /// `viewModel.celebratingStepIndex` is held to the OLD step's index for
+  /// the entire ~1.8s celebration window (1.5s overlay + 0.3s slide), so
+  /// any view bound to this comparison renders the celebration treatment
+  /// only on the outgoing card. Both `RayBanHUDStepCard(isCelebrating:)`
+  /// (content fade) and `StepCompletionOverlay(isCelebrating:)` (green
+  /// tint + checkmark) read it.
+  private var isCelebratingThisStep: Bool {
+    viewModel.celebratingStepIndex == viewModel.displayedStepIndex
   }
 
   private var stepCardMode: RayBanHUDStepCardMode {

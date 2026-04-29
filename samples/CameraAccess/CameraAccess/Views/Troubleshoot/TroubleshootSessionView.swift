@@ -37,6 +37,14 @@ struct TroubleshootSessionView: View {
   // preserves whatever orientation the phone is already in. Mirrors
   // Coaching's orientation flow.
   @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
+  // Set true the moment a handoff to coaching is committed (just before
+  // `onExit(payload)`). The `onDisappear` cleanup gates `unlock()` on
+  // this — when handing off, the learner view manages its own
+  // orientation, so we mustn't slam the device back to portrait via
+  // `requestGeometryUpdate(.portrait)` in between. Manual-exit paths
+  // (X close, pinch-back) leave this false so the existing unlock
+  // behavior runs and the parent context returns to portrait.
+  @State private var isHandingOff = false
   // Global debug surface — drives the lens boundary outline and the
   // hand-tracking landmark overlay. Set in Server Settings → Debug.
   @AppStorage("debugMode") private var debugMode: Bool = false
@@ -72,7 +80,7 @@ struct TroubleshootSessionView: View {
       IPhoneCoachingLayout(
         viewModel: viewModel,
         drawerExpanded: $drawerExpanded,
-        showDrawer: currentInterfaceOrientation.isPortrait,
+        showDrawer: debugMode && currentInterfaceOrientation.isPortrait,
         cameraContent: {
           switch transport {
           case .iPhone:
@@ -172,7 +180,6 @@ struct TroubleshootSessionView: View {
       viewModel.onBackGesture = {
         showDismissConfirmation = true
       }
-      Task { await viewModel.startSession() }
       if transport == .iPhone {
         // Match Coaching's orientation flow — broaden the allowed mask so
         // SwiftUI chrome can follow the phone into landscape, seed the
@@ -185,11 +192,27 @@ struct TroubleshootSessionView: View {
         viewModel.setPreviewInterfaceOrientation(resolved)
       }
     }
+    // `.task` (not `Task { … }` in `.onAppear`) so SwiftUI cancels the
+    // session-start automatically on view disappearance. Prevents an
+    // unstructured Task from running teardown into a half-released VM
+    // when the user dismisses mid-handshake.
+    .task {
+      await viewModel.startSession()
+    }
     .onDisappear {
       viewModel.endSession()
       if transport == .iPhone {
         UIDevice.current.endGeneratingDeviceOrientationNotifications()
-        appOrientationController.unlock()
+        // Skip `unlock()` on the handoff path — the learner view that's
+        // about to mount manages its own orientation. Slamming the
+        // device to portrait here (via `requestGeometryUpdate(.portrait)`
+        // inside `unlock`) would race the learner's `setAllowed` and
+        // leave the OS-level supported set narrowed to portrait, which
+        // is what was previously breaking rotation in the post-handoff
+        // coaching session.
+        if !isHandingOff {
+          appOrientationController.unlock()
+        }
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -463,6 +486,11 @@ struct TroubleshootSessionView: View {
   private func startHandoff(procedureId: String) async {
     let autoAdvance = UserDefaults.standard.object(forKey: "autoAdvanceEnabled") as? Bool ?? true
     if let payload = await viewModel.executeHandoff(procedureId: procedureId, autoAdvance: autoAdvance) {
+      // Tag this exit as a handoff BEFORE bubbling up — when the parent
+      // flips its phase, our `onDisappear` will run, and the gate there
+      // depends on this flag to skip `unlock()` so the learner view
+      // inherits the broadened orientation mask.
+      isHandingOff = true
       // Hand the payload up to the parent (`TroubleshootIntroView`).
       // It dismisses this cover and presents `CoachingSessionView`
       // independently — no stacking, no double-exit when the user

@@ -15,8 +15,9 @@ import SwiftUI
 ///      `ExpertRecordingManager.startRecording()` (writer + audio capture).
 ///      Sample buffers already flowing from the capture session feed into
 ///      `recordingManager.appendVideoFrame(_:)` while `isRecording` is true.
-///   3. User taps stop → `stopRecording()` finalizes the `.mp4`, sets
-///      `showRecordingReview = true` and the existing review sheet takes over.
+///   3. User taps stop → `stopRecording()` finalizes the `.mp4` and
+///      returns `(URL, duration)` so the view can hand off to the
+///      sibling review cover and dismiss this view (capture mode ends).
 ///   4. On view disappear → `teardown()` stops the capture session + unsets
 ///      the sample-buffer callback.
 @MainActor
@@ -25,8 +26,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   @Published var errorMessage: String = ""
   @Published var isPreviewLive: Bool = false
 
-  // Mirror the glasses-path surface so views can reuse ExpertRecordingReviewView.
-  @Published var showRecordingReview: Bool = false
   let audioSessionManager = AudioSessionManager(mode: .recordingPhoneOnly)
   lazy var recordingManager = ExpertRecordingManager(audioSessionManager: audioSessionManager)
   let uploadService: UploadService
@@ -73,7 +72,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
     // these resets cost nothing and guard the invariant.
     showError = false
     errorMessage = ""
-    showRecordingReview = false
 
     let cameraGranted = await camera.requestPermission()
     guard cameraGranted else {
@@ -86,6 +84,13 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       surfaceError("Microphone permission denied — open Settings to grant access.")
       return
     }
+
+    // Pre-warm the audio session NOW, while the user is still landing on
+    // this screen. By the time they tap Start, the session is in `.record`,
+    // the input AU has cached the real hardware format, and any queued
+    // route-change notifications have drained — eliminating the -10868
+    // race that was producing silent recordings.
+    await audioSessionManager.prewarm()
 
     camera.onSampleBuffer = { [weak self] sampleBuffer in
       guard let self else { return }
@@ -178,34 +183,45 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       : ExpertRecordingManager.portraitSize
     Task { [weak self] in
       guard let self else { return }
-      await self.recordingManager.startRecording(width: size.width, height: size.height)
-    }
-  }
-
-  /// Finalize the mp4, then trigger the review sheet. Mirrors the glasses path.
-  func stopRecording() {
-    Task { [weak self] in
-      guard let self else { return }
-      _ = await self.recordingManager.stopRecording()
-      // `recordingManager.recordingURL` is set before `stopRecording` returns.
-      if self.recordingManager.recordingURL != nil {
-        self.showRecordingReview = true
-      } else {
-        self.surfaceError("Recording failed — no usable video was captured.")
+      // `startRecording` returns nil on success, or an error describing
+      // why the recording could not begin (audio engine wedged, writer
+      // setup failed, …). Surface it through the existing alert so the
+      // user knows to tap Start again instead of getting a silent mp4.
+      if let err = await self.recordingManager.startRecording(width: size.width, height: size.height) {
+        self.surfaceError(err.errorDescription ?? "Couldn't start recording.")
       }
     }
   }
 
+  /// Finalize the mp4. Returns the captured `(URL, duration)` on success
+  /// so the caller can dismiss the recording view and route into the
+  /// review flow without keeping the camera/audio pipeline running. The
+  /// view is responsible for calling `onRecordingComplete` (or however
+  /// it routes); this VM no longer holds review-presentation state.
+  func stopRecording() async -> (URL, TimeInterval)? {
+    let duration = recordingManager.recordingDuration
+    _ = await recordingManager.stopRecording()
+    if let url = recordingManager.recordingURL {
+      return (url, duration)
+    }
+    surfaceError("Recording failed — no usable video was captured.")
+    return nil
+  }
+
   /// Stop capture session and drop the sample-buffer callback. Call from
   /// `onDisappear` so the AVCaptureSession doesn't keep running when the
-  /// user backs out.
-  func teardown() {
-    camera.stop()
+  /// user backs out. Also fully deactivates the AVAudioSession so leaving
+  /// Expert mode lets other apps' background audio resume cleanly —
+  /// `AudioSessionManager.stopCapture()` only flips the category for
+  /// recording modes, it doesn't deactivate.
+  func teardown() async {
     camera.onSampleBuffer = nil
     camera.onHandSampleBuffer = nil
+    await camera.stop()
     handLandmarkerService?.stop()
     handLandmarkerService = nil
     hudViewModel.resetHandTracking()
+    audioSessionManager.deactivate()
     isPreviewLive = false
   }
 

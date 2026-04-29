@@ -19,7 +19,7 @@ struct OnlineSource: Codable, Identifiable, Hashable {
   var id: String { url }
 }
 
-struct ProcedureResponse: Codable, Identifiable {
+struct ProcedureResponse: Codable, Identifiable, Equatable {
   let id: String
   let title: String
   let description: String
@@ -80,7 +80,7 @@ struct ProcedureResponse: Codable, Identifiable {
   }
 }
 
-struct ProcedureStepResponse: Codable, Identifiable {
+struct ProcedureStepResponse: Codable, Identifiable, Equatable {
   var id: Int { stepNumber }
   let stepNumber: Int
   let title: String
@@ -165,6 +165,10 @@ struct ProcedureListItem: Codable, Identifiable {
   // "Maintenance", "Assembly", "Other"). Optional for backward
   // compatibility with servers that predate the field.
   let category: String?
+  // "video" | "manual" | "web". Drives source-type-aware copy on the
+  // processing-state card (e.g. "Analyzing video…" vs "Reading manual…").
+  // Optional for backward compatibility.
+  let sourceType: String?
 
   enum CodingKeys: String, CodingKey {
     case id, title, description, status, category
@@ -174,6 +178,7 @@ struct ProcedureListItem: Codable, Identifiable {
     case stepCount = "step_count"
     case iconSymbol = "icon_symbol"
     case iconEmoji = "icon_emoji"
+    case sourceType = "source_type"
   }
 }
 

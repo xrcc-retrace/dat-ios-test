@@ -20,6 +20,13 @@ final class ManualUploadViewModel: ObservableObject {
 
   @Published private(set) var phase: Phase = .idle
 
+  /// True iff the user tapped "Keep working in the background" on the
+  /// upload sheet. Gates the `ExpertTabView`-level auto-nav when phase
+  /// becomes `.ready` — so the in-sheet completion path (sheet's own
+  /// `.onChange(of: phase)`) doesn't double-fire with the auto-nav.
+  /// Cleared on `start(...)` and `cancel()`.
+  @Published private(set) var wasBackgrounded: Bool = false
+
   private let api = ProcedureAPIService()
   private var pollTask: Task<Void, Never>?
 
@@ -27,11 +34,21 @@ final class ManualUploadViewModel: ObservableObject {
     pollTask?.cancel()
   }
 
+  /// Tag this manual upload as "user explicitly backgrounded it." The
+  /// `ExpertManualUploadSheet`'s "Keep working in the background" button
+  /// calls this so the auto-nav at `ExpertTabView` can distinguish
+  /// backgrounded uploads (auto-nav on `.ready`) from in-sheet completion
+  /// (sheet's existing `onComplete`, no double-fire).
+  func markBackgrounded() {
+    wasBackgrounded = true
+  }
+
   /// Kick off the full upload + polling lifecycle. Safe to call once per VM
   /// instance; subsequent calls reset state and re-run.
   func start(pdfURL: URL, productName: String) {
     pollTask?.cancel()
     phase = .uploading
+    wasBackgrounded = false
 
     Task { [weak self] in
       guard let self else { return }
@@ -59,6 +76,7 @@ final class ManualUploadViewModel: ObservableObject {
     pollTask?.cancel()
     pollTask = nil
     phase = .idle
+    wasBackgrounded = false
   }
 
   private func pollUntilDone(manualId: String) async {

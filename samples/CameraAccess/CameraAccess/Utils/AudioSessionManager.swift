@@ -44,6 +44,20 @@ class AudioSessionManager: ObservableObject {
   /// asymmetric attack/release as the AI peak.
   @Published var userInputPeak: Float = 0
 
+  /// Timestamp of the most recent audio activity in either direction —
+  /// AI playback chunk enqueue OR mic input peak crossing the
+  /// "user speaking" floor. Used by the coaching heartbeat as a
+  /// foolproof "is anyone talking right now" gate: peak booleans flip
+  /// off in inter-chunk gaps, but this timestamp only moves forward
+  /// when something real happened, so a debounce window over it
+  /// reliably bridges those gaps.
+  @Published private(set) var lastAudioActivityAt: Date = .distantPast
+
+  /// Mic-peak floor above which `recordCapturedBuffer` pings
+  /// `lastAudioActivityAt`. Below this, room tone / AEC residue is
+  /// ignored so the timestamp doesn't stay permanently fresh.
+  private static let userSpeakingFloor: Float = 0.05
+
   let mode: AudioSessionMode
 
   private let engine = AVAudioEngine()
@@ -84,6 +98,14 @@ class AudioSessionManager: ObservableObject {
   /// short-circuit route-change rebinds when the live format hasn't changed
   /// (see `rebindMicTapIfCapturing(reason:)`).
   private var converterInputFormat: AVAudioFormat?
+
+  /// True once `prewarm()` has put the audio session in its target category
+  /// AND the input audio unit has been instantiated against a settled
+  /// hardware format. `startCaptureAsync()` skips the off-main session
+  /// reconfigure when this is set, so it doesn't queue a fresh
+  /// route-change cascade right under `engine.start()` — the original
+  /// -10868 race. Reset by `stopCapture()`.
+  private var didPrewarm = false
 
   /// Called on the audio capture queue with each PCM buffer.
   var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
@@ -166,10 +188,15 @@ class AudioSessionManager: ObservableObject {
         // Simplex capture. No `.voiceChat` (no AEC processing), no `.defaultToSpeaker`
         // (nothing to play, and this option forces an override-to-speaker that
         // triggers the categoryChange cascade which detaches the mic tap).
+        // No `.allowBluetoothA2DP` — A2DP is an output-only sink profile;
+        // pairing it with `.record` (input-only) makes iOS reject the whole
+        // setCategory call with kAudio_ParamError (-50). DAT SDK glasses
+        // route their mic through BT HFP anyway; HFP is the bidirectional
+        // voice profile both Ray-Bans and AirPods use for capture.
         try session.setCategory(
           .record,
           mode: .default,
-          options: [.allowBluetoothHFP, .allowBluetoothA2DP]
+          options: [.allowBluetoothHFP]
         )
       case .recordingPhoneOnly:
         // Simplex capture forced to the built-in mic. Ignores any paired HFP
@@ -223,7 +250,81 @@ class AudioSessionManager: ObservableObject {
     }
   }
 
+  /// Errors thrown out of `startCaptureAsync()`. Surfaced so the recording
+  /// path can abort cleanly instead of silently producing audio-less mp4s
+  /// when `engine.start()` fails (the original `-10868` symptom).
+  enum AudioStartError: LocalizedError {
+    case engineFailedAfterRetry(NSError)
+    case invalidInputFormat
+
+    var errorDescription: String? {
+      switch self {
+      case .engineFailedAfterRetry(let underlying):
+        return "Audio engine failed to start (\(underlying.code))."
+      case .invalidInputFormat:
+        return "Audio input is not available (rate=0)."
+      }
+    }
+  }
+
   // MARK: - Capture
+
+  /// Pre-warm the audio session and input audio unit ahead of the first
+  /// `startCapture` call. Called from the recording VM's `prepare()` so by
+  /// the time the user can tap **Start Recording** the session is already
+  /// in `.record`, the input AU is instantiated against the real hardware
+  /// format, and any queued route-change notifications have drained.
+  ///
+  /// This eliminates the original `-10868` race: previously the FIRST
+  /// access of `engine.inputNode` happened on `MainActor` BEFORE the
+  /// session was switched to `.record`, so the AU cached a stale format
+  /// (`.solo_ambient` rate 0 / `.playback` from a prior voice preview),
+  /// then `engine.start()` validated the input chain against that stale
+  /// format mid-route-change cascade and failed.
+  ///
+  /// Idempotent — early-out if already pre-warmed and the session is still
+  /// in our target category.
+  func prewarm() async {
+    if didPrewarm { return }
+
+    let capturedMode = mode
+
+    // 1) Move the audio session into our target category off-main so the
+    //    main thread keeps rendering the camera preview while
+    //    setCategory + setActive + setPreferredInput run.
+    await Task.detached(priority: .userInitiated) {
+      Self.configureSessionOffMain(mode: capturedMode)
+    }.value
+
+    // 2) FIRST access of `engine.inputNode` — now the audio session is in
+    //    `.record` (or `.playAndRecord`), so the lazily-instantiated input
+    //    AU caches the real hardware format instead of a stale one.
+    let node = inputNode
+
+    // 3) Force the AU into the right voice-processing mode for this
+    //    session. Recording mode pins it to plain RemoteIO so a prior
+    //    coaching session can't leave a 5-channel VPIO format behind that
+    //    would later fail input-chain validation.
+    do {
+      if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
+        try node.setVoiceProcessingEnabled(true)
+      } else {
+        try node.setVoiceProcessingEnabled(false)
+      }
+    } catch {
+      print("[AudioSession] prewarm: setVoiceProcessingEnabled failed: \(error)")
+    }
+
+    // 4) Drain queued route-change notifications. setCategory + setActive +
+    //    setPreferredInput each post a notification; iOS delivers them
+    //    asynchronously on the main run loop. Yield + sleep so they land
+    //    BEFORE any subsequent engine.start sees the input chain.
+    await Task.yield()
+    try? await Task.sleep(nanoseconds: 50_000_000)  // 50 ms
+
+    didPrewarm = true
+    print("[AudioSession] prewarm complete (mode=\(capturedMode))")
+  }
 
   /// Off-main variant of `startCapture()` used by the recording path. Moves
   /// the ~200 ms of `AVAudioSession` + `AVAudioEngine` setup onto a user-
@@ -231,48 +332,64 @@ class AudioSessionManager: ObservableObject {
   /// user waits for "Start recording" to flip. The sync `startCapture()`
   /// above is kept for the coaching-path call sites that already run inside
   /// larger async flows.
-  func startCaptureAsync() async {
+  ///
+  /// Throws `AudioStartError` on terminal failure (after one automatic
+  /// retry) so the recording path can surface "Audio failed to start"
+  /// instead of silently producing a silent mp4.
+  func startCaptureAsync() async throws {
     guard !isCapturing else { return }
 
     let capturedMode = mode
-    let capturedEngine = engine
-    let capturedInputNode = inputNode
 
-    // Phase 1 — heavy AVAudioSession setup off main.
-    await Task.detached(priority: .userInitiated) {
-      Self.configureSessionOffMain(mode: capturedMode)
-      if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
+    // Phase 1 — bring the audio session + input AU into the right state.
+    // If `prewarm()` already ran, this is a cheap no-op; otherwise we
+    // do the same work synchronously here as a fallback.
+    if !didPrewarm {
+      await Task.detached(priority: .userInitiated) { [inputNode = self.inputNode] in
+        Self.configureSessionOffMain(mode: capturedMode)
         do {
-          try capturedInputNode.setVoiceProcessingEnabled(true)
+          if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
+            try inputNode.setVoiceProcessingEnabled(true)
+          } else {
+            try inputNode.setVoiceProcessingEnabled(false)
+          }
         } catch {
-          print("[AudioSession] ⚠ Failed to enable voice processing: \(error)")
+          print("[AudioSession] ⚠ setVoiceProcessingEnabled failed: \(error)")
         }
-      }
-    }.value
+      }.value
+      // Same drain as in prewarm.
+      try? await Task.sleep(nanoseconds: 50_000_000)
+      didPrewarm = true
+    }
 
-    // Phase 2 — install the mic tap on main. The closure captures `self`
-    // (MainActor) to reach `recordCapturedBuffer` / `onAudioBuffer`; doing
-    // this hop on main matches the existing `installMicTap()` pattern and
-    // avoids the @Sendable-vs-@MainActor closure friction that a detached
-    // install would hit. The call itself is non-blocking (tap installation
-    // is a few-µs operation on AVAudioInputNode), so it adds no visible lag.
+    // Phase 2 — sanity-check the input format before installing the tap.
+    // If the format is degenerate, kick the session config once and
+    // re-check. Bail loudly rather than silently capturing nothing.
+    if !ensureValidInputFormat() {
+      // One recovery pass: re-run session config + drain.
+      await Task.detached(priority: .userInitiated) {
+        Self.configureSessionOffMain(mode: capturedMode)
+      }.value
+      try? await Task.sleep(nanoseconds: 100_000_000)  // 100 ms
+      if !ensureValidInputFormat() {
+        throw AudioStartError.invalidInputFormat
+      }
+    }
+
+    // Phase 3 — install the mic tap on main. Tap installation is a few-µs
+    // op on AVAudioInputNode; doing it on main matches the existing
+    // `installMicTap()` pattern.
     installMicTap()
 
-    // Phase 3 — engine.start() is the other ~50–100 ms blocker; keep it
-    // off main.
-    let engineStarted: Bool = await Task.detached(priority: .userInitiated) {
-      do {
-        try capturedEngine.start()
-        return true
-      } catch {
-        print("[AudioSession] Audio engine start error: \(error)")
-        return false
-      }
-    }.value
-
-    guard engineStarted else {
+    // Phase 4 — engine.prepare() + engine.start(), with one retry on
+    // failure. `prepare()` gives the engine an explicit format-negotiation
+    // pass against the now-settled input chain; without it, start() can
+    // race a not-yet-finalized AU format and emit -10868.
+    do {
+      try await startEngineWithRetry()
+    } catch {
       inputNode.removeTap(onBus: 0)
-      return
+      throw error
     }
 
     if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
@@ -294,6 +411,78 @@ class AudioSessionManager: ObservableObject {
 
     checkBluetoothRoute()
     startStatsTimer()
+  }
+
+  /// Validate the live input format before we commit to a tap install /
+  /// engine start. A 0-rate format means the session hasn't actually
+  /// engaged the input route yet — proceeding silently captures nothing.
+  private func ensureValidInputFormat() -> Bool {
+    let f = inputNode.inputFormat(forBus: 0)
+    return f.sampleRate > 0 && f.channelCount > 0
+  }
+
+  /// Run `engine.prepare()` + `engine.start()`. On failure: reset the
+  /// engine, re-run the session config, drain route-change notifications,
+  /// re-install the tap, retry once. Throws `AudioStartError.engineFailedAfterRetry`
+  /// if the second attempt also fails so the caller can surface a clear
+  /// error instead of silently producing a silent recording.
+  private func startEngineWithRetry() async throws {
+    let capturedMode = mode
+    let capturedEngine = engine
+
+    let firstAttempt: NSError? = await Task.detached(priority: .userInitiated) {
+      capturedEngine.prepare()
+      do {
+        try capturedEngine.start()
+        return nil
+      } catch {
+        return error as NSError
+      }
+    }.value
+
+    if firstAttempt == nil { return }
+
+    print("[AudioSession] engine.start failed (\(firstAttempt!.code)), recovering and retrying")
+
+    // Recovery: tear down everything that could be in a bad state and
+    // re-run the session config to nudge iOS into re-publishing the
+    // route. Then retry start once.
+    inputNode.removeTap(onBus: 0)
+    capturedEngine.reset()
+
+    await Task.detached(priority: .userInitiated) { [inputNode = self.inputNode] in
+      Self.configureSessionOffMain(mode: capturedMode)
+      do {
+        if capturedMode == .coaching || capturedMode == .coachingPhoneOnly {
+          try inputNode.setVoiceProcessingEnabled(true)
+        } else {
+          try inputNode.setVoiceProcessingEnabled(false)
+        }
+      } catch {
+        print("[AudioSession] retry: setVoiceProcessingEnabled failed: \(error)")
+      }
+    }.value
+
+    // Generous drain — the failure mode is route-change cascade.
+    try? await Task.sleep(nanoseconds: 150_000_000)  // 150 ms
+
+    installMicTap()
+
+    let secondAttempt: NSError? = await Task.detached(priority: .userInitiated) {
+      capturedEngine.prepare()
+      do {
+        try capturedEngine.start()
+        return nil
+      } catch {
+        return error as NSError
+      }
+    }.value
+
+    if let err = secondAttempt {
+      print("[AudioSession] engine.start failed on retry too (\(err.code))")
+      throw AudioStartError.engineFailedAfterRetry(err)
+    }
+    print("[AudioSession] engine.start retry succeeded")
   }
 
   /// Background-safe session setup called from `startCaptureAsync()`'s
@@ -318,10 +507,13 @@ class AudioSessionManager: ObservableObject {
           options: [.defaultToSpeaker]
         )
       case .recording:
+        // A2DP is invalid with `.record` (output-only profile); see the
+        // sibling `configureAudioSession()` for the full reasoning. HFP
+        // alone is what DAT SDK glasses actually route their mic through.
         try session.setCategory(
           .record,
           mode: .default,
-          options: [.allowBluetoothHFP, .allowBluetoothA2DP]
+          options: [.allowBluetoothHFP]
         )
       case .recordingPhoneOnly:
         try session.setCategory(
@@ -366,6 +558,19 @@ class AudioSessionManager: ObservableObject {
         try inputNode.setVoiceProcessingEnabled(true)
       } catch {
         print("[AudioSession] ⚠ Failed to enable voice processing: \(error)")
+      }
+    } else {
+      // Defensive: a prior coaching session in this app launch may have
+      // left the input audio unit in VPIO mode (5-ch multichannel
+      // format). Recording-mode `engine.start()` then fails input
+      // chain validation with -10868 kAudioUnitErr_FormatNotSupported.
+      // Calling false on a non-VPIO node is a no-op; on a leaked-VPIO
+      // node it forces it back to standard RemoteIO so the engine
+      // starts cleanly. Mirror in `startCaptureAsync`.
+      do {
+        try inputNode.setVoiceProcessingEnabled(false)
+      } catch {
+        print("[AudioSession] ⚠ Failed to disable voice processing: \(error)")
       }
     }
 
@@ -437,6 +642,10 @@ class AudioSessionManager: ObservableObject {
     stopStatsTimer()
     audioConverter = nil
     converterInputFormat = nil
+    // Pre-warm state belongs to a single capture cycle. Reset so the next
+    // recording's `prewarm()` actually re-engages the input AU instead of
+    // early-returning against a category we just flipped to `.playback`.
+    didPrewarm = false
 
     // Leave AVAudioSession in a state that plays nicely with whatever comes
     // next — review sheet's AVPlayer, another capture session, or idle.
@@ -465,6 +674,23 @@ class AudioSessionManager: ObservableObject {
     }
   }
 
+  /// Fully release the shared `AVAudioSession`. Recording-mode `stopCapture`
+  /// intentionally leaves the session active in `.playback` so the review
+  /// sheet's `AVPlayer` can play the just-captured file. When the user
+  /// finally backs out of the recording flow entirely, call this so other
+  /// apps' background audio resumes cleanly. Idempotent.
+  func deactivate() {
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setActive(false, options: .notifyOthersOnDeactivation)
+    } catch {
+      print("[AudioSession] Failed to deactivate: \(error)")
+    }
+    // Deactivating throws away the route we pre-warmed against, so the
+    // next entry into the recording flow needs a fresh `prewarm()`.
+    didPrewarm = false
+  }
+
   // MARK: - Capture telemetry
 
   /// Called from the tap thread on every captured buffer.
@@ -482,6 +708,9 @@ class AudioSessionManager: ObservableObject {
       // sharp utterance pops the meter, then it tails off softly.
       let alpha: Float = peak > self.userInputPeak ? 0.6 : 0.2
       self.userInputPeak += alpha * (peak - self.userInputPeak)
+      if self.userInputPeak >= Self.userSpeakingFloor {
+        self.lastAudioActivityAt = Date()
+      }
     }
   }
 
@@ -620,6 +849,10 @@ class AudioSessionManager: ObservableObject {
     Task { @MainActor [weak self] in
       guard let self = self else { return }
       self.isAISpeaking = true
+      // Ping the activity timestamp on every chunk enqueue so
+      // inter-chunk gaps in `scheduledBufferCount` can't reset the
+      // "AI is talking" signal mid-utterance.
+      self.lastAudioActivityAt = Date()
       // EMA: fast attack (0.6) so the meter spikes immediately when AI
       // starts a phoneme; slower release (0.2) so it doesn't strobe in
       // the silences between syllables. The consuming meter additionally

@@ -56,6 +56,11 @@ enum HUDControl: Hashable {
   /// "Upload a manual" pill on the Troubleshoot no-solution page — opens the
   /// PDF upload sheet.
   case uploadManual
+  /// "Rediagnose" pill on TroubleshootResolvedPage and TroubleshootNoSolutionPage —
+  /// resets resolution-side state and re-enters the diagnose phase keeping the
+  /// identified product. Conversational nudge biases Gemini toward asking new
+  /// symptom questions before re-firing search_procedures / web_search_for_fix.
+  case rediagnose
 }
 
 enum HUDInteractionBehavior: Equatable {
@@ -131,22 +136,46 @@ final class HUDHoverCoordinator: ObservableObject {
   // overlay pops, the page handler beneath it automatically becomes
   // active again — no manual restoration needed.
   //
+  // Stack entries are token-stamped for the same reason confirm
+  // registrations are: SwiftUI fires the new view's `.onAppear` before
+  // the old view's `.onDisappear`. An overlay that pushes its handler
+  // (with a fresh `defaultFocus` like `.confirmIdentification`) can be
+  // immediately stomped by an outgoing page's `pop` re-anchoring
+  // `hovered` back to the page's own `defaultFocus`. The token gates
+  // `pop` to only re-anchor when it's actually removing the topmost
+  // entry — a stale pop becomes a no-op for both stack removal and
+  // focus.
+  //
   // See `HUDInputEngine.swift` for `HUDInputHandler` + `HUDInputEvent`.
 
-  private var stack: [HUDInputHandler] = []
+  private struct StackEntry {
+    let token: UUID
+    let handler: HUDInputHandler
+  }
 
-  func push(_ handler: HUDInputHandler) {
-    stack.append(handler)
+  private var stack: [StackEntry] = []
+
+  @discardableResult
+  func push(_ handler: HUDInputHandler) -> UUID {
+    let token = UUID()
+    stack.append(StackEntry(token: token, handler: handler))
     if let id = handler.defaultFocus {
       withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
         hovered = id
       }
     }
+    return token
   }
 
-  func pop(_ handler: HUDInputHandler) {
-    stack.removeAll { $0 === handler }
-    let next = stack.last?.defaultFocus
+  func pop(token: UUID) {
+    let wasTopmost = stack.last?.token == token
+    stack.removeAll { $0.token == token }
+    // Only re-anchor focus if we actually removed the topmost entry.
+    // Otherwise an out-of-order pop (e.g. an outgoing page firing its
+    // disappear after an incoming overlay's appear has already pushed)
+    // would clobber the new topmost handler's freshly-set focus.
+    guard wasTopmost else { return }
+    let next = stack.last?.handler.defaultFocus
     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
       hovered = next
     }
@@ -157,7 +186,7 @@ final class HUDHoverCoordinator: ObservableObject {
   /// fall back to legacy behavior when no handler claimed the event.
   @discardableResult
   func dispatch(_ event: HUDInputEvent) -> Bool {
-    guard let top = stack.last else { return false }
+    guard let top = stack.last?.handler else { return false }
     switch event {
     case .directional(let direction):
       return top.handle(direction: direction)
@@ -176,19 +205,30 @@ final class HUDHoverCoordinator: ObservableObject {
   // without needing a tap to land on it. Touch behavior is unchanged —
   // `.onTapGesture` still drives the existing `tap(_:behavior:onConfirm:)`
   // flow; the registry is purely additive for non-touch paths.
+  //
+  // Registrations are keyed by `HUDControl` and stamped with a per-call
+  // token. SwiftUI commonly delivers the new page's `.onAppear` before
+  // the old page's `.onDisappear`, so an unkeyed `unregister(id)` would
+  // wipe the new page's registration and leave pinch-select silently
+  // broken on every page after Identify. The token gates `unregister`
+  // to the entry that this exact view installed.
 
-  private var confirms: [HUDControl: () -> Void] = [:]
+  private var confirms: [HUDControl: (token: UUID, block: () -> Void)] = [:]
 
-  func registerConfirm(_ id: HUDControl, _ block: @escaping () -> Void) {
-    confirms[id] = block
+  @discardableResult
+  func registerConfirm(_ id: HUDControl, _ block: @escaping () -> Void) -> UUID {
+    let token = UUID()
+    confirms[id] = (token, block)
+    return token
   }
 
-  func unregisterConfirm(_ id: HUDControl) {
+  func unregisterConfirm(_ id: HUDControl, token: UUID) {
+    guard confirms[id]?.token == token else { return }
     confirms.removeValue(forKey: id)
   }
 
   func fireConfirm(for id: HUDControl) {
-    confirms[id]?()
+    confirms[id]?.block()
   }
 }
 
@@ -200,6 +240,7 @@ struct HoverSelectable: ViewModifier {
   let behavior: HUDInteractionBehavior
   let onConfirm: () -> Void
   @EnvironmentObject private var coordinator: HUDHoverCoordinator
+  @State private var registrationToken: UUID?
 
   func body(content: Content) -> some View {
     content
@@ -213,11 +254,22 @@ struct HoverSelectable: ViewModifier {
       // select paths (focus engine: `HUDInputHandler.handleSelect()` →
       // `coordinator.fireConfirm(for: hovered)`) can activate this
       // element without a tap landing. Touch behavior is unchanged.
+      //
+      // Capture the registration token so `onDisappear` only clears
+      // the entry this view installed. Without the token, a same-id
+      // pill on the next page (e.g. `.diagnosticToggleMute` rendered
+      // by both Identify and Diagnose) would have its fresh `onAppear`
+      // registration immediately wiped by the outgoing page's
+      // `onDisappear` — silently breaking pinch-select on every page
+      // after the first.
       .onAppear {
-        coordinator.registerConfirm(id, onConfirm)
+        registrationToken = coordinator.registerConfirm(id, onConfirm)
       }
       .onDisappear {
-        coordinator.unregisterConfirm(id)
+        if let token = registrationToken {
+          coordinator.unregisterConfirm(id, token: token)
+        }
+        registrationToken = nil
       }
   }
 }

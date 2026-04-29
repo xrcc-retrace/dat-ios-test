@@ -64,9 +64,24 @@ final class HandGestureService: ObservableObject {
   /// Same config the per-VM recognizers used before this refactor —
   /// `releaseDebounceFrames = 3`. If we ever need different configs per
   /// mode, add a `setConfig(_:)` method instead of multiplying instances.
+  ///
+  /// `gateHandSizeMin` is bumped to `0.18` (vs the recognizer default of
+  /// 0.15) — just-large-enough that landmark fitting is reliable, with
+  /// a small margin so far-from-camera hands don't accidentally arm.
+  ///
+  /// `gatePalmAngle` is narrowed to `[-135°, -75°]` (recognizer default
+  /// is the full circle). This requires the hand to be pointing roughly
+  /// upward in the image — straight up is `-90°`, so the band gives
+  /// ±45° tolerance with a slight bias toward "tilting right" since the
+  /// pinching gesture naturally rolls the hand a bit. Sideways and
+  /// downward poses fail this gate, so the FSM only arms in the
+  /// canonical edge-on-and-up Meta XR grasp posture.
   static func productionConfig() -> PinchDragRecognizer.Config {
     var c = PinchDragRecognizer.Config()
     c.releaseDebounceFrames = 3
+    c.gateHandSizeMin = 0.18
+    c.gatePalmAngleMin = -135.0
+    c.gatePalmAngleMax = -75.0
     return c
   }
 
@@ -80,11 +95,48 @@ final class HandGestureService: ObservableObject {
 
   // MARK: - Public ingest API
 
+  /// User-toggleable kill switch for the hand-tracking pipeline. Read
+  /// from `UserDefaults` (set via the `@AppStorage("disableHandTracking")`
+  /// toggle in Server Settings → Debug). When true, `ingest(_:)` drops
+  /// frames silently — recognizer never runs, callbacks never fire.
+  /// Camera-startup sites also check this flag to avoid spinning up
+  /// MediaPipe in the first place when the user has it off; the
+  /// service-level check here is the belt-and-suspenders for runtime
+  /// toggle changes mid-session.
+  static var isDisabled: Bool {
+    UserDefaults.standard.bool(forKey: "disableHandTracking")
+  }
+
+  /// True when the latest landmark frame's orientation passes the same
+  /// gates the recognizer FSM uses to arm — palm pointing roughly upward
+  /// at sufficient size. Drives the on-lens hand-tracking status
+  /// indicator (`HandTrackingStatusIndicator`): bright when this is
+  /// true, dim when false. Sourced from `productionConfig()` so any
+  /// tuning change to the gates flows automatically without the
+  /// indicator drifting from the recognizer's actual behavior.
+  var isPoseGated: Bool {
+    guard let frame = latestHandFrame, let orient = frame.orientation else { return false }
+    let config = Self.productionConfig()
+    let sizePass = orient.handSize >= config.gateHandSizeMin
+    let anglePass = orient.palmAngleDegrees >= config.gatePalmAngleMin
+      && orient.palmAngleDegrees <= config.gatePalmAngleMax
+    let facingPass = orient.palmFacingZ >= config.gatePalmFacingZMin
+      && orient.palmFacingZ <= config.gatePalmFacingZMax
+    return sizePass && anglePass && facingPass
+  }
+
   /// Camera pipelines call this from their existing frame closures.
   /// Updates `latestHandFrame`, emits the throttled orientation log,
   /// runs the recognizer, appends to the log, and dispatches event +
   /// back-gesture callbacks.
   func ingest(_ frame: HandLandmarkFrame) {
+    // Kill switch — drop the frame entirely so debug overlays, the
+    // recognizer FSM, and every per-mode callback all stay quiet.
+    // Camera pipeline still produces frames (we don't tear MediaPipe
+    // down on toggle flip), so this is the runtime gate that makes
+    // the setting take effect immediately.
+    if Self.isDisabled { return }
+
     latestHandFrame = frame
 
     if let orient = frame.orientation {
@@ -136,21 +188,30 @@ extension HandGestureService: HandGestureDebugProvider {
 
   /// Pinch-contact ratio threshold, surfaced so the debug overlay renders
   /// the same gate the recognizer applies. Scale-invariant against camera
-  /// distance.
+  /// distance. Reads from `productionConfig()` so any production override
+  /// (e.g. the tightened `gateHandSizeMin`) is visible in the overlay.
   var indexPinchContactRatio: Float {
-    PinchDragRecognizer.Config().indexContactRatio
+    Self.productionConfig().indexContactRatio
   }
 
   var gatePalmFacingZMin: Float {
-    PinchDragRecognizer.Config().gatePalmFacingZMin
+    Self.productionConfig().gatePalmFacingZMin
   }
 
   var gatePalmFacingZMax: Float {
-    PinchDragRecognizer.Config().gatePalmFacingZMax
+    Self.productionConfig().gatePalmFacingZMax
   }
 
   var gateHandSizeMin: Float {
-    PinchDragRecognizer.Config().gateHandSizeMin
+    Self.productionConfig().gateHandSizeMin
+  }
+
+  var gatePalmAngleMin: Float {
+    Self.productionConfig().gatePalmAngleMin
+  }
+
+  var gatePalmAngleMax: Float {
+    Self.productionConfig().gatePalmAngleMax
   }
 
   /// True while a deferred `.select` is still inside its double-tap

@@ -10,11 +10,12 @@ import SwiftUI
 ///
 /// When the user triggers stop (tap or pinch-select on the pill) the
 /// overlay layers on top of the page using the recede-and-arrive
-/// pattern — page content scales to 0.94, opacity dips to 0.55, and
-/// the overlay arrives with a scale-in/opacity transition. The
-/// overlay shows a 3-second countdown; tap X (or pinch-back / pinch-
-/// select the X) before the timer expires to cancel; otherwise stop
-/// auto-fires.
+/// pattern — page content recedes via the canonical
+/// `.rayBanHUDRecede(active:)` modifier (numbers live in
+/// `RayBanHUDLayoutTokens.recede*`) and the overlay arrives with a
+/// scale-in/opacity transition. The overlay shows a 3-second
+/// countdown; tap X (or pinch-back / pinch-select the X) before the
+/// timer expires to cancel; otherwise stop auto-fires.
 ///
 /// Carousel mechanics:
 ///   • Touch DragGesture binds `dragOffset` to live translation.
@@ -60,11 +61,9 @@ struct ExpertNarrationTipPage: RayBanHUDView {
         // Combined with the overlay's heavier weight, the eye locks
         // onto the overlay without any ambiguity. Recessed page also
         // can't catch carousel swipes / pill taps — those would land
-        // on stale affordances mid-countdown.
-        .scaleEffect(countdownStartedAt != nil ? 0.92 : 1.0)
-        .opacity(countdownStartedAt != nil ? 0.32 : 1.0)
-        .blur(radius: countdownStartedAt != nil ? 6 : 0)
-        .allowsHitTesting(countdownStartedAt == nil)
+        // on stale affordances mid-countdown. Numbers live in
+        // `RayBanHUDLayoutTokens.recede*`.
+        .rayBanHUDRecede(active: countdownStartedAt != nil)
 
       if let started = countdownStartedAt {
         ExpertHUDStopOverlay(
@@ -131,18 +130,26 @@ struct ExpertNarrationTipPage: RayBanHUDView {
     .padding(RayBanHUDLayoutTokens.contentPadding)
   }
 
-  /// Centered recording chip (timer + audio meter). The mic-source
-  /// badge that used to live here moved out — at this point in the
-  /// flow the expert already picked their transport; surfacing the
-  /// mic source again inside the lens is just visual noise.
+  /// Centered recording chip (timer + audio meter) + ambient hand-
+  /// tracking status indicator. The mic-source badge that used to live
+  /// here moved out — at this point in the flow the expert already
+  /// picked their transport; surfacing the mic source again inside the
+  /// lens is just visual noise.
+  ///
+  /// The hand indicator hangs off the right of the chip; both stay
+  /// centered as a unit thanks to the flanking `Spacer`s. When the
+  /// user has hand tracking disabled in Server Settings → Debug, the
+  /// indicator returns `EmptyView()` and the chip re-centers naturally
+  /// without any geometry change.
   private var statusRow: some View {
-    HStack {
+    HStack(spacing: 8) {
       Spacer(minLength: 0)
       ExpertHUDRecordingStatusChip(
         duration: recordingManager.recordingDuration,
         audioPeak: hud.smoothedAudioPeak,
         isRecording: recordingManager.isRecording
       )
+      HandTrackingStatusIndicator()
       Spacer(minLength: 0)
     }
   }

@@ -1,36 +1,75 @@
 import AVFoundation
+import MWDATCore
 import SwiftUI
 
-/// iPhone-native expert-recording screen. Mirrors `StreamSessionView` +
-/// `StreamView` but uses an `AVCaptureSession` preview layer instead of the
-/// DAT SDK frame publisher.
+/// Expert recording screen — transport-agnostic.
 ///
-/// Layering (via `ExpertRecordingLayout`):
-///   [0] black fallback
-///   [1] `IPhoneCameraPreview`
-///   [2] Ray-Ban HUD emulator hosting `ExpertNarrationTipPage`
-///   [3] chrome — close button (top-left), mic-source badge (top-right),
-///       transcript (above the lens), Start CTA (bottom)
+/// Both transports render the same `ExpertRecordingLayout` with the same
+/// HUD (`ExpertNarrationTipPage`) and the same chrome (close button, mic
+/// badge, Start CTA, recording review sheet). Only the camera content
+/// layer differs:
+///   • `.iPhone` → `IPhoneCameraPreview(previewLayer:)` over an
+///     `AVCaptureVideoPreviewLayer`
+///   • `.glasses` → `GlassesCameraPreview(image:)` over the DAT SDK's
+///     glasses video stream
 ///
-/// Pre-recording dev toggles (gesture debug, landscape output) used to live
-/// in this screen. Both moved out — debug overlays are now driven by the
-/// global `@AppStorage("debugMode")` flag set in Server Settings, and
-/// landscape recording is deprecated (rotating the phone produces the same
-/// result via the natural orientation observer).
+/// The two paths can't share a single `@StateObject` since the underlying
+/// VMs differ, so the body delegates to one of two private engine
+/// sub-views below. Both engines pull the HUD + chrome bodies from the
+/// shared `expertRecordingHUD` / `expertRecordingChrome` helpers, so the
+/// visual structure is guaranteed identical and any change to either
+/// shows up on both transports.
 struct IPhoneRecordingView: View {
+  let transport: CaptureTransport
+  let wearables: WearablesInterface
+  let uploadService: UploadService
   let onAcknowledgeProcedure: () -> Void
+
+  init(
+    transport: CaptureTransport,
+    wearables: WearablesInterface,
+    uploadService: UploadService,
+    onAcknowledgeProcedure: @escaping () -> Void
+  ) {
+    self.transport = transport
+    self.wearables = wearables
+    self.uploadService = uploadService
+    self.onAcknowledgeProcedure = onAcknowledgeProcedure
+  }
+
+  var body: some View {
+    switch transport {
+    case .iPhone:
+      IPhoneRecordingEngine(
+        uploadService: uploadService,
+        onAcknowledgeProcedure: onAcknowledgeProcedure
+      )
+    case .glasses:
+      GlassesRecordingEngine(
+        wearables: wearables,
+        uploadService: uploadService,
+        onAcknowledgeProcedure: onAcknowledgeProcedure
+      )
+    }
+  }
+}
+
+// MARK: - iPhone engine
+
+/// Drives the iPhone-camera recording flow. The `@StateObject` VM is
+/// instantiated lazily by SwiftUI, so creating two engine views (only one
+/// of which is ever rendered at a time, per the parent's transport
+/// switch) costs nothing for the inactive transport.
+private struct IPhoneRecordingEngine: View {
+  let onAcknowledgeProcedure: () -> Void
+
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var appOrientationController: AppOrientationController
   @StateObject private var viewModel: IPhoneExpertRecordingViewModel
 
   @AppStorage("debugMode") private var debugMode: Bool = false
   @AppStorage("hudAdditiveBlend") private var hudAdditiveBlend: Bool = false
-  // Tracks the scene's current interface orientation so the observer can
-  // forward rotation into the camera preview.
   @State private var currentInterfaceOrientation: UIInterfaceOrientation = .portrait
-  // Active lens page. Expert ships with one page (`ExpertNarrationTipPage`),
-  // so the emulator's gestures don't actually navigate today — but the
-  // wiring stays consistent with Coaching/Troubleshoot.
   @State private var expertPageIndex: Int = 0
 
   init(
@@ -45,42 +84,32 @@ struct IPhoneRecordingView: View {
 
   var body: some View {
     ExpertRecordingLayout {
-      // Live camera preview (handled by AVCaptureVideoPreviewLayer — hardware
-      // accelerated, no per-frame UIImage work needed).
       IPhoneCameraPreview(previewLayer: viewModel.previewLayer)
     } hud: {
-      // Lens is hidden until the user hits Start. Pre-recording the
-      // expert sees just the camera preview + chrome's Start CTA — no
-      // narration card, no stop pill, nothing in the lens to look at
-      // or hover. The lens fades in on `isRecording` flipping true so
-      // the moment recording begins the expert has the narration card,
-      // status row, and stop pill in place.
-      if viewModel.recordingManager.isRecording {
-        RayBanHUDEmulator(
-          pageCount: 1,
-          pageIndex: $expertPageIndex,
-          showBoundary: debugMode,
-          additiveBlend: hudAdditiveBlend,
-          additiveSurfaceVariant: .lowTint,
-          // Lens double-tap → focus-engine `.dismiss`. The page handler
-          // ignores this (returns false), so it's a no-op until the
-          // stop confirmation overlay pushes its handler — at which
-          // point lens double-tap cancels the pending stop. Mirrors
-          // Coaching's pinch-back / lens-double-tap parity.
-          enableDismissGesture: true
-        ) { _ in
-          ExpertNarrationTipPage(
-            recordingManager: viewModel.recordingManager,
-            hud: viewModel.hudViewModel,
-            onStop: { viewModel.stopRecording() }
-          )
-        }
-        .transition(.opacity)
-      }
+      expertRecordingHUD(
+        recordingManager: viewModel.recordingManager,
+        hudViewModel: viewModel.hudViewModel,
+        debugMode: debugMode,
+        hudAdditiveBlend: hudAdditiveBlend,
+        pageIndex: $expertPageIndex,
+        onStop: { viewModel.stopRecording() }
+      )
     } chrome: {
-      chromeOverlay
+      expertRecordingChrome(
+        recordingManager: viewModel.recordingManager,
+        hudViewModel: viewModel.hudViewModel,
+        isPreviewLive: viewModel.isPreviewLive,
+        debugMode: debugMode,
+        onClose: { dismiss() },
+        onStart: {
+          // Always portrait/natural orientation. The pinned-landscape mode
+          // was deprecated — rotating the phone gives the same result via
+          // the orientation observer below.
+          viewModel.startRecording(landscape: false)
+        }
+      )
     }
-    .animation(.easeInOut(duration: 0.18), value: viewModel.recordingManager.isRecording)
+    .animation(.easeInOut(duration: 0.18), value: viewModel.recordingManager.isHUDActive)
     .task {
       await viewModel.prepare()
     }
@@ -128,108 +157,224 @@ struct IPhoneRecordingView: View {
       }
     }
   }
+}
 
-  /// Non-HUD overlays. Two phases:
-  ///   • Pre-recording — close button (top-left), mic-source badge (top-right),
-  ///     Start CTA (bottom).
-  ///   • Recording — mic-source badge (top-right), rolling transcript card
-  ///     (above the lens). The recording status chip + audio meter stays
-  ///     *inside* the lens alongside the stop pill — paired unit, both belong
-  ///     under the Ray-Ban 600×600 boundary. See `ExpertNarrationTipPage`.
-  @ViewBuilder
-  private var chromeOverlay: some View {
-    if !viewModel.isPreviewLive {
-      ProgressView()
-        .scaleEffect(1.5)
-        .tint(.textPrimary)
-    }
+// MARK: - Glasses engine
 
-    // Top row: pre-recording shows close (top-left) + mic-source badge
-    // (top-right). When recording starts, the mic badge moves *into*
-    // the lens (sits in the in-lens status row alongside the timer),
-    // so chrome stops rendering it to avoid double-up.
-    VStack {
-      HStack(alignment: .top) {
-        if !viewModel.recordingManager.isRecording {
-          Button {
-            dismiss()
-          } label: {
-            Image(systemName: "xmark")
-              .font(.system(size: 17, weight: .semibold))
-              .foregroundColor(.textPrimary)
-              .frame(width: 36, height: 36)
-              .glassPanel(cornerRadius: Radius.full)
-          }
-          .padding(.leading, 20)
+/// Drives the glasses-camera recording flow. Body shape mirrors the iPhone
+/// engine 1-for-1 — the only difference is the camera preview view and the
+/// fact that there's no AVCaptureSession orientation to forward.
+private struct GlassesRecordingEngine: View {
+  let onAcknowledgeProcedure: () -> Void
 
-          Spacer()
+  @Environment(\.dismiss) private var dismiss
+  @StateObject private var viewModel: StreamSessionViewModel
 
-          ExpertHUDMicSourceBadge(micSource: viewModel.hudViewModel.micSource)
-            .padding(.trailing, 20)
-        } else {
-          Spacer()
-        }
-      }
-      .padding(.top, 20)
+  @AppStorage("debugMode") private var debugMode: Bool = false
+  @AppStorage("hudAdditiveBlend") private var hudAdditiveBlend: Bool = false
+  @State private var expertPageIndex: Int = 0
 
-      Spacer()
-
-      // Transcript card is debug-only — it collides with the tip
-      // carousel and the in-lens status row at recording-flow scale.
-      // Surfaced via Server Settings → Debug for engineers verifying
-      // the recognizer; hidden in normal recording sessions.
-      if debugMode,
-         viewModel.recordingManager.isRecording,
-         viewModel.hudViewModel.transcriptAvailable {
-        ExpertHUDRollingTranscriptCard(segments: viewModel.hudViewModel.transcript)
-          .padding(.horizontal, 20)
-      }
-    }
-
-    // Pre-recording bottom: Start CTA only. Toggle cluster removed —
-    // gesture debug is a global setting now, and landscape output is
-    // deprecated (just rotate the phone).
-    if !viewModel.recordingManager.isRecording {
-      VStack(spacing: 12) {
-        Spacer()
-        IPhoneStartRecordingButton(viewModel: viewModel)
-      }
-      .padding(.all, 24)
-    }
-
-    // Hand-tracking dev overlay — landmark dots, pinch-drag cross, event
-    // log. Sits above the rest of chrome but allows hit-testing through.
-    // Reads from the single shared `HandGestureService` regardless of mode.
-    if debugMode {
-      HandGestureDebugStack(provider: HandGestureService.shared)
-    }
+  init(
+    wearables: WearablesInterface,
+    uploadService: UploadService,
+    onAcknowledgeProcedure: @escaping () -> Void
+  ) {
+    self.onAcknowledgeProcedure = onAcknowledgeProcedure
+    self._viewModel = StateObject(
+      wrappedValue: StreamSessionViewModel(wearables: wearables, uploadService: uploadService)
+    )
   }
 
-  private func resolveInterfaceOrientation() -> UIInterfaceOrientation {
-    let scene = UIApplication.shared.connectedScenes
-      .compactMap { $0 as? UIWindowScene }
-      .first(where: { $0.activationState == .foregroundActive })
-      ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-    return scene?.interfaceOrientation ?? .portrait
+  var body: some View {
+    ExpertRecordingLayout {
+      GlassesCameraPreview(image: viewModel.currentVideoFrame)
+    } hud: {
+      expertRecordingHUD(
+        recordingManager: viewModel.recordingManager,
+        hudViewModel: viewModel.hudViewModel,
+        debugMode: debugMode,
+        hudAdditiveBlend: hudAdditiveBlend,
+        pageIndex: $expertPageIndex,
+        onStop: { viewModel.stopRecording() }
+      )
+    } chrome: {
+      expertRecordingChrome(
+        recordingManager: viewModel.recordingManager,
+        hudViewModel: viewModel.hudViewModel,
+        isPreviewLive: viewModel.isPreviewLive,
+        debugMode: debugMode,
+        onClose: { dismiss() },
+        onStart: { viewModel.startRecording(landscape: false) }
+      )
+    }
+    .animation(.easeInOut(duration: 0.18), value: viewModel.recordingManager.isHUDActive)
+    .task {
+      await viewModel.prepare()
+    }
+    .onDisappear {
+      viewModel.teardown()
+    }
+    .alert("Error", isPresented: $viewModel.showError) {
+      Button("OK") { viewModel.dismissError() }
+    } message: {
+      Text(viewModel.errorMessage)
+    }
+    .sheet(isPresented: $viewModel.showRecordingReview) {
+      if let recordingURL = viewModel.recordingManager.recordingURL {
+        ExpertRecordingReviewView(
+          recordingURL: recordingURL,
+          duration: viewModel.recordingManager.recordingDuration,
+          uploadService: viewModel.uploadService,
+          onDismiss: {
+            viewModel.showRecordingReview = false
+            dismiss()
+          },
+          onAcknowledgeResult: {
+            onAcknowledgeProcedure()
+            dismiss()
+          }
+        )
+      }
+    }
+  }
+}
+
+// MARK: - Shared HUD body
+
+/// Lens content shared by both engines. Hidden until `isHUDActive` flips so
+/// pre-recording the user sees just the camera preview + Start CTA — no
+/// narration card, no stop pill. Same fade-in semantics on both transports.
+///
+/// `@MainActor` because it reads `@MainActor`-isolated state on
+/// `recordingManager` / `hudViewModel`. SwiftUI view bodies are
+/// MainActor-isolated, so callers satisfy this for free.
+@MainActor
+@ViewBuilder
+private func expertRecordingHUD(
+  recordingManager: ExpertRecordingManager,
+  hudViewModel: ExpertRecordingHUDViewModel,
+  debugMode: Bool,
+  hudAdditiveBlend: Bool,
+  pageIndex: Binding<Int>,
+  onStop: @escaping () -> Void
+) -> some View {
+  if recordingManager.isHUDActive {
+    RayBanHUDEmulator(
+      pageCount: 1,
+      pageIndex: pageIndex,
+      showBoundary: debugMode,
+      additiveBlend: hudAdditiveBlend,
+      additiveSurfaceVariant: .lowTint,
+      enableDismissGesture: true
+    ) { _ in
+      ExpertNarrationTipPage(
+        recordingManager: recordingManager,
+        hud: hudViewModel,
+        onStop: onStop
+      )
+    }
+    .transition(.opacity)
+  }
+}
+
+// MARK: - Shared chrome body
+
+/// Non-HUD overlays shared by both engines. Two phases:
+///   • Pre-recording — close button (top-left), mic-source badge (top-right),
+///     Start CTA (bottom).
+///   • Recording — chrome stays empty above the lens. Recording status,
+///     audio meter, mic-source, and stop pill all live *inside* the lens
+///     alongside the narration card. See `ExpertNarrationTipPage`.
+///
+/// `@MainActor` for the same reason as `expertRecordingHUD` — reads
+/// MainActor-isolated state on `recordingManager` / `hudViewModel`.
+@MainActor
+@ViewBuilder
+private func expertRecordingChrome(
+  recordingManager: ExpertRecordingManager,
+  hudViewModel: ExpertRecordingHUDViewModel,
+  isPreviewLive: Bool,
+  debugMode: Bool,
+  onClose: @escaping () -> Void,
+  onStart: @escaping () -> Void
+) -> some View {
+  if !isPreviewLive {
+    ProgressView()
+      .scaleEffect(1.5)
+      .tint(.textPrimary)
+  }
+
+  // Top row: pre-recording shows close (top-left) + mic-source badge
+  // (top-right). When recording starts, the mic badge moves *into* the
+  // lens so chrome stops rendering it to avoid double-up.
+  VStack {
+    HStack(alignment: .top) {
+      if !recordingManager.isHUDActive {
+        Button(action: onClose) {
+          Image(systemName: "xmark")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundColor(.textPrimary)
+            .frame(width: 36, height: 36)
+            .glassPanel(cornerRadius: Radius.full)
+        }
+        .padding(.leading, 20)
+
+        Spacer()
+
+        ExpertHUDMicSourceBadge(micSource: hudViewModel.micSource)
+          .padding(.trailing, 20)
+      } else {
+        Spacer()
+      }
+    }
+    .padding(.top, 20)
+
+    Spacer()
+  }
+
+  // Pre-recording bottom: Start CTA only.
+  if !recordingManager.isHUDActive {
+    VStack(spacing: 12) {
+      Spacer()
+      ExpertStartRecordingButton(
+        isStarting: recordingManager.isStarting,
+        isEnabled: isPreviewLive,
+        onStart: onStart
+      )
+    }
+    .padding(.all, 24)
+  }
+
+  // Hand-tracking dev overlay — landmark dots, pinch-drag cross, event
+  // log. Sits above the rest of chrome but allows hit-testing through.
+  if debugMode {
+    HandGestureDebugStack(provider: HandGestureService.shared)
   }
 }
 
 // MARK: - Start button (pre-recording only)
 
-private struct IPhoneStartRecordingButton: View {
-  @ObservedObject var viewModel: IPhoneExpertRecordingViewModel
+private struct ExpertStartRecordingButton: View {
+  let isStarting: Bool
+  let isEnabled: Bool
+  let onStart: () -> Void
 
   var body: some View {
-    let isStarting = viewModel.recordingManager.isStarting
     CustomButton(
       title: isStarting ? "Starting…" : "Start recording",
       style: .primary,
-      isDisabled: !viewModel.isPreviewLive || isStarting
-    ) {
-      // Always portrait/natural orientation. The pinned-landscape mode
-      // was deprecated — rotating the phone gives the same result via
-      // the orientation observer above.
-      viewModel.startRecording(landscape: false)
-    }
+      isDisabled: !isEnabled || isStarting,
+      action: onStart
+    )
   }
+}
+
+// MARK: - Shared helpers
+
+private func resolveInterfaceOrientation() -> UIInterfaceOrientation {
+  let scene = UIApplication.shared.connectedScenes
+    .compactMap { $0 as? UIWindowScene }
+    .first(where: { $0.activationState == .foregroundActive })
+    ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+  return scene?.interfaceOrientation ?? .portrait
 }

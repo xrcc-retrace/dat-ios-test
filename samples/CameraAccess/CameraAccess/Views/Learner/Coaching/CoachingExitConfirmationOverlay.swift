@@ -48,16 +48,20 @@ struct CoachingExitConfirmationOverlay: View {
   }
 
   private var cancelButton: some View {
+    // Default-focused on overlay appear (handler's `defaultFocus =
+    // .exitConfirmCancel`). The unified yellow hover ring shows up
+    // immediately on appear and signals "this is pre-selected" — no
+    // permanent white fill needed. See DESIGN.md → Default-focused
+    // element on appear.
     HStack(spacing: 6) {
       Image(systemName: "arrow.uturn.backward")
         .font(.system(size: 12, weight: .semibold))
       Text("Cancel")
         .font(.inter(.medium, size: 13))
     }
-    .foregroundStyle(Color.black.opacity(0.92))
+    .foregroundStyle(Color.white.opacity(0.96))
     .frame(maxWidth: .infinity)
     .padding(.vertical, 9)
-    .background(Capsule().fill(Color.white.opacity(0.95)))
     .rayBanHUDPanel(shape: .capsule)
     .hoverSelectable(.exitConfirmCancel, shape: .capsule, onConfirm: onCancel)
   }

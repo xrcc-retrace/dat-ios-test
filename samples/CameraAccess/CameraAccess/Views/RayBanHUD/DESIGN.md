@@ -58,8 +58,8 @@ When designing new lens components, **assume opaque** for the legibility floor. 
 |---|---|---|
 | Primary text | `white @ 0.94–0.98` | Bar labels, body, titles |
 | Secondary text | `white @ 0.70–0.85` | Step counters, captions, tracking labels |
-| Active/selected fill | `white @ 0.95` (with `black @ 0.88` text) | Selected toggle pills, default-focused buttons |
-| Highlight accent | `Color(1.0, 0.76, 0.11)` (warm yellow) | Hover ring, exit countdown bar, lens debug boundary, insights chip |
+| Active/selected fill | `white @ 0.95` (with `black @ 0.88` text) | Selected toggle pills only (Reference / Insights when their panel is open) — NOT default-focused buttons (those use the hover ring instead, see `HUDHoverHighlight`) |
+| Highlight accent | `Color(1.0, 0.76, 0.11)` (warm yellow) | Unified hover ring (2pt stroke gradient, warm glow at radius 8 / opacity 0.55, soft warm fill — see `HUDHoverHighlight`); exit countdown bar; lens debug boundary; insights chip. **Reserved exclusively for the focus signal** — never used as decoration on resting elements. Earlier revisions carried a permanent 1pt yellow stroke on primary-action pills (`startProcedure` / `uploadManual` / `confirmIdentification`); that decoration was removed because at rest it stacked with the hover ring and made the focus signal ambiguous. Primary-action emphasis now comes from icons, not color (see Pills below). |
 | Destructive accent | `Color(0.96, 0.26, 0.21)` (red) | Recording dot, stop pill countdown, confirm-exit subtle background |
 | Success accent | Soft green gradient (radial, see `RayBanHUDCompletionSummaryCard`) | Step completion checkmark, completion pulse |
 | Surface stroke | `white @ 0.12` | The 1pt panel border |
@@ -135,7 +135,17 @@ Compact, capsule-shaped, often with an icon + label. Used for:
 - Action buttons inside cards (Cancel / Confirm)
 - Status indicators (recording chip, mic source badge)
 
-Active/selected pills get a `Capsule().fill(white @ 0.95)` background under the glass + black text. Inactive: clear background + white text. The contrast difference is the only visual signal of state — don't add badges, dots, or color.
+Toggle pills get a `Capsule().fill(white @ 0.95)` background + black text **only when their panel is open** (i.e. `expansion == .referenceExpanded` for the Reference toggle, `.insightsExpanded` for the Insights toggle). The fill says "this is the active panel," not "the cursor is here." Inactive toggles: clear background + white text.
+
+A **primary-action pill** (the page's forward-path action — `startProcedure`, `uploadManual`, `confirmIdentification`) is signaled by a **leading SF Symbol icon + full-opacity white text + larger size**: `arrow.right` for "Start", `square.and.arrow.up` for "Upload a manual", `checkmark` for "That's it", and so on. The icon does the visual work that a permanent yellow stroke used to do — it tells the user "this is the recommended next action" the moment the page renders, without ever stealing the focus signal. Default focus on each page lands the cursor on the primary pill, so the unified hover ring appears there on appear and reinforces the cue without competing with it.
+
+**Secondary pills** (Try again, Rediagnose, mute, exit, the rejection / cancel paths) stay text-only at `white @ 0.7` opacity, smaller (`size: 12` vs. `14`), and pick up an `arrow.clockwise` redo glyph when their action is "go back / try again." They don't get a permanent ring or a custom highlight — only the unified hover ring lights them up on focus.
+
+**Don't substitute custom hover treatments** (white-fill flips, color swaps, permanent yellow strokes) for the unified ring. That creates two competing emphases on the same button. Yellow is reserved for the focus signal alone — never decoration on a resting element.
+
+### Hand-tracking status indicator
+
+A tiny `hand.raised.fill` glyph, no backdrop, that lives next to the audio meter on every mode (Coaching's bottom audio row, Troubleshoot's bottom audio row, Expert's top status row). Hidden entirely when `@AppStorage("disableHandTracking") == true`. Otherwise its opacity reflects `HandGestureService.shared.isPoseGated` — `0.30` when the recognizer's pose gates aren't passing, `0.96` when they are. Crossfades on `.easeInOut(duration: 0.18)`. Treat it as an ambient signal, not a control — never `.hoverSelectable`, never reachable from the focus engine. The icon-with-no-backdrop pattern is intentional: it sits beside the audio meter without competing for the user's attention. Gate logic lives in one place (`HandGestureService.isPoseGated`, sourced from `productionConfig()`) so the indicator never drifts from the recognizer's actual arming behavior.
 
 ### Cards
 
@@ -147,11 +157,11 @@ This is the single most important pattern in the kit. **Every confirmation, appr
 
 When an overlay is active, the page's content gets *replaced* (not augmented). The previous content **recedes** while the overlay **arrives**:
 
-- Underlying content: `.scaleEffect(0.92)` + `.opacity(0.32)` + `.blur(radius: 6)` + `.allowsHitTesting(false)`
+- Underlying content: one call — `.rayBanHUDRecede(active: overlayShown)` — which applies the canonical scale + opacity + blur + hit-testing recipe (numbers in `RayBanHUDLayoutTokens.recede*`). Tweak intensity in one place; every overlay flow inherits.
 - Overlay: standard `.rayBanHUDPanel(shape: ...)` — same surface as every other panel on the lens. Enters via `.transition(.scale(scale: 0.88).combined(with: .opacity))`.
 - Both transitions wrapped in a single `.spring(response: 0.32, dampingFraction: 0.85)` so they read as one motion.
 
-**The recede is what does the work.** Foreground/background separation is established entirely on the page side — strong scale + opacity dip + blur. The overlay panel itself stays on the standard glass surface so the hover ring on its inner pills reads cleanly (a darker overlay base makes the yellow highlight stroke fight with the panel and feel harsh). Don't reach for a heavier overlay surface to "stand out more" — push the recede instead.
+**The recede is what does the work.** Foreground/background separation is established entirely on the page side — strong scale + opacity dip + blur. The overlay panel itself stays on the standard glass surface so the hover ring on its inner pills reads cleanly. Don't reach for a heavier overlay surface to "stand out more" — push the recede instead.
 
 The shrinking-and-popping feel is load-bearing — it's what makes the lens feel like a physical surface where attention shifts between layers, instead of a stack of static panels. Don't drop the recede half "to keep things simple"; both halves of the motion are required for it to read correctly.
 
@@ -207,6 +217,20 @@ Swipe-right on `.toggleReference` does **not** advance the step. The step-nav se
 
 When designing a new page or overlay: declare the focus graph first, decide what each focused element does on each direction, then implement. If a direction has nothing meaningful for the current focused element, leave it unbound — silence is correct, not a fallthrough.
 
+### Page-level navigation is commit-on-release, not commit-on-highlight
+
+The pinch recognizer emits two flavors of directional event: **highlight** events that fire mid-pinch as the thumb crosses a quadrant (drive cursor traversal in real time), and **terminal** events that fire on release. `dispatchPinchDragEvent` routes highlights through the focus engine's `.directional` channel; terminal events are intentionally not dispatched there.
+
+For traversal — moving the cursor across the focus graph, e.g. `.toggleReference` ↔ `.toggleInsights` — highlight is the right input. The cursor follows the thumb, and releasing leaves it where it landed.
+
+For **page-level commits** — advancing to the next step, cycling a tip carousel, anything that mutates content rather than focus — highlight is the wrong input. A learner who shifts their hand mid-pinch should not skip a step every time their thumb drifts past the quadrant boundary. Commit-on-release is the rule:
+
+1. The page's handler returns `false` for the relevant `.directional(...)` so highlight events don't fire the page-level action.
+2. The page itself listens for terminal pinch events directly via `HandGestureService.shared.onEvent`, gated on `coordinator.hovered` so the action only fires when the cursor is on the right element.
+3. The listener is installed in `.onAppear` and cleared in `.onDisappear`. `HandGestureService.shared.onEvent` is a single slot — only one page should own it at a time.
+
+Reference implementations: `ExpertNarrationTipPage` (tip carousel) and `CoachingStepPage` (step nav) both wire this exact triple. New pages that need release-to-commit directional behavior should mirror them rather than reaching for the focus engine's `.directional` channel.
+
 ### Hover-then-select (focus engine semantics)
 
 Every interactive element conforms to a single coordinator (`HUDHoverCoordinator`). Tap = move hover. Tap-while-hovered = confirm. The hover ring (yellow stroke + glow) is the *only* visual signal that an element is targeted.
@@ -221,6 +245,16 @@ Whenever a new page or overlay becomes visible, **one element should already be 
 - For **destructive overlays** (exit confirmation), default-focus the *safe* option (Cancel). A user blindly selecting must not destroy state.
 
 Implement via `.onAppear { hoverCoordinator.hovered = .someControl }`.
+
+### Sharing a control id across pages
+
+A single `HUDControl` (e.g. `.diagnosticToggleMute`, `.exitWorkflowButton`) often appears on multiple pages — most lens flows put a mute pill and an exit pill on every page in the flow. That's intentional: the focus graph is per-page, but control identity is global.
+
+The implementation detail to know: SwiftUI fires the new page's `.onAppear` before the old page's `.onDisappear` during a page transition. The confirm registry on `HUDHoverCoordinator` is therefore **token-stamped** — `registerConfirm` returns a `UUID`; `unregisterConfirm(id:token:)` is a no-op unless that token still matches the registry's current entry. The outgoing page can't wipe the incoming page's freshly-installed closure for the same id.
+
+**Don't build a parallel id-keyed registry that bypasses tokens.** Without the token check, pinch-select / voice-select silently no-ops on every page after the first — and the failure is invisible from the touch path because `HoverSelectable` invokes `onConfirm` directly through `.onTapGesture` and never goes through the registry. The touch path keeps working while the gesture path is dead. The registry isn't optional infrastructure: it's the only path the focus engine has for non-touch confirms.
+
+The same token discipline applies one layer up — to the **handler stack** itself. `HUDHoverCoordinator.push` returns a token; `pop(token:)` is a no-op for stack removal *and* for `hovered` re-anchoring unless that token is currently topmost. Without this guard, an outgoing page's pop fired in the same render frame as an incoming overlay's push would re-anchor `hovered` back to the page's `defaultFocus` and the overlay's cursor placement would silently revert. The user-visible failure is the same asymmetric one: touch tap works (it captures `onConfirm` directly), pinch-select fires the wrong control because `coordinator.hovered` was reverted before the user's gesture arrived. This is why every confirmation overlay in the codebase relies on `defaultFocus` via `.hudInputHandler { … }` instead of an ad-hoc `.onAppear { hovered = … }` — the abstraction is load-bearing.
 
 ### Lens back gesture (dismiss / contextual exit)
 
@@ -265,10 +299,7 @@ This is the canonical pattern for "another UI is taking over" — exit confirmat
 ```swift
 ZStack {
   underlyingContent
-    .scaleEffect(overlayShown ? 0.92 : 1.0)
-    .opacity(overlayShown ? 0.32 : 1.0)
-    .blur(radius: overlayShown ? 6 : 0)
-    .allowsHitTesting(!overlayShown)
+    .rayBanHUDRecede(active: overlayShown)
 
   if overlayShown {
     overlayCard
@@ -280,11 +311,11 @@ ZStack {
 
 The numbers are **canonical and fixed across all surfaces**:
 
-- Receding underlay: `scaleEffect(0.94)` + `opacity(0.55)`
+- Receding underlay: `.rayBanHUDRecede(active:)` — applies `scaleEffect`, `opacity`, `blur`, and `allowsHitTesting` together. Values live in `RayBanHUDLayoutTokens.recedeScale` / `recedeOpacity` / `recedeBlurRadius`. Tune intensity in one place; every overlay flow inherits.
 - Arriving overlay: `transition(.scale(scale: 0.88).combined(with: .opacity))`
 - Single spring: `.spring(response: 0.32, dampingFraction: 0.85)`
 
-Don't tune per-surface. Don't tweak the scale to "feel slightly more dramatic for delete vs. exit." Consistency across confirmation surfaces is the value — users learn the gesture once, and every modal uses the exact same motion.
+Don't tune per-surface. Don't tweak the scale to "feel slightly more dramatic for delete vs. exit." Don't reinline the four-line recipe at a call site — that path produced silent drift between modes (the doc and three call sites split on what the values were). Consistency across confirmation surfaces is the value — users learn the gesture once, and every modal uses the exact same motion.
 
 **Forbidden workarounds**:
 
@@ -327,6 +358,8 @@ private let timer = Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoc
 
 This is a hard rule. The Expert + Coaching exit overlays are already on the Core Animation pattern; new code follows.
 
+**Pause / resume during a continuous animation** uses `TimelineView(.animation(paused:))` plus an elapsed-time accumulator. `RetraceAudioMeter` (animation timeline only — the meter never pauses) and `AutoScrollingContainer` (Coaching step card; pauses on pinch-select and on overlay recede) are the two canonical examples. The accumulator pattern is non-negotiable when pause is in-scope: a naive `context.date - startDate` jumps forward by the full pause duration on resume because `paused: true` only stops redraws, not the wall clock. Bank elapsed time on pause-in, snapshot a new `lastResumeAt` on pause-out, derive `currentElapsed` from `accumulated + (now - lastResumeAt)` while running. See `AutoScrollingContainer.swift` for the reference implementation.
+
 ### Audio-reactive animations
 
 `RetraceAudioMeter` is the reference. Single peak input drives a rolling buffer + per-bar phase wobble. The wobble is multiplied by smoothed loudness so silence resolves cleanly to flat — never an ambient idle pulse. Any future audio-reactive component should follow the same "amplitude scales motion, silence scales it to zero" rule.
@@ -341,9 +374,9 @@ Pattern: destructive confirmation modal.
 
 - Centered glass card, ≤ 240pt wide, hugs content height
 - Title: short question, never explanatory
-- Two stacked pills: Cancel (white fill, default-focus) on top, Confirm (subtle red @ 0.32) below
-- Both pills are `.hoverSelectable` — work with current tap UX and future focus engine without changes
-- `.onAppear { hoverCoordinator.hovered = .exitConfirmCancel }` so a stray select gesture cancels, never confirms
+- Two stacked pills: Cancel (default-focus, no permanent fill) on top, Confirm (subtle red @ 0.32) below
+- Both pills are `.hoverSelectable`; the unified `HUDHoverHighlight` ring (yellow, 2pt + glow) shows up on the focused pill — that's how default-focus is communicated visually, not via a permanent white fill
+- The handler's `defaultFocus = .exitConfirmCancel` (set on `push` of the overlay's input handler) lands the cursor on Cancel automatically, so a stray select gesture cancels, never confirms
 - Triggered by `RayBanHUDEmulator.onLensBackGesture` (double-pinch on glasses, double-tap as dev fallback) — wrapped in the recede-and-arrive spring
 
 Reuse this pattern verbatim for: deleting a saved workflow, abandoning a recording, discarding a session in progress.
@@ -356,6 +389,13 @@ Pattern: in-page expandable panels.
 - Toggle affordances at top declare what *can* expand. Hidden when there's nothing to expand to.
 - Tapping a toggle uses the asymmetric inline-content transition above.
 - Other expansion states are **mutually exclusive** — one expanded panel at a time. Tapping a different toggle smoothly switches.
+
+**Pinch-select on `.stepCard` is overloaded by current state**:
+- Card is **collapsed** → expand to `.stepExpanded`.
+- Card is **already expanded** AND description overflows → pause / resume the auto-scroll. The user is reading; the second pinch is "hold this position," not "shrink it back."
+- Card is **already expanded** AND content fits the viewport → no-op. Collapsing what the user just expanded would surprise them.
+
+Collapse from `.stepExpanded` happens indirectly: opening Reference / Insights (which switches `expansion`), advancing the step (resets to `.collapsed`), or the lens dismiss gesture (exit overlay, then back). The branching lives in the `.hoverSelectable(.stepCard)` `onConfirm` closure on `CoachingStepPage`. No new `HUDControl` id; one input has multiple contextual meanings, with `expansion` and `autoScrollIsOverflowing` as the discriminators. The auto-scroll itself ping-pongs top → bottom → top continuously and auto-suspends while a confirmation overlay recedes the page.
 
 Reuse for: in-step procedure clip viewers, recording playback, multi-section settings within a single page.
 
@@ -398,6 +438,7 @@ Things that look fine in isolation but break the kit when shipped.
 - **Cards inside cards.** Glass-on-glass nesting reads as visual noise. A panel contains content; if the content needs further grouping, use spacing or dividers, not another panel.
 - **Custom font sizes outside the type scale.** Pick from the Typography table. New sizes are technical debt — they accumulate until the kit feels random.
 - **Direct hex colors in views.** Add to the palette table first, then reference. Inline color literals at call sites cause drift.
+- **Custom hover state on a single button.** Don't add a per-call-site `if hovered { Color.white } else { Color.clear }` background flip, text-color inversion, or alternate stroke. The unified yellow `HUDHoverHighlight` ring is the **only** hover cue across every `.hoverSelectable` element on the lens, capsule or rounded. If a button needs to read as "primary" before the cursor lands, use the resting accent stroke (1pt yellow @ 0.32) — that's a *resting* affordance, orthogonal to hover. Stacking two emphases on one button is the visual noise we just deleted from the troubleshoot pages; don't reintroduce it.
 
 ---
 

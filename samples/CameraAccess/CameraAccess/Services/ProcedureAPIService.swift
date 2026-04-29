@@ -13,21 +13,28 @@ class ProcedureAPIService: ObservableObject {
 
   // MARK: - List procedures
 
-  func fetchProcedures() async throws -> [ProcedureListItem] {
+  /// `forceRefresh: true` bypasses URLCache (pull-to-refresh path); the
+  /// default reuses any cached response even if `Cache-Control: max-age`
+  /// has expired, so re-entering Discover is instant.
+  func fetchProcedures(forceRefresh: Bool = false) async throws -> [ProcedureListItem] {
     guard let url = URL(string: "\(serverBaseURL)/api/procedures") else {
       throw APIError.invalidURL
     }
-    let (data, _) = try await URLSession.shared.data(from: url)
+    var request = URLRequest(url: url)
+    request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .returnCacheDataElseLoad
+    let (data, _) = try await URLSession.shared.data(for: request)
     return try decoder.decode([ProcedureListItem].self, from: data)
   }
 
   // MARK: - Get single procedure
 
-  func fetchProcedure(id: String) async throws -> ProcedureResponse {
+  func fetchProcedure(id: String, forceRefresh: Bool = false) async throws -> ProcedureResponse {
     guard let url = URL(string: "\(serverBaseURL)/api/procedures/\(id)") else {
       throw APIError.invalidURL
     }
-    let (data, _) = try await URLSession.shared.data(from: url)
+    var request = URLRequest(url: url)
+    request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .returnCacheDataElseLoad
+    let (data, _) = try await URLSession.shared.data(for: request)
     return try decoder.decode(ProcedureResponse.self, from: data)
   }
 
@@ -85,7 +92,9 @@ class ProcedureAPIService: ObservableObject {
     guard let url = URL(string: "\(serverBaseURL)/api/learner/voices") else {
       throw APIError.invalidURL
     }
-    let (data, _) = try await URLSession.shared.data(from: url)
+    var request = URLRequest(url: url)
+    request.cachePolicy = .returnCacheDataElseLoad
+    let (data, _) = try await URLSession.shared.data(for: request)
     let voiceDecoder = JSONDecoder()
     voiceDecoder.keyDecodingStrategy = .convertFromSnakeCase
     return try voiceDecoder.decode([VoiceOption].self, from: data)

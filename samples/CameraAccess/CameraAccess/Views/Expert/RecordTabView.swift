@@ -8,8 +8,11 @@ struct RecordTabView: View {
   let onProcedureCreated: (String) -> Void
   let onExit: () -> Void
 
-  @State private var showStreaming = false
-  @State private var showIPhoneRecording = false
+  // The recording flow is now transport-agnostic: both .glasses and .iPhone
+  // route through `IPhoneRecordingView(transport:)`, which swaps only the
+  // camera content layer. `recordingTransport` doubles as the picker's
+  // chosen-value state and the fullScreenCover identity.
+  @State private var recordingTransport: CaptureTransport?
   @State private var showRegistrationSheet = false
   @State private var showGlassesInactiveSheet = false
   @State private var showTransportPicker = false
@@ -42,29 +45,23 @@ struct RecordTabView: View {
       }
     }
     .retraceNavBar()
-    .fullScreenCover(isPresented: $showStreaming) {
-      StreamSessionView(
-        wearables: wearables,
-        wearablesVM: wearablesVM,
-        uploadService: uploadService,
-        onAcknowledgeProcedure: handleProcedureAcknowledged
-      )
-    }
-    .fullScreenCover(isPresented: $showIPhoneRecording) {
+    .fullScreenCover(item: $recordingTransport) { transport in
       IPhoneRecordingView(
+        transport: transport,
+        wearables: wearables,
         uploadService: uploadService,
         onAcknowledgeProcedure: handleProcedureAcknowledged
       )
     }
     .sheet(isPresented: $showRegistrationSheet) {
       RegistrationPromptSheet(viewModel: wearablesVM) {
-        // Auto-proceed to streaming once the user finishes registration.
-        showStreaming = true
+        // Auto-proceed to recording once the user finishes registration.
+        recordingTransport = .glasses
       }
     }
     .sheet(isPresented: $showGlassesInactiveSheet) {
       GlassesInactiveSheet(iPhoneAlternativeTitle: "Record with iPhone instead") {
-        showIPhoneRecording = true
+        recordingTransport = .iPhone
       }
     }
     // Transport picker. The sheet just records the user's choice; routing
@@ -203,10 +200,10 @@ struct RecordTabView: View {
       } else if !wearablesVM.hasActiveDevice {
         showGlassesInactiveSheet = true
       } else {
-        showStreaming = true
+        recordingTransport = .glasses
       }
     case .iPhone:
-      showIPhoneRecording = true
+      recordingTransport = .iPhone
     }
   }
 

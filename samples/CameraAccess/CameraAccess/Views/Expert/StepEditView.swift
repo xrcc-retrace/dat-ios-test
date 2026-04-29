@@ -97,7 +97,7 @@ struct StepEditView: View {
                 .tracking(0.5)
                 .foregroundColor(.textSecondary)
               if isImage {
-                AsyncImage(url: url) { phase in
+                CachedAsyncImage(url: url) { phase in
                   switch phase {
                   case .success(let image):
                     image.resizable().aspectRatio(contentMode: .fit)

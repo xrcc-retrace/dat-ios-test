@@ -37,8 +37,6 @@ enum RayBanHUDLayoutTokens {
   /// Sized so the prefix + "… Read more" fits inside `lineLimit(2)` at the
   /// 18 pt body weight without clipping the affordance.
   static let stepDescriptionCharacterLimit: Int = 60
-  /// Single half-cycle of the green completion pulse. Full pulse = 2× this (autoreverse).
-  static let completionPulseDuration: Double = 0.70
   /// Maximum width of the Exit workflow pill.
   static let exitPillMaxWidth: CGFloat = 340
   /// Page-transition slide duration. Page-nav animations derive their offset
@@ -47,4 +45,26 @@ enum RayBanHUDLayoutTokens {
   /// Page-indicator dot diameter and spacing.
   static let pageIndicatorDotDiameter: CGFloat = 6
   static let pageIndicatorSpacing: CGFloat = 6
+  /// Canonical recede recipe — applied to underlying lens content while
+  /// a confirmation overlay is on top. Reached via the
+  /// `.rayBanHUDRecede(active:)` view extension. Tweak in one place;
+  /// every overlay flow inherits.
+  ///
+  /// Numbers were softened from `(0.92, 0.32, 6)` to keep the page
+  /// recognizable underneath the overlay — the previous opacity made
+  /// the user lose their place between flows.
+  static let recedeScale: CGFloat = 0.92
+  static let recedeOpacity: CGFloat = 0.5
+  static let recedeBlurRadius: CGFloat = 4
+  /// Auto-scroll speed for overflowing step descriptions in the Coaching
+  /// step card. Constant rate (the cycle duration scales with overflow
+  /// distance, so long content takes proportionally longer to traverse
+  /// while keeping the visual speed uniform). Tune here.
+  static let autoScrollPointsPerSecond: Double = 25
+  /// Dwell time at each endpoint of the auto-scroll ping-pong cycle —
+  /// the eye gets a beat to recognize "we're at the top / we're at the
+  /// bottom" before the next traversal starts. Without this, the
+  /// reversal is instantaneous and reads as a smooth cycle that's hard
+  /// to anchor against.
+  static let autoScrollEdgeDwellDuration: TimeInterval = 1.0
 }

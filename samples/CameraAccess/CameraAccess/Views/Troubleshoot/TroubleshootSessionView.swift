@@ -10,17 +10,25 @@ struct TroubleshootSessionView: View {
   @ObservedObject var progressStore: LocalProgressStore
   let serverBaseURL: String
   let transport: CaptureTransport
-  let onExit: () -> Void
+  /// Called when the diagnostic ends. Carries an optional learner-session
+  /// payload — non-nil means the user found a fix and is being handed
+  /// off to coaching; the parent dismisses this cover and presents
+  /// `CoachingSessionView` so the two flows don't stack. Nil means a
+  /// manual exit (X button, pinch-back, end-diagnostic alert) — parent
+  /// just dismisses and stays on `TroubleshootIntroView`.
+  let onExit: (LearnerSessionStartResponse?) -> Void
 
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var appOrientationController: AppOrientationController
   @StateObject private var viewModel: DiagnosticSessionViewModel
 
   @State private var showDismissConfirmation = false
-  @State private var activeHandoff: LearnerSessionStartResponse?
-  // Drawer state for the iPhone camera-first layout. Ignored on glasses
-  // transport (which keeps the existing vertical stack).
-  @State private var drawerExpanded = true
+  // Drawer state for the camera-first layout. Both transports use the
+  // same drawer — the camera feed (iPhone preview layer or glasses video
+  // stream) sits behind the lens emulator; pull up the drawer for the
+  // activity feed. Starts collapsed so the lens has the user's full
+  // attention on session entry.
+  @State private var drawerExpanded = false
   // Active lens page inside the Ray-Ban emulator. Troubleshoot ships with
   // zero pages today; the designer fills them in incrementally.
   @State private var troubleshootPageIndex: Int = 0
@@ -40,7 +48,7 @@ struct TroubleshootSessionView: View {
     progressStore: LocalProgressStore,
     serverBaseURL: String,
     transport: CaptureTransport,
-    onExit: @escaping () -> Void
+    onExit: @escaping (LearnerSessionStartResponse?) -> Void
   ) {
     self.wearables = wearables
     self.wearablesVM = wearablesVM
@@ -57,91 +65,97 @@ struct TroubleshootSessionView: View {
 
   var body: some View {
     ZStack {
-      if transport == .iPhone {
-        IPhoneCoachingLayout(
-          viewModel: viewModel,
-          drawerExpanded: $drawerExpanded,
-          showDrawer: currentInterfaceOrientation.isPortrait,
-          hud: {
-            // Lens drives the five-step Troubleshoot flow. Exactly one page
-            // is alive at a time; the page is selected from VM state. The
-            // confirmation overlay layers on top via the recede+arrive
-            // pattern when `pendingConfirmation == true`.
-            //
-            // Overlay sits *inside* the emulator's page closure (mirrors
-            // ExpertNarrationTipPage's ZStack pattern, lines 56-85) so
-            // both the page and the overlay are children of the emulator
-            // and inherit its `HUDHoverCoordinator` environmentObject.
-            // Rendering the overlay as a sibling of the emulator (the
-            // older shape) leaves it without the env and crashes on first
-            // hover read.
-            RayBanHUDEmulator(
-              pageCount: 1,
-              pageIndex: $troubleshootPageIndex,
-              showBoundary: debugMode,
-              additiveBlend: hudAdditiveBlend,
-              additiveSurfaceVariant: .lowTint,
-              // Lens double-tap → focus-engine `.dismiss` → topmost
-              // page handler routes to the end-diagnostic alert.
-              // Mirrors Coaching's exit pattern, and gives touch
-              // parity with the MediaPipe double-pinch back gesture
-              // (which still also fires `viewModel.onBackGesture`
-              // legacy callback below).
-              enableDismissGesture: true
-            ) { _ in
-              ZStack {
-                troubleshootCurrentPage
-                  // Recede the page so the overlay reads as foreground.
-                  // Combined with the overlay's heavier weight, foreground
-                  // and background separate cleanly.
-                  .scaleEffect((viewModel.pendingConfirmation || showDismissConfirmation) ? 0.92 : 1.0)
-                  .opacity((viewModel.pendingConfirmation || showDismissConfirmation) ? 0.32 : 1.0)
-                  .blur(radius: (viewModel.pendingConfirmation || showDismissConfirmation) ? 6 : 0)
-                  .allowsHitTesting(!(viewModel.pendingConfirmation || showDismissConfirmation))
-
-                if viewModel.pendingConfirmation, let product = viewModel.identifiedProduct {
-                  TroubleshootConfirmOverlay(
-                    product: product,
-                    onConfirm: { viewModel.confirmIdentification() },
-                    onReject: { viewModel.requestReIdentify() }
-                  )
-                  .transition(.scale(scale: 0.88).combined(with: .opacity))
-                }
-
-                if showDismissConfirmation {
-                  CoachingExitConfirmationOverlay(
-                    onCancel: {
-                      withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                        showDismissConfirmation = false
-                      }
-                    },
-                    onConfirm: confirmDiagnosticExit
-                  )
-                  .transition(.scale(scale: 0.88).combined(with: .opacity))
-                  .padding(.horizontal, 32)
-                }
-              }
-              .animation(
-                .spring(response: 0.32, dampingFraction: 0.85),
-                value: viewModel.pendingConfirmation
-              )
-              .animation(
-                .spring(response: 0.32, dampingFraction: 0.85),
-                value: showDismissConfirmation
-              )
-              .animation(
-                .spring(response: 0.32, dampingFraction: 0.85),
-                value: troubleshootPageKind
-              )
+      // One layout for both transports — only the camera content layer
+      // differs. The HUD pages, confirmation overlays, and exit flow are
+      // identical regardless of where the pixels behind the lens come
+      // from.
+      IPhoneCoachingLayout(
+        viewModel: viewModel,
+        drawerExpanded: $drawerExpanded,
+        showDrawer: currentInterfaceOrientation.isPortrait,
+        cameraContent: {
+          switch transport {
+          case .iPhone:
+            if let previewLayer = viewModel.iPhonePreviewLayer {
+              IPhoneCameraPreview(previewLayer: previewLayer)
+            } else {
+              Color.black
             }
+          case .glasses:
+            GlassesCameraPreview(image: viewModel.glassesPreviewFrame)
           }
-        ) {
-          stackedBody
+        },
+        hud: {
+          // Lens drives the five-step Troubleshoot flow. Exactly one page
+          // is alive at a time; the page is selected from VM state. The
+          // confirmation overlay layers on top via the recede+arrive
+          // pattern when `pendingConfirmation == true`.
+          //
+          // Overlay sits *inside* the emulator's page closure (mirrors
+          // ExpertNarrationTipPage's ZStack pattern, lines 56-85) so
+          // both the page and the overlay are children of the emulator
+          // and inherit its `HUDHoverCoordinator` environmentObject.
+          // Rendering the overlay as a sibling of the emulator (the
+          // older shape) leaves it without the env and crashes on first
+          // hover read.
+          RayBanHUDEmulator(
+            pageCount: 1,
+            pageIndex: $troubleshootPageIndex,
+            showBoundary: debugMode,
+            additiveBlend: hudAdditiveBlend,
+            additiveSurfaceVariant: .lowTint,
+            // Lens double-tap → focus-engine `.dismiss` → topmost
+            // page handler routes to the end-diagnostic overlay.
+            // Mirrors Coaching's exit pattern, and gives touch
+            // parity with the MediaPipe double-pinch back gesture
+            // (which still also fires `viewModel.onBackGesture`
+            // legacy callback below).
+            enableDismissGesture: true
+          ) { _ in
+            ZStack {
+              troubleshootCurrentPage
+                // Canonical recede so the overlay reads as foreground.
+                // Numbers live in `RayBanHUDLayoutTokens.recede*`.
+                .rayBanHUDRecede(active: viewModel.pendingConfirmation || showDismissConfirmation)
+
+              if viewModel.pendingConfirmation, let product = viewModel.identifiedProduct {
+                TroubleshootConfirmOverlay(
+                  product: product,
+                  onConfirm: { viewModel.confirmIdentification() },
+                  onReject: { viewModel.requestReIdentify() }
+                )
+                .transition(.scale(scale: 0.88).combined(with: .opacity))
+              }
+
+              if showDismissConfirmation {
+                CoachingExitConfirmationOverlay(
+                  onCancel: {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                      showDismissConfirmation = false
+                    }
+                  },
+                  onConfirm: confirmDiagnosticExit
+                )
+                .transition(.scale(scale: 0.88).combined(with: .opacity))
+                .padding(.horizontal, 32)
+              }
+            }
+            .animation(
+              .spring(response: 0.32, dampingFraction: 0.85),
+              value: viewModel.pendingConfirmation
+            )
+            .animation(
+              .spring(response: 0.32, dampingFraction: 0.85),
+              value: showDismissConfirmation
+            )
+            .animation(
+              .spring(response: 0.32, dampingFraction: 0.85),
+              value: troubleshootPageKind
+            )
+          }
         }
-      } else {
-        RetraceScreen {
-          stackedBody
-        }
+      ) {
+        stackedBody
       }
 
       // Hand-tracking dev overlay — landmark dots, pinch-drag cross, event
@@ -152,14 +166,6 @@ struct TroubleshootSessionView: View {
       }
     }
     .preferredColorScheme(.dark)
-    .alert("End diagnostic?", isPresented: systemDismissConfirmationBinding) {
-      Button("Cancel", role: .cancel) {}
-      Button("End", role: .destructive) {
-        confirmDiagnosticExit()
-      }
-    } message: {
-      Text("Your diagnostic conversation will end.")
-    }
     .onAppear {
       // Double index-finger pinch ("back" gesture) → end-diagnostic
       // confirmation, same destination as the top-bar close button.
@@ -191,19 +197,6 @@ struct TroubleshootSessionView: View {
       let resolved = resolveInterfaceOrientation()
       currentInterfaceOrientation = resolved
       viewModel.setPreviewInterfaceOrientation(resolved)
-    }
-    .fullScreenCover(item: $activeHandoff) { handoff in
-      // Handoff into a learner coaching session keeps the same transport
-      // the user picked for the diagnostic — picking glasses here was a
-      // deliberate choice, so honor it on the learner side too.
-      CoachingSessionView(
-        procedure: handoff.procedure,
-        wearables: wearables,
-        wearablesVM: wearablesVM,
-        progressStore: progressStore,
-        serverBaseURL: serverBaseURL,
-        transport: transport
-      )
     }
     .sheet(isPresented: $viewModel.showManualUploadSheet) {
       ManualUploadSheet(
@@ -423,6 +416,15 @@ struct TroubleshootSessionView: View {
     case .none, .noMatch:
       break
     }
+    // searchNarration is non-nil from the moment search_procedures (or
+    // web_search_for_fix) enters pendingToolCallNames — before phase
+    // flips to .resolving on result. Route to .searching immediately so
+    // the user sees "Searching your library" + ellipsis while the call
+    // is in flight, rather than staring at the diagnose page for 5-10s
+    // with no signal that a search is happening.
+    if viewModel.searchNarration != nil {
+      return .searching
+    }
     switch viewModel.phase {
     case .discovering: return .identify
     case .diagnosing:  return .diagnose
@@ -459,8 +461,15 @@ struct TroubleshootSessionView: View {
   }
 
   private func startHandoff(procedureId: String) async {
-    if let payload = await viewModel.executeHandoff(procedureId: procedureId, autoAdvance: true) {
-      activeHandoff = payload
+    let autoAdvance = UserDefaults.standard.object(forKey: "autoAdvanceEnabled") as? Bool ?? true
+    if let payload = await viewModel.executeHandoff(procedureId: procedureId, autoAdvance: autoAdvance) {
+      // Hand the payload up to the parent (`TroubleshootIntroView`).
+      // It dismisses this cover and presents `CoachingSessionView`
+      // independently — no stacking, no double-exit when the user
+      // finishes coaching. The diagnostic Gemini session was already
+      // torn down inside `executeHandoff` (`stopCameraStream` +
+      // `stopGeminiLiveSession`).
+      onExit(payload)
     }
   }
 
@@ -469,22 +478,12 @@ struct TroubleshootSessionView: View {
     Task { await viewModel.startSession() }
   }
 
-  private var systemDismissConfirmationBinding: Binding<Bool> {
-    Binding(
-      get: { showDismissConfirmation && transport != .iPhone },
-      set: { newValue in
-        if transport != .iPhone {
-          showDismissConfirmation = newValue
-        }
-      }
-    )
-  }
-
   private func confirmDiagnosticExit() {
     showDismissConfirmation = false
     viewModel.endSession()
-    dismiss()
-    onExit()
+    // Manual exit — no handoff payload. Parent clears its
+    // `presentedTransport` binding which dismisses this cover.
+    onExit(nil)
   }
 }
 

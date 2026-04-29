@@ -1,4 +1,5 @@
 import AVFoundation
+import CryptoKit
 import SwiftUI
 import UIKit
 
@@ -11,16 +12,48 @@ actor VideoThumbnailCache {
     return c
   }()
   private var inflight: [URL: Task<UIImage?, Never>] = [:]
+  private let diskDirectory: URL = {
+    // .cachesDirectory is the right home for regenerable derivatives — iOS
+    // is allowed to purge it under storage pressure, which we want.
+    let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+    let dir = base.appendingPathComponent("RetraceThumbnails", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }()
 
   func image(for url: URL) async -> UIImage? {
     if let hit = cache.object(forKey: url as NSURL) { return hit }
+    if let onDisk = loadFromDisk(url: url) {
+      cache.setObject(onDisk, forKey: url as NSURL)
+      return onDisk
+    }
     if let t = inflight[url] { return await t.value }
     let t = Task<UIImage?, Never> { await Self.generate(url: url) }
     inflight[url] = t
     let img = await t.value
     inflight[url] = nil
-    if let img { cache.setObject(img, forKey: url as NSURL) }
+    if let img {
+      cache.setObject(img, forKey: url as NSURL)
+      writeToDisk(image: img, url: url)
+    }
     return img
+  }
+
+  private func diskPath(for url: URL) -> URL {
+    let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+    let hex = digest.map { String(format: "%02x", $0) }.joined()
+    return diskDirectory.appendingPathComponent("\(hex).jpg")
+  }
+
+  private func loadFromDisk(url: URL) -> UIImage? {
+    let path = diskPath(for: url)
+    guard let data = try? Data(contentsOf: path) else { return nil }
+    return UIImage(data: data)
+  }
+
+  private func writeToDisk(image: UIImage, url: URL) {
+    guard let data = image.jpegData(compressionQuality: 0.8) else { return }
+    try? data.write(to: diskPath(for: url), options: .atomic)
   }
 
   private static func generate(url: URL) async -> UIImage? {

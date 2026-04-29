@@ -4,8 +4,15 @@ import Foundation
 ///
 /// Default focus = `.stepCard`. Page-level semantics:
 ///
-/// - **Left/right** while focused on the step card → step nav (previous /
-///   next step, via `viewModel.navigateStepFromHUD`).
+/// - **Left/right** while focused on the step card → step nav, but
+///   **commit-on-release**, not commit-on-highlight. Highlights fire
+///   mid-pinch as the thumb crosses a quadrant; consuming them here
+///   would advance / retreat the step the moment the user starts
+///   dragging — too eager, and accumulates accidental skips when the
+///   learner just shifts their hand. Terminal `.left` / `.right` events
+///   fire step nav via the page's `HandGestureService.shared.onEvent`
+///   listener instead. Mirrors Expert's narration tip carousel
+///   (`ExpertTipPageHandler` / `ExpertNarrationTipPage`).
 /// - **Up** from the step card → cursor moves to the leftmost top button
 ///   (Reference if present, else Insights, else no-op). Encoded directly
 ///   in the focus graph via the leftmost-first rule.
@@ -114,18 +121,25 @@ final class CoachingStepPageHandler: HUDInputHandler {
     return graph
   }
 
-  /// Left/right on step card = step nav. Other directions traverse the
-  /// graph. Once focus is on a top button, all directions traverse the
-  /// graph (no page-level override applies there).
+  /// Up/down on step card = focus-graph traversal (top affordances /
+  /// bottom audio row / reference clip when expanded). Left/right on
+  /// the step card are NOT consumed here — step nav uses a
+  /// commit-on-release model and runs from the page's
+  /// `HandGestureService.shared.onEvent` listener instead. See class
+  /// comment.
+  ///
+  /// Once focus is on a top button or the bottom row, all directions
+  /// traverse the graph (no page-level override applies there).
   func handle(direction: Direction) -> Bool {
     if coordinator.hovered == .stepCard {
       switch direction {
-      case .left:
-        onRetreatStep()
-        return true
-      case .right:
-        onAdvanceStep()
-        return true
+      case .left, .right:
+        // Returning false drops the highlight-fired (mid-pinch)
+        // directional and the lens emulator's release-fired touch
+        // swipe directional. The terminal pinch path on
+        // `HandGestureService.shared.onEvent` is what now fires step
+        // nav. Mirrors Expert's narration carousel exactly.
+        return false
       case .up, .down:
         return defaultFocusTraversal(
           coordinator: coordinator,

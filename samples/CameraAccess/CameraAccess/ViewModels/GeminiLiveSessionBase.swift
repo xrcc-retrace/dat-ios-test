@@ -128,6 +128,13 @@ class GeminiLiveSessionBase: ObservableObject {
   /// the iPhone camera-first layout redraws once the capture session comes
   /// up after permission grants.
   @Published var iPhonePreviewLayer: AVCaptureVideoPreviewLayer?
+  /// Latest decoded glasses video frame, published so the phone-side
+  /// `GlassesCameraPreview` can render the live glasses feed behind the
+  /// HUD emulator. Throttled to ~10 Hz inside the frame listener so the
+  /// MainActor doesn't burn cycles on display work that competes with
+  /// the JPEG → Gemini send path. Nil for iPhone transport.
+  @Published var glassesPreviewFrame: UIImage?
+  private var lastGlassesPreviewUpdateAt: Date = .distantPast
   /// Latest interface orientation pushed by the view. Cached here so that
   /// orientation updates arriving before the async camera start can be
   /// replayed onto `iPhoneCamera` the moment it becomes available.
@@ -460,6 +467,10 @@ class GeminiLiveSessionBase: ObservableObject {
         existing.stop()
         self.deviceSession = nil
       }
+      self.handLandmarkerService?.stop()
+      self.handLandmarkerService = nil
+      self.glassesPreviewFrame = nil
+      self.lastGlassesPreviewUpdateAt = .distantPast
 
       let deviceSelector = AutoDeviceSelector(wearables: self.wearables)
       let config = StreamSessionConfig(
@@ -483,9 +494,53 @@ class GeminiLiveSessionBase: ObservableObject {
       self.deviceSession = session
       self.streamSession = stream
 
+      // Hand tracking on the glasses transport — mirrors the iPhone init in
+      // setupIPhoneCameraStream(). Kept in sync so the lens HUD's pinch /
+      // double-pinch back gestures behave identically regardless of which
+      // camera is feeding frames into Gemini.
+      if HandTrackingConfig.isAvailable && !HandGestureService.isDisabled {
+        HandGestureService.shared.reset()
+        HandGestureService.shared.onBackGesture = { [weak self] in
+          self?.onBackGesture?()
+        }
+        let handService = HandLandmarkerService()
+        do {
+          try handService.start()
+          handService.onResult = { frame in
+            Task { @MainActor in
+              HandGestureService.shared.ingest(frame)
+            }
+          }
+          self.handLandmarkerService = handService
+          print("[GeminiLive] Hand tracking started on glasses path — pinch-drag recognizer armed")
+        } catch {
+          print("[GeminiLive] Hand tracking disabled on glasses path: \(error.localizedDescription)")
+          self.handLandmarkerService = nil
+        }
+      } else if HandGestureService.isDisabled {
+        print("[GeminiLive] Hand tracking suppressed by user setting (glasses path)")
+      }
+
       self.videoFrameListenerToken = stream.videoFramePublisher.listen { [weak self] videoFrame in
+        // All per-frame work hops onto MainActor: `handLandmarkerService`
+        // is a `@MainActor`-isolated property (Swift's data-race checker
+        // refuses a direct read from this Sendable closure), and the
+        // forward/preview path was already MainActor-bound. `submit(...)`
+        // delegates immediately to MediaPipe's async detect, so the hop
+        // costs only a queue dispatch.
         Task { @MainActor [weak self] in
-          self?.forwardFrameToGemini(videoFrame)
+          guard let self = self else { return }
+          self.handLandmarkerService?.submit(sampleBuffer: videoFrame.sampleBuffer)
+          self.forwardFrameToGemini(videoFrame)
+          // Throttle the phone-side preview to ~10 Hz so the MainActor
+          // doesn't waste cycles re-encoding UIImages that won't render
+          // any sooner than the screen's refresh rate.
+          let now = Date()
+          if now.timeIntervalSince(self.lastGlassesPreviewUpdateAt) >= 0.1,
+             let image = videoFrame.makeUIImage() {
+            self.lastGlassesPreviewUpdateAt = now
+            self.glassesPreviewFrame = image
+          }
         }
       }
 
@@ -545,11 +600,17 @@ class GeminiLiveSessionBase: ObservableObject {
       // ingest each frame into the Meta XR micro-gesture recognizer, and
       // log any emitted event. No HUD binding yet (deferred to the next
       // milestone once reliability is validated on-device).
-      if HandTrackingConfig.isAvailable {
+      if HandTrackingConfig.isAvailable && !HandGestureService.isDisabled {
         // Reset the shared gesture service so stale FSM state from any
         // prior session doesn't carry across. Wire `.back` events to the
         // VM's exposed `onBackGesture` so the existing call-site contract
         // (`viewModel.onBackGesture = { … }` in views) keeps working.
+        //
+        // The `!isDisabled` guard is the user kill switch (Server
+        // Settings → Debug → "Disable hand tracking"). When on, don't
+        // spin up MediaPipe — touch / lens swipes still work but the
+        // pinch path is muted. Service-level `ingest(_:)` early-out is
+        // the belt-and-suspenders for mid-session toggle flips.
         HandGestureService.shared.reset()
         HandGestureService.shared.onBackGesture = { [weak self] in
           self?.onBackGesture?()
@@ -570,6 +631,8 @@ class GeminiLiveSessionBase: ObservableObject {
         } catch {
           print("[GeminiLive] Hand tracking disabled: \(error.localizedDescription)")
         }
+      } else if HandGestureService.isDisabled {
+        print("[GeminiLive] Hand tracking suppressed by user setting")
       }
 
       do {
@@ -617,6 +680,8 @@ class GeminiLiveSessionBase: ObservableObject {
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
       self.iPhonePreviewLayer = nil
+      self.glassesPreviewFrame = nil
+      self.lastGlassesPreviewUpdateAt = .distantPast
       self.handLandmarkerService?.stop()
       self.handLandmarkerService = nil
       // Clear the shared gesture service's hooks so a teardown doesn't

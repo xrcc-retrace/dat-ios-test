@@ -64,7 +64,7 @@ struct DiscoverView: View {
     }
     .retraceNavBar()
     .refreshable {
-      await viewModel.fetchProcedures()
+      await viewModel.fetchProcedures(forceRefresh: true)
     }
     .task {
       await viewModel.fetchProcedures()

@@ -30,17 +30,27 @@ final class TroubleshootPageHandler: HUDInputHandler {
   /// Layered on top of the always-available exit phrases. Ignored when
   /// `focusedControl == nil`.
   let voiceCommandLabel: String?
+  /// Optional secondary control stacked vertically below the primary
+  /// (e.g. "Rediagnose" pill below "Start" / "Upload a manual"). Default
+  /// focus stays on the primary; `down` traverses primary → secondary →
+  /// bottom audio row.
+  let secondaryControl: HUDControl?
+  let secondaryVoiceLabel: String?
 
   init(
     coordinator: HUDHoverCoordinator,
     focusedControl: HUDControl? = nil,
     voiceCommandLabel: String? = nil,
+    secondaryControl: HUDControl? = nil,
+    secondaryVoiceLabel: String? = nil,
     onSetMuted: @escaping (Bool) -> Void,
     onDismiss: @escaping () -> Void
   ) {
     self.coordinator = coordinator
     self.focusedControl = focusedControl
     self.voiceCommandLabel = voiceCommandLabel
+    self.secondaryControl = secondaryControl
+    self.secondaryVoiceLabel = secondaryVoiceLabel
     self.onSetMuted = onSetMuted
     self.onDismiss = onDismiss
   }
@@ -54,9 +64,18 @@ final class TroubleshootPageHandler: HUDInputHandler {
     ]
 
     if let focusedControl {
-      graph[focusedControl] = FocusNeighbors(down: .diagnosticToggleMute)
-      graph[.diagnosticToggleMute] = FocusNeighbors(up: focusedControl, right: .diagnosticExit)
-      graph[.diagnosticExit] = FocusNeighbors(up: focusedControl, left: .diagnosticToggleMute)
+      if let secondaryControl {
+        // Two stacked pills (e.g. resolved / no-solution pages).
+        // Primary ↕ secondary ↕ bottom audio row.
+        graph[focusedControl] = FocusNeighbors(down: secondaryControl)
+        graph[secondaryControl] = FocusNeighbors(up: focusedControl, down: .diagnosticToggleMute)
+        graph[.diagnosticToggleMute] = FocusNeighbors(up: secondaryControl, right: .diagnosticExit)
+        graph[.diagnosticExit] = FocusNeighbors(up: secondaryControl, left: .diagnosticToggleMute)
+      } else {
+        graph[focusedControl] = FocusNeighbors(down: .diagnosticToggleMute)
+        graph[.diagnosticToggleMute] = FocusNeighbors(up: focusedControl, right: .diagnosticExit)
+        graph[.diagnosticExit] = FocusNeighbors(up: focusedControl, left: .diagnosticToggleMute)
+      }
     }
 
     return graph
@@ -90,6 +109,9 @@ final class TroubleshootPageHandler: HUDInputHandler {
       "unmute":         { [weak self] in self?.onSetMuted(false) },
     ]
     if let id = focusedControl, let label = voiceCommandLabel {
+      commands[label] = { [weak self] in self?.coordinator.fireConfirm(for: id) }
+    }
+    if let id = secondaryControl, let label = secondaryVoiceLabel {
       commands[label] = { [weak self] in self?.coordinator.fireConfirm(for: id) }
     }
     return commands

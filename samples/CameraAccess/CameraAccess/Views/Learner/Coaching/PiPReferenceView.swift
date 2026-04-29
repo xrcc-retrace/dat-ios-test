@@ -21,7 +21,7 @@ struct PiPReferenceView: View {
 
         Group {
           if isImage {
-            AsyncImage(url: url) { phase in
+            CachedAsyncImage(url: url) { phase in
               switch phase {
               case .success(let image):
                 image.resizable().aspectRatio(contentMode: .fit)

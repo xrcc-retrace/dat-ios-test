@@ -14,6 +14,7 @@
 // video frame handling, photo capture, and error handling.
 //
 
+import Combine
 import MWDATCamera
 import MWDATCore
 import SwiftUI
@@ -37,6 +38,13 @@ class StreamSessionViewModel: ObservableObject {
     streamingStatus != .stopped
   }
 
+  /// Preview-source ready signal — surface-parallel with
+  /// `IPhoneExpertRecordingViewModel.isPreviewLive` so the unified
+  /// `IPhoneRecordingView` chrome (Start CTA enable gate, spinner) can read
+  /// the same property regardless of transport. True once the first
+  /// glasses frame arrives.
+  var isPreviewLive: Bool { hasReceivedFirstFrame }
+
   // Photo capture properties
   @Published var capturedPhoto: UIImage?
   @Published var showPhotoPreview: Bool = false
@@ -46,6 +54,22 @@ class StreamSessionViewModel: ObservableObject {
   let audioSessionManager = AudioSessionManager(mode: .recording)
   lazy var recordingManager = ExpertRecordingManager(audioSessionManager: audioSessionManager)
   let uploadService: UploadService
+
+  /// State layer behind the Expert HUD — tip rotation, audio meter
+  /// smoothing, mic-source. Surface-parallel with
+  /// `IPhoneExpertRecordingViewModel.hudViewModel` so the same
+  /// `ExpertNarrationTipPage` works on glasses transport too.
+  let hudViewModel = ExpertRecordingHUDViewModel()
+
+  /// Bridge so SwiftUI subviews observing this VM rebuild when the
+  /// recording manager (a nested ObservableObject) emits — same trick
+  /// `IPhoneExpertRecordingViewModel` uses.
+  private var recordingManagerCancellable: AnyCancellable?
+
+  /// MediaPipe hand-landmark service. Lifecycle matches the streaming
+  /// session — started in `prepare()`, stopped in `teardown()`. Mirrors
+  /// `IPhoneExpertRecordingViewModel.handLandmarkerService`.
+  private var handLandmarkerService: HandLandmarkerService?
 
   /// Preview is throttled at ~10 Hz so MainActor work doesn't compete with the
   /// writer for CPU — the writer needs every frame at full rate.
@@ -73,6 +97,18 @@ class StreamSessionViewModel: ObservableObject {
     // Let the SDK auto-select from available devices
     self.deviceSelector = AutoDeviceSelector(wearables: wearables)
 
+    // Mirror IPhoneExpertRecordingViewModel: SwiftUI doesn't chain observation
+    // into nested ObservableObjects, so without this bridge the Start/Stop
+    // toggle and timer overlay never redraw when `recordingManager.isRecording`
+    // / `recordingDuration` flip. Force the lazy var to materialize, then
+    // re-emit its `objectWillChange` through this outer VM.
+    let manager = recordingManager
+    recordingManagerCancellable = manager.objectWillChange
+      .receive(on: RunLoop.main)
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+
+    hudViewModel.bind(audioSessionManager: audioSessionManager)
+
     // Monitor device availability (independent of any session lifecycle).
     // `[weak self]` breaks the retain cycle: without it, `self` is strongly
     // captured by the long-running for-await loop, and the Task (owned by
@@ -91,6 +127,95 @@ class StreamSessionViewModel: ObservableObject {
 
   deinit {
     deviceMonitorTask?.cancel()
+  }
+
+  // MARK: - Surface-parallel API for `IPhoneRecordingView`
+
+  /// Glasses-path counterpart to `IPhoneExpertRecordingViewModel.prepare()`.
+  /// Asks for camera permission, brings up the streaming session, and starts
+  /// hand tracking so the HUD's pinch-drag / double-pinch back gestures work
+  /// during recording.
+  func prepare() async {
+    showError = false
+    errorMessage = ""
+    showRecordingReview = false
+
+    await handleStartStreaming()
+    startHandTrackingIfAvailable()
+  }
+
+  /// Mirror of `IPhoneExpertRecordingViewModel.startRecording(landscape:)` so
+  /// the unified recording chrome can call the same method on either VM.
+  func startRecording(landscape: Bool) {
+    guard isPreviewLive else {
+      showError("Glasses preview isn't ready yet.")
+      return
+    }
+    let size = landscape
+      ? ExpertRecordingManager.landscapeSize
+      : ExpertRecordingManager.portraitSize
+    Task { [weak self] in
+      guard let self else { return }
+      await self.recordingManager.startRecording(width: size.width, height: size.height)
+    }
+  }
+
+  /// Mirror of `IPhoneExpertRecordingViewModel.stopRecording()`. Finalizes
+  /// the mp4 and triggers the review sheet.
+  func stopRecording() {
+    Task { [weak self] in
+      guard let self else { return }
+      _ = await self.recordingManager.stopRecording()
+      if self.recordingManager.recordingURL != nil {
+        self.showRecordingReview = true
+      } else {
+        self.reportRecordingFailure()
+      }
+    }
+  }
+
+  /// Mirror of `IPhoneExpertRecordingViewModel.teardown()`. Stops streaming,
+  /// drops the hand-tracking pipeline, and resets preview state.
+  func teardown() {
+    Task { [weak self] in
+      await self?.stopSession()
+    }
+    handLandmarkerService?.stop()
+    handLandmarkerService = nil
+    hudViewModel.resetHandTracking()
+  }
+
+  /// Spin up the MediaPipe hand landmarker and pipe glasses video frames
+  /// into it via the existing `videoFrameListenerToken` (see
+  /// `attachStreamListeners`). Mirrors
+  /// `IPhoneExpertRecordingViewModel.startHandTrackingIfAvailable()`.
+  private func startHandTrackingIfAvailable() {
+    guard HandTrackingConfig.isAvailable else {
+      print("[Expert/Glasses] Hand tracking unavailable — model not bundled")
+      return
+    }
+    if HandGestureService.isDisabled {
+      print("[Expert/Glasses] Hand tracking suppressed by user setting")
+      return
+    }
+
+    hudViewModel.resetHandTracking()
+
+    let service = HandLandmarkerService()
+    do {
+      try service.start()
+    } catch {
+      print("[Expert/Glasses] Hand tracking disabled: \(error.localizedDescription)")
+      return
+    }
+
+    service.onResult = { [weak self] frame in
+      Task { @MainActor in
+        self?.hudViewModel.ingestHandFrame(frame)
+      }
+    }
+    handLandmarkerService = service
+    print("[Expert/Glasses] Hand tracking started — pinch-drag recognizer armed")
   }
 
   func handleStartStreaming() async {
@@ -156,12 +281,21 @@ class StreamSessionViewModel: ObservableObject {
 
     // Video frames from the device camera.
     // Every frame: pass the CMSampleBuffer straight to the writer (cheap — just an
-    // enqueue onto recordingQueue). Preview (`makeUIImage` + SwiftUI rerender) is
+    // enqueue onto recordingQueue), and forward to the hand landmarker for HUD
+    // gesture detection. Preview (`makeUIImage` + SwiftUI rerender) is
     // throttled to ~10 Hz so MainActor isn't burning CPU on display work that
     // competes with the recording path.
+    //
+    // Per-frame work is hopped onto MainActor — `handLandmarkerService` is
+    // a `@MainActor`-isolated property and Swift's data-race checker
+    // requires that access happen from MainActor. `submit(sampleBuffer:)`
+    // immediately delegates to MediaPipe's async detect path, so doing the
+    // hop costs only a queue dispatch.
     videoFrameListenerToken = stream.videoFramePublisher.listen { [weak self] videoFrame in
       Task { @MainActor [weak self] in
         guard let self else { return }
+
+        self.handLandmarkerService?.submit(sampleBuffer: videoFrame.sampleBuffer)
 
         if self.recordingManager.isRecording {
           self.recordingManager.appendVideoFrame(videoFrame.sampleBuffer)

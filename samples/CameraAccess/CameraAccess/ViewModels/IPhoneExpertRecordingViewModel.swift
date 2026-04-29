@@ -33,13 +33,8 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   let camera = IPhoneCameraCapture()
 
   /// State layer behind the Expert HUD — tip rotation, audio meter
-  /// smoothing, transcript, mic-source. Bound to the audio manager +
-  /// transcriber in `init`.
+  /// smoothing, mic-source. Bound to the audio manager in `init`.
   let hudViewModel = ExpertRecordingHUDViewModel()
-
-  /// On-device speech recognizer for the HUD's rolling transcript card.
-  /// Started when recording begins, stopped when it ends.
-  let speechTranscriber = SpeechTranscriber()
 
   /// MediaPipe hand-landmark service. Shares the same `HandTrackingConfig`
   /// gate as the Learner Coaching path — model file bundled → available.
@@ -61,10 +56,7 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       .receive(on: RunLoop.main)
       .sink { [weak self] _ in self?.objectWillChange.send() }
 
-    hudViewModel.bind(
-      audioSessionManager: audioSessionManager,
-      speechTranscriber: speechTranscriber
-    )
+    hudViewModel.bind(audioSessionManager: audioSessionManager)
   }
 
   var previewLayer: AVCaptureVideoPreviewLayer {
@@ -128,6 +120,15 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
       return
     }
 
+    // User kill switch (Server Settings → Debug → "Disable hand
+    // tracking"). When on, don't spin up MediaPipe at all — saves CPU
+    // and battery. The service-level `ingest(_:)` early-out is the
+    // belt-and-suspenders for mid-session toggle flips.
+    if HandGestureService.isDisabled {
+      print("[Expert] Hand tracking suppressed by user setting")
+      return
+    }
+
     // Fresh recognizer state + cleared debug log per camera session so
     // no stale TRACKING state carries over from a prior recording view.
     // Tip cycling is now installed by the focus engine (see
@@ -178,14 +179,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
     Task { [weak self] in
       guard let self else { return }
       await self.recordingManager.startRecording(width: size.width, height: size.height)
-      // Bring up the on-device transcriber AFTER the writer is armed — the
-      // mic tap is live at that point. Install it as the *secondary* audio
-      // consumer so the writer can never be starved by a slow speech
-      // callback.
-      await self.speechTranscriber.start()
-      self.audioSessionManager.installSecondaryAudioConsumer { [weak self] buffer, _ in
-        self?.speechTranscriber.append(buffer)
-      }
     }
   }
 
@@ -193,10 +186,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
   func stopRecording() {
     Task { [weak self] in
       guard let self else { return }
-      // Tear down transcription first so late buffers can't land in a
-      // recognizer whose session is about to close.
-      self.audioSessionManager.removeSecondaryAudioConsumer()
-      self.speechTranscriber.stop()
       _ = await self.recordingManager.stopRecording()
       // `recordingManager.recordingURL` is set before `stopRecording` returns.
       if self.recordingManager.recordingURL != nil {
@@ -218,8 +207,6 @@ final class IPhoneExpertRecordingViewModel: ObservableObject {
     handLandmarkerService = nil
     hudViewModel.resetHandTracking()
     isPreviewLive = false
-    audioSessionManager.removeSecondaryAudioConsumer()
-    speechTranscriber.stop()
   }
 
   // MARK: - Error surfacing

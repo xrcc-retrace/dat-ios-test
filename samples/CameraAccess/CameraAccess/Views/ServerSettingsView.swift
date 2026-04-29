@@ -33,6 +33,14 @@ struct ServerSettingsView: View {
 struct DebugSettingsSection: View {
   @AppStorage("debugMode") private var debugMode: Bool = false
   @AppStorage("hudAdditiveBlend") private var hudAdditiveBlend: Bool = false
+  /// When true, hand-gesture-driven inputs are silenced across every
+  /// mode. Read at session start by both `startHandTrackingIfAvailable`
+  /// sites (Expert + GeminiLive base) — MediaPipe doesn't even spin
+  /// up when the flag is on. Also re-read inside `HandGestureService.ingest(_:)`
+  /// so flipping the toggle mid-session takes effect immediately
+  /// without a restart. Touch + lens swipes still work; only the
+  /// pinch / micro-gesture path is muted.
+  @AppStorage("disableHandTracking") private var disableHandTracking: Bool = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: Spacing.md) {
@@ -64,6 +72,22 @@ struct DebugSettingsSection: View {
             .font(.retraceCallout)
             .foregroundColor(.textPrimary)
           Text("Renders the Ray-Ban lens with additive (plus-lighter) blending so dark pixels show the camera through and bright pixels brighten what's behind — the same optical behavior as the real Meta Ray-Ban Display. Bright scenes will wash out panels.")
+            .font(.retraceCaption1)
+            .foregroundColor(.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .tint(.appPrimary)
+      .padding(14)
+      .background(Color.surfaceRaised)
+      .cornerRadius(Radius.md)
+
+      Toggle(isOn: $disableHandTracking) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Disable hand tracking")
+            .font(.retraceCallout)
+            .foregroundColor(.textPrimary)
+          Text("Silences the MediaPipe pinch-drag and micro-gesture pipeline across Expert, Coaching, and Troubleshoot. Touch swipes and taps still work. Useful when running without good lighting or when you'd rather drive the HUD purely from touch.")
             .font(.retraceCaption1)
             .foregroundColor(.textTertiary)
             .fixedSize(horizontal: false, vertical: true)

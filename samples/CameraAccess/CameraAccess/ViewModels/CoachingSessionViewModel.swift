@@ -13,6 +13,15 @@ enum HUDStepTransitionState: Equatable {
   case syncing(direction: StepNavigationDirection, targetStepNumber: Int?)
 }
 
+/// Direction the step card slides during a step transition. Drives the
+/// asymmetric `.transition(...)` on the lens step card. Forward = old
+/// slides off-left, new arrives from the right; backward = inverse.
+enum SlideDirection: Equatable {
+  case none
+  case forward
+  case backward
+}
+
 /// Learner-mode coaching session. Inherits the shared Gemini Live
 /// machinery from `GeminiLiveSessionBase` and plugs in coaching-specific
 /// behavior via template-method overrides.
@@ -33,6 +42,23 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   @Published var showPiP = false
   @Published private(set) var hudStepTransitionState: HUDStepTransitionState = .idle
   @Published private(set) var stepJustCompletedTick: Int = 0
+
+  /// Step index whose card the lens HUD should render. Lags
+  /// `currentStepIndex` by 0.7s during a forward `advance_step`
+  /// celebration so the OLD card stays on screen long enough to play
+  /// the green-overlay + checkmark sequence before sliding off. For
+  /// every other path (initial seed, `go_to_step`, completion-page
+  /// swap) it tracks `currentStepIndex` synchronously.
+  @Published private(set) var displayedStepIndex: Int = 0
+  /// When non-nil, the card matching this index renders the
+  /// celebration overlay (green fill → checkmark → "Step completed").
+  /// Only set during forward `advance_step`. The OLD index goes here
+  /// — the overlay rides the OLD card off-screen during the slide.
+  @Published private(set) var celebratingStepIndex: Int? = nil
+  /// Drives the asymmetric `.transition(...)` on the lens step card.
+  /// `.none` while idle so SwiftUI doesn't apply a transition to the
+  /// initial render.
+  @Published private(set) var slideDirection: SlideDirection = .none
 
   // MARK: - Inputs
 
@@ -65,6 +91,86 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
   var currentStep: ProcedureStepResponse? {
     guard currentStepIndex < procedure.steps.count else { return nil }
     return procedure.steps.sorted { $0.stepNumber < $1.stepNumber }[currentStepIndex]
+  }
+
+  /// Step the lens HUD should render. Equal to `currentStep` except
+  /// during the brief celebration window after a forward `advance_step`,
+  /// where it lags so the OLD card stays visible while the green
+  /// overlay + checkmark play before the slide.
+  var displayedStep: ProcedureStepResponse? {
+    let sorted = procedure.steps.sorted { $0.stepNumber < $1.stepNumber }
+    guard displayedStepIndex < sorted.count else { return nil }
+    return sorted[displayedStepIndex]
+  }
+
+  // MARK: - Step transition timeline
+  //
+  // Forward `advance_step` runs a staged ~1.0s timeline (0.20s green
+  // fade-in, 0.20s checkmark arrival, 0.30s hold, 0.30s slide). Other
+  // step transitions just slide directionally with no overlay. The VM
+  // owns the timeline so durations stay deterministic — view code
+  // animates by reacting to published state changes, never by polling.
+
+  private var transitionTask: Task<Void, Never>?
+
+  private func startForwardCelebration(fromIndex: Int, toIndex: Int) {
+    transitionTask?.cancel()
+    // celebratingStepIndex is the only state that flips at t=0. We
+    // intentionally do NOT touch slideDirection or displayedStepIndex
+    // here — keeping every other binding stable until the moment of
+    // the slide prevents SwiftUI from re-evaluating the host card's
+    // `.transition(...)` mid-frame and producing a visible layout
+    // twitch before the green overlay fades in.
+    celebratingStepIndex = fromIndex
+    CompletionFeedback.playStepComplete()  // no-op stub; sound asset deferred
+    transitionTask = Task { @MainActor [weak self] in
+      // 0.7s = 0.20 fade-in + 0.20 checkmark + 0.30 hold. Then swap the
+      // displayed index so SwiftUI runs the asymmetric slide transition.
+      try? await Task.sleep(nanoseconds: 700_000_000)
+      guard let self, !Task.isCancelled else { return }
+      // Set slideDirection and displayedStepIndex in the same
+      // transaction so the .transition value is current at the moment
+      // .id flips. `withAnimation` opens the spring context that
+      // SwiftUI uses for the .id-driven slide.
+      self.slideDirection = .forward
+      withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+        self.displayedStepIndex = toIndex
+      }
+      // 0.30s slide window. Keep `celebratingStepIndex == fromIndex`
+      // through the whole slide so the OLD card carries its overlay
+      // off-screen; clearing it mid-slide would cross-fade the overlay
+      // away while the card is still visible.
+      try? await Task.sleep(nanoseconds: 300_000_000)
+      guard !Task.isCancelled else { return }
+      self.celebratingStepIndex = nil
+      self.slideDirection = .none
+    }
+  }
+
+  private func slideDisplayedIndex(to targetIndex: Int, direction: SlideDirection) {
+    transitionTask?.cancel()
+    celebratingStepIndex = nil
+    // Set slideDirection and displayedStepIndex in the same
+    // transaction so the .transition value is current at the moment
+    // .id flips. `withAnimation` opens the spring context that
+    // SwiftUI uses for the .id-driven slide.
+    slideDirection = direction
+    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+      displayedStepIndex = targetIndex
+    }
+    transitionTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 300_000_000)
+      guard let self, !Task.isCancelled else { return }
+      self.slideDirection = .none
+    }
+  }
+
+  private func resetTransitionState(toIndex: Int) {
+    transitionTask?.cancel()
+    transitionTask = nil
+    celebratingStepIndex = nil
+    slideDirection = .none
+    displayedStepIndex = toIndex
   }
 
   /// Frozen total duration, captured the moment the session completes so the
@@ -113,6 +219,7 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
     showPiP = false
     hudStepTransitionState = .idle
     pendingStartingStep = startingStep
+    resetTransitionState(toIndex: seededIndex)
 
     self.progressStore = progressStore
     sessionStartTime = Date()
@@ -389,7 +496,12 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
           frozenSessionDuration = Date().timeIntervalSince(start)
         }
         isCompleted = true
-        currentStepIndex = max(0, procedure.steps.count - 1)
+        let finalIndex = max(0, procedure.steps.count - 1)
+        currentStepIndex = finalIndex
+        // Procedure-complete swaps the entire page set to
+        // `[.completion]` (CoachingCompletionPage takes over). Skip our
+        // celebration timeline — that page transition is the finale.
+        resetTransitionState(toIndex: finalIndex)
         if let rid = sessionRecordId {
           progressStore?.updateSession(
             id: rid,
@@ -400,7 +512,8 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
         stepJustCompletedTick &+= 1
       } else if let newStep = result["new_step"] as? Int {
         let targetIndex = max(0, newStep - 1)
-        let didAdvance = targetIndex != currentStepIndex
+        let oldIndex = currentStepIndex
+        let didAdvance = targetIndex != oldIndex
         isCompleted = false
         currentStepIndex = targetIndex
         if let rid = sessionRecordId {
@@ -412,6 +525,13 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
         }
         if didAdvance {
           stepJustCompletedTick &+= 1
+          if targetIndex > oldIndex {
+            startForwardCelebration(fromIndex: oldIndex, toIndex: targetIndex)
+          } else {
+            // Backward via advance_step is unusual but possible if Gemini
+            // emits a lower step number — slide back without overlay.
+            slideDisplayedIndex(to: targetIndex, direction: .backward)
+          }
         }
       }
 
@@ -420,13 +540,24 @@ class CoachingSessionViewModel: GeminiLiveSessionBase {
 
     case "go_to_step":
       if let stepNumber = result["current_step"] as? Int {
+        let targetIndex = max(0, stepNumber - 1)
+        let oldIndex = currentStepIndex
         isCompleted = false
-        currentStepIndex = max(0, stepNumber - 1)
+        currentStepIndex = targetIndex
         if let rid = sessionRecordId {
           progressStore?.updateSession(
             id: rid,
             stepsCompleted: currentStepIndex,
             status: .inProgress
+          )
+        }
+        if targetIndex != oldIndex {
+          // `go_to_step` is a manual jump in either direction. No
+          // celebration overlay — only forward `advance_step` marks an
+          // actual completion. Slide direction matches travel direction.
+          slideDisplayedIndex(
+            to: targetIndex,
+            direction: targetIndex > oldIndex ? .forward : .backward
           )
         }
       }

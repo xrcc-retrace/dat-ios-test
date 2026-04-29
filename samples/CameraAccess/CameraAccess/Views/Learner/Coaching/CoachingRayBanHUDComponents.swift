@@ -3,7 +3,6 @@ import SwiftUI
 
 enum RayBanHUDStepCardMode {
   case content(stepIndex: Int, stepCount: Int, step: ProcedureStepResponse?, isExpanded: Bool)
-  case loading(stepIndex: Int?, stepCount: Int)
 }
 
 enum InsightCategory: String, CaseIterable, Hashable {
@@ -36,8 +35,29 @@ extension ProcedureStepResponse {
 
 struct RayBanHUDStepCard: View {
   let mode: RayBanHUDStepCardMode
+  /// Auto-scroll bookkeeping for the expanded description. The host
+  /// (`CoachingStepPage`) owns this state because pinch-select on the
+  /// step card branches on `isOverflowing` to decide whether the input
+  /// pauses/resumes auto-scroll or toggles expansion. Defaults make the
+  /// card embeddable in non-coaching contexts (e.g., previews) without
+  /// every call site wiring auto-scroll bindings.
+  @Binding var autoScrollIsUserPaused: Bool
+  @Binding var autoScrollIsOverflowing: Bool
+  let autoScrollIsExternallySuspended: Bool
 
   @State private var selectedInsightCategory: InsightCategory?
+
+  init(
+    mode: RayBanHUDStepCardMode,
+    autoScrollIsUserPaused: Binding<Bool> = .constant(false),
+    autoScrollIsOverflowing: Binding<Bool> = .constant(false),
+    autoScrollIsExternallySuspended: Bool = false
+  ) {
+    self.mode = mode
+    self._autoScrollIsUserPaused = autoScrollIsUserPaused
+    self._autoScrollIsOverflowing = autoScrollIsOverflowing
+    self.autoScrollIsExternallySuspended = autoScrollIsExternallySuspended
+  }
 
   var body: some View {
     cardSurface
@@ -60,16 +80,6 @@ struct RayBanHUDStepCard: View {
         step: step,
         isExpanded: isExpanded
       )
-
-    case .loading:
-      VStack {
-        Spacer(minLength: 0)
-        ProgressView()
-          .tint(Color.white.opacity(0.94))
-          .controlSize(.large)
-        Spacer(minLength: 0)
-      }
-      .frame(maxWidth: .infinity)
     }
   }
 
@@ -104,14 +114,27 @@ struct RayBanHUDStepCard: View {
     .frame(maxWidth: .infinity, alignment: .leading)
 
     // Expanded mode: long descriptions + insights can overflow the lens.
-    // Wrap in a non-bouncing ScrollView so content stays inside the lens
-    // square but the user can pan to read the full step. Collapsed mode
-    // doesn't need scroll — the truncation cap keeps it fixed-size.
+    // The user can't manually drag inside the lens (touch drags are
+    // claimed by the emulator's swipe gesture, and pinches drive focus,
+    // not scroll), so we auto-scroll the content with a slow ping-pong.
+    // Pinch-select on the step card pauses / resumes (the host page
+    // branches its `.hoverSelectable` `onConfirm` on
+    // `autoScrollIsOverflowing`). Overlays receding the page suspend
+    // the scroll via `autoScrollIsExternallySuspended`. See
+    // `AutoScrollingContainer` and DESIGN.md → Animation System.
+    //
+    // Collapsed mode doesn't need scroll — the truncation cap keeps it
+    // fixed-size.
     if isExpanded {
-      ScrollView(.vertical, showsIndicators: false) {
+      AutoScrollingContainer(
+        pointsPerSecond: RayBanHUDLayoutTokens.autoScrollPointsPerSecond,
+        isUserPaused: $autoScrollIsUserPaused,
+        isExternallySuspended: autoScrollIsExternallySuspended,
+        isOverflowing: $autoScrollIsOverflowing,
+        resetKey: AnyHashable(stepIdentityKey)
+      ) {
         inner
       }
-      .scrollBounceBehavior(.basedOnSize)
     } else {
       inner
     }
@@ -224,8 +247,6 @@ struct RayBanHUDStepCard: View {
     switch mode {
     case .content(let stepIndex, _, _, _):
       return stepIndex
-    case .loading(let stepIndex, _):
-      return stepIndex ?? -1
     }
   }
 }

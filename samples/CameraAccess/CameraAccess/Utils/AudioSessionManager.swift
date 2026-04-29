@@ -88,10 +88,12 @@ class AudioSessionManager: ObservableObject {
   /// Called on the audio capture queue with each PCM buffer.
   var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
 
-  /// Optional second consumer fired AFTER `onAudioBuffer`. Used by the
-  /// Expert path so the writer (primary) can never be starved by a slow
-  /// secondary consumer (e.g. `SpeechTranscriber`). Install via
-  /// `installSecondaryAudioConsumer`.
+  /// Optional second consumer fired AFTER `onAudioBuffer`. Lets a caller
+  /// piggyback on the same mic tap as the writer/primary without risking
+  /// starvation — the primary is invoked first. Install via
+  /// `installSecondaryAudioConsumer`. Currently unused; left in place so
+  /// future side-channel listeners (analytics, mic diagnostics, etc.) can
+  /// hook in without changing the audio plumbing.
   var onAudioBufferSecondary: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
 
   /// Install a secondary audio consumer (see `onAudioBufferSecondary`).
@@ -409,7 +411,7 @@ class AudioSessionManager: ObservableObject {
       self.recordCapturedBuffer(buffer)
       // Primary (writer) first — it must never be starved by a slow secondary.
       self.onAudioBuffer?(buffer, time)
-      // Secondary (e.g. SpeechTranscriber on the Expert path). Optional.
+      // Optional secondary consumer (currently no installer in tree).
       self.onAudioBufferSecondary?(buffer, time)
     }
   }

@@ -89,7 +89,7 @@ struct ProcedureCardView: View {
   /// do we fall through to the step count as a defensive last resort.
   @ViewBuilder
   private var iconContent: some View {
-    AsyncImage(url: iconURL) { phase in
+    CachedAsyncImage(url: iconURL) { phase in
       switch phase {
       case .success(let image):
         image

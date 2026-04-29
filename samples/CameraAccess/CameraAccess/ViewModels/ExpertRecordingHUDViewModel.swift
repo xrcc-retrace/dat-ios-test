@@ -43,7 +43,6 @@ enum ExpertHUDMicSource: Equatable {
 ///   • Rotate the narration tip card on a timer; respond to manual swipes.
 ///   • Listen for `AVAudioSession.routeChangeNotification` and recompute
 ///     the mic-source badge.
-///   • Hold the rolling transcript pulled from `SpeechTranscriber`.
 @MainActor
 final class ExpertRecordingHUDViewModel: ObservableObject {
   // MARK: - Tip card rotation
@@ -65,14 +64,6 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
 
   @Published private(set) var micSource: ExpertHUDMicSource = .iPhoneBuiltIn
 
-  // MARK: - Transcript
-
-  @Published private(set) var transcript: [String] = []
-
-  /// Surfaces whether the speech recognizer is actually available. When
-  /// false the HUD should hide the transcript card entirely.
-  @Published private(set) var transcriptAvailable: Bool = false
-
   // MARK: - Hand tracking
   //
   // Recognizer + frame log + debug-provider plumbing all live on
@@ -93,11 +84,8 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   // MARK: - Wiring
 
   private weak var audioSessionManager: AudioSessionManager?
-  private weak var speechTranscriber: SpeechTranscriber?
 
   private var audioCancellable: AnyCancellable?
-  private var transcriptCancellable: AnyCancellable?
-  private var transcriptAvailableCancellable: AnyCancellable?
   private var routeObserver: NSObjectProtocol?
 
   init() {
@@ -112,31 +100,15 @@ final class ExpertRecordingHUDViewModel: ObservableObject {
   }
 
   /// Must be called once after the owning VM has constructed its
-  /// `AudioSessionManager` and `SpeechTranscriber`. Wires publishers so the
-  /// HUD reacts to mic peaks + transcript deltas.
-  func bind(
-    audioSessionManager: AudioSessionManager,
-    speechTranscriber: SpeechTranscriber
-  ) {
+  /// `AudioSessionManager`. Wires the mic-peak publisher so the HUD's
+  /// audio meter reacts to buffer peaks.
+  func bind(audioSessionManager: AudioSessionManager) {
     self.audioSessionManager = audioSessionManager
-    self.speechTranscriber = speechTranscriber
 
     audioCancellable = audioSessionManager.$lastBufferPeak
       .receive(on: RunLoop.main)
       .sink { [weak self] newPeak in
         self?.ingestPeak(newPeak)
-      }
-
-    transcriptCancellable = speechTranscriber.$segments
-      .receive(on: RunLoop.main)
-      .sink { [weak self] segments in
-        self?.transcript = segments
-      }
-
-    transcriptAvailableCancellable = speechTranscriber.$isAvailable
-      .receive(on: RunLoop.main)
-      .sink { [weak self] available in
-        self?.transcriptAvailable = available
       }
 
     recomputeMicSource()

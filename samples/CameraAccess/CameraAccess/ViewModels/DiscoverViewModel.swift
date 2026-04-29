@@ -25,11 +25,18 @@ class DiscoverViewModel: ObservableObject {
     "Other",
   ]
 
-  func fetchProcedures() async {
-    isLoading = true
+  /// `forceRefresh: true` is the pull-to-refresh path — show the spinner
+  /// and bypass URLCache. The `.task` path on view appear leaves the
+  /// existing list visible and replaces it silently when the response
+  /// returns, so re-entering Discover doesn't flash a spinner.
+  func fetchProcedures(forceRefresh: Bool = false) async {
+    let hadCachedList = !procedures.isEmpty
+    if forceRefresh || !hadCachedList {
+      isLoading = true
+    }
     errorMessage = nil
     do {
-      procedures = try await api.fetchProcedures()
+      procedures = try await api.fetchProcedures(forceRefresh: forceRefresh)
     } catch {
       errorMessage = error.localizedDescription
     }

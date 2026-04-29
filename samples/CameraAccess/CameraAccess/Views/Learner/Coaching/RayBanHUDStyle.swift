@@ -44,37 +44,53 @@ extension EnvironmentValues {
 
 struct RayBanHUDPanelModifier: ViewModifier {
   let shape: HUDSurfaceShape
-  @Environment(\.hudAdditiveBlend) private var additiveBlend
   @Environment(\.hudAdditiveSurfaceVariant) private var additiveSurfaceVariant
 
   func body(content: Content) -> some View {
-    content
-      .background {
-        HUDSurfaceBackground(shape: shape)
-      }
-      .shadow(color: Color.black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
+    if isFlatSurface {
+      content
+        .background {
+          HUDSurfaceBackground(shape: shape)
+        }
+    } else {
+      content
+        .background {
+          HUDSurfaceBackground(shape: shape)
+        }
+        .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 10)
+    }
   }
 
-  private var usesLowTintAdditiveSurface: Bool {
-    additiveBlend && additiveSurfaceVariant == .lowTint
-  }
-
-  private var shadowOpacity: Double {
-    usesLowTintAdditiveSurface ? 0 : 0.22
-  }
-
-  private var shadowRadius: CGFloat {
-    usesLowTintAdditiveSurface ? 0 : 18
-  }
-
-  private var shadowY: CGFloat {
-    usesLowTintAdditiveSurface ? 0 : 10
+  // Expert + Troubleshoot pass `.lowTint` — both sit directly over the
+  // live camera preview, where each shadow forces an offscreen blur pass
+  // per panel per frame. Drop the shadow there regardless of the
+  // additive toggle. Coaching keeps `.standard` and its shadow.
+  private var isFlatSurface: Bool {
+    additiveSurfaceVariant == .lowTint
   }
 }
 
 extension View {
   func rayBanHUDPanel(shape: HUDSurfaceShape) -> some View {
     modifier(RayBanHUDPanelModifier(shape: shape))
+  }
+
+  /// Canonical recede applied to lens content while a confirmation
+  /// overlay is on top. Shrinks, dims, blurs, and disables hit-testing
+  /// in one pass — the overlay's own `.transition(.scale(0.88).combined(.opacity))`
+  /// + the parent's animation block produce the matched arrive motion.
+  /// See DESIGN.md → Animation System → Recede + arrive pattern.
+  ///
+  /// Single source of truth — every confirmation overlay (Coaching exit,
+  /// Troubleshoot identify-confirm + end-diagnostic, Expert stop-recording
+  /// countdown) now reaches for this. Tweaking the recede intensity is
+  /// one place, not three.
+  func rayBanHUDRecede(active: Bool) -> some View {
+    self
+      .scaleEffect(active ? RayBanHUDLayoutTokens.recedeScale : 1.0)
+      .opacity(active ? RayBanHUDLayoutTokens.recedeOpacity : 1.0)
+      .blur(radius: active ? RayBanHUDLayoutTokens.recedeBlurRadius : 0)
+      .allowsHitTesting(!active)
   }
 }
 
@@ -235,9 +251,33 @@ struct HUDSurfaceBackground: View {
   }
 }
 
+/// Unified hover ring used by every `.hoverSelectable` element on the lens.
+///
+/// Yellow accent (`Color(1.0, 0.76, 0.11)`) was always the canonical
+/// highlight color in `DESIGN.md`'s palette table; the previous white
+/// implementation was doc/code drift. Yellow has high luminance so it
+/// composites cleanly under the lens's `.plusLighter` additive blend on
+/// both bright (white wall) and dark (low-light) camera scenes — pure
+/// white loses chroma separation against bright walls; saturated hues
+/// (red / blue / rainbow stops) halate unpredictably against colored
+/// scene content.
+///
+/// 2pt stroke + warm glow makes the ring obvious enough that the user
+/// can tell at a glance which element is targeted, without crossing
+/// into "selected fill" territory (that role belongs to toggle pills'
+/// permanent `white @ 0.95` fill, see DESIGN.md → Pills).
 struct HUDHoverHighlight: View {
   let shape: HUDSurfaceShape
   let isVisible: Bool
+
+  /// Canonical highlight accent. Mirrors `DESIGN.md` → Color Palette →
+  /// "Highlight accent" row. Kept as a static so the doc comment and
+  /// the three gradient stops below all reference one source.
+  private static let accent = Color(red: 1.0, green: 0.76, blue: 0.11)
+  /// Lighter, slightly desaturated yellow used at the bottom-trailing
+  /// stop so the gradient pulls toward the panel's white sheen instead
+  /// of cutting off abruptly.
+  private static let accentSoft = Color(red: 1.0, green: 0.84, blue: 0.38)
 
   var body: some View {
     ZStack {
@@ -268,22 +308,26 @@ struct HUDHoverHighlight: View {
     switch shape {
     case .capsule:
       Capsule()
-        .strokeBorder(strokeGradient, lineWidth: 1.5)
+        .strokeBorder(strokeGradient, lineWidth: 2)
         .padding(-1)
-        .shadow(color: Color.white.opacity(0.35), radius: 6, x: 0, y: 0)
+        .shadow(color: Self.accent.opacity(0.55), radius: 8, x: 0, y: 0)
     case .rounded(let radius):
       RoundedRectangle(cornerRadius: radius, style: .continuous)
-        .strokeBorder(strokeGradient, lineWidth: 1.5)
+        .strokeBorder(strokeGradient, lineWidth: 2)
         .padding(-1)
-        .shadow(color: Color.white.opacity(0.35), radius: 6, x: 0, y: 0)
+        .shadow(color: Self.accent.opacity(0.55), radius: 8, x: 0, y: 0)
     }
   }
 
   private var fillGradient: LinearGradient {
+    // Barely-perceptible warm tint inside the ring. Its job is to
+    // suppress panel flicker as the highlight fades in, not to fill
+    // the button — that would compete with the toggle-pill "selected"
+    // fill convention.
     LinearGradient(
       colors: [
-        Color.white.opacity(0.14),
-        Color.white.opacity(0.05),
+        Self.accent.opacity(0.10),
+        Self.accent.opacity(0.04),
         .clear,
       ],
       startPoint: .topLeading,
@@ -292,11 +336,13 @@ struct HUDHoverHighlight: View {
   }
 
   private var strokeGradient: LinearGradient {
+    // Top-leading → bottom-trailing matches the panel's sheen
+    // direction so the ring feels integrated with the surface.
     LinearGradient(
       colors: [
-        Color.white.opacity(0.95),
-        Color.white.opacity(0.5),
-        Color.white.opacity(0.22),
+        Self.accent.opacity(1.0),
+        Self.accent.opacity(0.70),
+        Self.accentSoft.opacity(0.45),
       ],
       startPoint: .topLeading,
       endPoint: .bottomTrailing
@@ -319,6 +365,13 @@ struct RayBanHUDBottomAudioActionRow: View {
   let onToggleMute: () -> Void
   let onExit: () -> Void
 
+  /// Mirrors the same AppStorage key `HandTrackingStatusIndicator`
+  /// reads. When the user disables hand tracking in Server Settings →
+  /// Debug, the indicator returns EmptyView and we replace its slot
+  /// with elastic flex space — the meter then sits centered between
+  /// Mute (left elastic) and Exit (right elastic).
+  @AppStorage("disableHandTracking") private var disableHandTracking: Bool = false
+
   init(
     isMuted: Bool,
     aiPeak: Float,
@@ -340,15 +393,58 @@ struct RayBanHUDBottomAudioActionRow: View {
   }
 
   var body: some View {
-    ZStack(alignment: .bottom) {
-      wideAudioMeter
-
-      HStack(alignment: .bottom, spacing: 12) {
+    // Layout invariants:
+    //   1. Mute capsule: `.frame(maxWidth: .infinity, alignment: .leading)`
+    //      makes it the elastic element — it expands to fill all the
+    //      leftover horizontal space with the visible pill pinned at
+    //      the leading edge. No explicit `Spacer()` view; the pill's
+    //      own frame does the work.
+    //   2. Audio meter has a FIXED width (not `maxWidth`) so it can't
+    //      grow into the Exit pill or shrink under pressure.
+    //   3. Hand indicator has its own fixed 22pt frame.
+    //   4. Exit pill: `.layoutPriority(1)` so it always renders at its
+    //      full ideal width — text never clips when "Unmute" makes
+    //      the left side longer.
+    //   5. Tight HStack spacing (4) keeps meter / hand / exit reading
+    //      as a single right-anchored cluster with minimal gap
+    //      between them.
+    // Two layouts — only the audio-meter placement differs between
+    // them. Everything else (mute pill, exit pill, sizes, spacing)
+    // is identical across branches.
+    //
+    // - Hand tracking ON: meter is sized to 64pt and tucked next to
+    //   the hand indicator + exit pill on the right, with mute
+    //   pinned left via an elastic frame.
+    // - Hand tracking OFF: meter is sized to 64pt and centered
+    //   between mute and exit via symmetric `Spacer()`s.
+    HStack(alignment: .bottom, spacing: 6) {
+      if disableHandTracking {
         muteCapsule
 
         Spacer(minLength: 0)
 
+        wideAudioMeter
+          .frame(width: 64)
+
+        Spacer(minLength: 0)
+
         exitCapsule
+          .layoutPriority(1)
+      } else {
+        muteCapsule
+          .frame(maxWidth: .infinity, alignment: .leading)
+
+        wideAudioMeter
+          .frame(width: 64)
+          // Extra trailing pad on the meter (in addition to the
+          // HStack's 6pt spacing) so the bar's right edge sits with
+          // visible breathing room before the hand icon.
+          .padding(.trailing, 14)
+
+        HandTrackingStatusIndicator()
+
+        exitCapsule
+          .layoutPriority(1)
       }
     }
     .frame(height: 34)

@@ -27,3 +27,26 @@ struct IPhoneCameraPreview: UIViewRepresentable {
     }
   }
 }
+
+/// Glasses camera-feed preview rendered on the phone screen. Mirrors the
+/// iPhone-emulator experience for glasses-mode sessions: the lens HUD
+/// composites over a live render of what the glasses camera sees, exactly
+/// like the iPhone path renders the HUD over `AVCaptureVideoPreviewLayer`.
+///
+/// Stateless by design — the parent owns the `UIImage` (driven by the DAT
+/// SDK's `videoFramePublisher` via `GeminiLiveSessionBase` for coaching/
+/// troubleshoot sessions, or `StreamSessionViewModel` for expert recording).
+/// SwiftUI re-renders this view on every frame the parent publishes.
+struct GlassesCameraPreview: View {
+  let image: UIImage?
+
+  var body: some View {
+    if let image {
+      Image(uiImage: image)
+        .resizable()
+        .aspectRatio(contentMode: .fill)
+    } else {
+      Color.black
+    }
+  }
+}

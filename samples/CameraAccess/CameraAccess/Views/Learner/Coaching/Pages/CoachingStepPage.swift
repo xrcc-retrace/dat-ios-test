@@ -31,10 +31,38 @@ struct CoachingStepPage: RayBanHUDView {
   /// Parent (`CoachingSessionView`) flips its `showDismissConfirmation`
   /// flag, which renders the exit confirmation overlay.
   let onShowExitConfirmation: () -> Void
+  /// True while a confirmation overlay is rendered on top of the page
+  /// (and the page is receded via `.rayBanHUDRecede`). Suspends the
+  /// step card's auto-scroll so the user returns to the same scroll
+  /// position when the overlay dismisses, instead of finding the text
+  /// having drifted underneath the blur.
+  let isOverlayActive: Bool
 
   @EnvironmentObject private var hoverCoordinator: HUDHoverCoordinator
-  @State private var pulseOpacity: CGFloat = 0
   @State private var expansion: ExpansionState = .collapsed
+  /// User's explicit pause toggle for the auto-scrolling description.
+  /// Pinch-select on `.stepCard` flips this when the description is
+  /// overflowing; otherwise pinch-select toggles `expansion` (existing
+  /// behavior). Reset on step change and when leaving `.stepExpanded`.
+  @State private var autoScrollIsUserPaused: Bool = false
+  /// Reported up by `AutoScrollingContainer` inside the step card. True
+  /// when the rendered description content is taller than the card's
+  /// viewport. Drives the pinch-select branch.
+  @State private var autoScrollIsOverflowing: Bool = false
+
+  init(
+    viewModel: CoachingSessionViewModel,
+    stepCount: Int,
+    clipURL: URL?,
+    isOverlayActive: Bool = false,
+    onShowExitConfirmation: @escaping () -> Void
+  ) {
+    self.viewModel = viewModel
+    self.stepCount = stepCount
+    self.clipURL = clipURL
+    self.isOverlayActive = isOverlayActive
+    self.onShowExitConfirmation = onShowExitConfirmation
+  }
 
   enum ExpansionState: Equatable {
     case collapsed
@@ -50,9 +78,6 @@ struct CoachingStepPage: RayBanHUDView {
 
   var body: some View {
     primaryContent
-      .onChange(of: viewModel.stepJustCompletedTick) { _, _ in
-        triggerCompletionPulse()
-      }
       .onChange(of: viewModel.currentStepIndex) { _, _ in
         // New step → reset to the default view so the user isn't stranded
         // on stale reference/insights content from the previous step.
@@ -64,12 +89,27 @@ struct CoachingStepPage: RayBanHUDView {
           expansion = .collapsed
           hoverCoordinator.hovered = .stepCard
         }
+        // Auto-scroll resets via the `resetKey` inside
+        // `AutoScrollingContainer`, but the user's explicit pause
+        // toggle is page state — clear it so a fresh step starts
+        // running.
+        autoScrollIsUserPaused = false
+      }
+      .onChange(of: expansion) { _, newValue in
+        // Leaving `.stepExpanded` (collapse, or jump to reference /
+        // insights) → no auto-scroll any more, so the explicit pause
+        // toggle should reset. Re-entering `.stepExpanded` next time
+        // starts running.
+        if newValue != .stepExpanded {
+          autoScrollIsUserPaused = false
+        }
       }
       // Focus-engine handler. Pushed onto the coordinator's stack on
-      // appear, popped on disappear. Default focus = .stepCard. Left/
-      // right on step card = step nav (via VM); other directions traverse
-      // the page's focus graph (Reference / Insights toggles, plus the
-      // clip panel when reference is expanded).
+      // appear, popped on disappear. Default focus = .stepCard. Up/down
+      // on the step card traverses the focus graph (Reference / Insights
+      // toggles, the reference clip when expanded, the bottom audio row).
+      // Left/right on the step card are commit-on-release — see the
+      // HandGestureService listener below for terminal pinch step nav.
       .hudInputHandler { coord in
         CoachingStepPageHandler(
           coordinator: coord,
@@ -91,6 +131,35 @@ struct CoachingStepPage: RayBanHUDView {
           onShowExitConfirmation: onShowExitConfirmation
         )
       }
+      // Pinch-drag-release → step nav, but only when the cursor is on
+      // the step card. Highlights are intentionally ignored (the page
+      // handler returns false for `.directional(.left/.right)` on
+      // `.stepCard`); only terminal release events fire here. Mirrors
+      // `ExpertNarrationTipPage`'s carousel — same release-to-commit
+      // intent, same single-slot listener on `HandGestureService.shared`.
+      // Gating on `coordinator.hovered == .stepCard` keeps the listener
+      // silent when an exit overlay or expanded reference / insights
+      // panel has moved focus elsewhere — page-global step skips during
+      // those moments would surprise the learner.
+      .onAppear {
+        let coord = hoverCoordinator
+        HandGestureService.shared.onEvent = { event in
+          Task { @MainActor in
+            guard coord.hovered == .stepCard else { return }
+            switch event {
+            case .right:
+              await viewModel.navigateStepFromHUD(direction: .next)
+            case .left:
+              await viewModel.navigateStepFromHUD(direction: .previous)
+            default:
+              break
+            }
+          }
+        }
+      }
+      .onDisappear {
+        HandGestureService.shared.onEvent = nil
+      }
   }
 
   // MARK: - Primary content
@@ -104,6 +173,13 @@ struct CoachingStepPage: RayBanHUDView {
       bottomActionRow
     }
     .padding(RayBanHUDLayoutTokens.contentPadding)
+    // Note: the spring animating the `.id(displayedStepIndex)` slide
+    // transition is opened by the VM via `withAnimation(.spring(...))`
+    // around the `displayedStepIndex` mutation — NOT a `.animation(...,
+    // value:)` modifier here. A scoped `.animation` modifier was tried
+    // first but produced a one-frame layout flicker on the host card
+    // when other VM state (e.g. `slideDirection`) changed in the same
+    // render, even with `value:` unchanged.
   }
 
   // MARK: - Top-row toggle affordances
@@ -270,7 +346,14 @@ struct CoachingStepPage: RayBanHUDView {
         // `isExpanded` from `stepCardMode` and grows the description
         // accordingly. The `withAnimation(.spring(...))` in
         // `toggleExpansion` smoothly animates the size change.
-        RayBanHUDStepCard(mode: stepCardMode)
+        // Auto-scroll bindings flow through to the inner
+        // `AutoScrollingContainer` when the card is expanded.
+        RayBanHUDStepCard(
+          mode: stepCardMode,
+          autoScrollIsUserPaused: $autoScrollIsUserPaused,
+          autoScrollIsOverflowing: $autoScrollIsOverflowing,
+          autoScrollIsExternallySuspended: isOverlayActive
+        )
           // Expanded mode: claim the remaining lens height so the card's
           // inner `ScrollView` has space to scroll. Collapsed mode keeps
           // its natural intrinsic height so layout doesn't shift.
@@ -282,41 +365,111 @@ struct CoachingStepPage: RayBanHUDView {
         compactStepHeader
       }
     }
+    // Step-completion celebration overlay. `celebratingStepIndex` is set
+    // to the OLD step index for the full ~1.0s window (0.7s overlay
+    // playback + 0.3s slide), so this card is the one that "wears" the
+    // green + checkmark; the incoming card matches a different index
+    // and stays clean.
     .overlay(
-      RoundedRectangle(cornerRadius: RayBanHUDLayoutTokens.cardRadius, style: .continuous)
-        .fill(Color.green.opacity(pulseOpacity))
-        .allowsHitTesting(false)
+      StepCompletionOverlay(
+        isCelebrating: viewModel.celebratingStepIndex == viewModel.displayedStepIndex
+      )
     )
-    // Tap the step card (collapsed full card OR compactStepHeader) to
-    // toggle the step's own expansion. Mutually exclusive with
-    // reference/insights expansion via the shared `toggleExpansion`
-    // helper — tapping the step while reference is open switches
-    // straight to `.stepExpanded` (and vice versa).
+    // Modifier order is deliberate: `.transition` MUST come before
+    // `.id`. SwiftUI applies modifiers bottom-up, so the transition
+    // here is on the inner view and is read at the moment `.id`
+    // invalidates that view's identity, producing a clean
+    // insertion/removal animation. Inverting the order causes the
+    // transition value to be re-evaluated on every render where any
+    // VM state changes (e.g. `slideDirection` flipping at t=0), which
+    // produces a brief layout twitch on the host card.
+    .transition(stepSlideTransition)
+    .id(viewModel.displayedStepIndex)
+    // Pinch-select / tap on the step card has overloaded semantics
+    // driven by current state:
+    //
+    // - Card is **already expanded** (`.stepExpanded`): the input
+    //   stays in expanded mode. Pause / resume the auto-scroll if the
+    //   description is overflowing; otherwise no-op (the user
+    //   re-expanding what's already expanded would shrink it back —
+    //   unwanted, since they're trying to read). Collapse only happens
+    //   indirectly: open Reference / Insights, advance step, or use
+    //   the lens dismiss gesture.
+    // - Card is **collapsed** (or focused on a different expansion
+    //   like Reference / Insights): toggle into `.stepExpanded`.
+    //   Mutually exclusive with reference / insights expansion via
+    //   `toggleExpansion`.
     .hoverSelectable(.stepCard, shape: .rounded(RayBanHUDLayoutTokens.cardRadius)) {
-      toggleExpansion(.stepExpanded)
+      if expansion == .stepExpanded {
+        if autoScrollIsOverflowing {
+          autoScrollIsUserPaused.toggle()
+        }
+        // No-op when content fits — collapsing what the user just
+        // expanded to read would surprise them.
+      } else {
+        toggleExpansion(.stepExpanded)
+      }
     }
   }
 
   private var stepCardMode: RayBanHUDStepCardMode {
-    if case .syncing(_, let targetStepNumber) = viewModel.hudStepTransitionState {
-      return .loading(stepIndex: targetStepNumber, stepCount: stepCount)
-    }
+    // The HUD shows `displayedStep`, not `currentStep`. They're equal in
+    // steady state; during a forward `advance_step` celebration the
+    // displayed step lags the canonical one by ~0.7s so the OLD card
+    // stays visible long enough for the green-overlay + checkmark
+    // sequence to play before sliding off.
+    //
+    // No "loading" mode any more: the celebration overlay (green +
+    // checkmark) is the affirmative feedback for an advance, and a
+    // manual-nav in-flight tool call no longer paints a ProgressView
+    // over the card. (`hudStepTransitionState` is still tracked on the
+    // VM so `canPerformManualHUDNavigation` can gate against
+    // double-firing — only the visual loading mode is gone.)
     return .content(
-      stepIndex: viewModel.currentStepIndex + 1,
+      stepIndex: viewModel.displayedStepIndex + 1,
       stepCount: stepCount,
-      step: viewModel.currentStep,
+      step: viewModel.displayedStep,
       isExpanded: expansion == .stepExpanded
     )
+  }
+
+  /// Asymmetric slide transition for the step card. Forward = old slides
+  /// off-left while new arrives from the right; backward inverts both
+  /// edges. `.none` (steady state, initial mount, intra-step expansion
+  /// toggles) returns `.identity` so we don't animate the card sliding
+  /// in on first appearance.
+  private var stepSlideTransition: AnyTransition {
+    switch viewModel.slideDirection {
+    case .none:
+      return .identity
+    case .forward:
+      return .asymmetric(
+        insertion: .move(edge: .trailing).combined(with: .opacity),
+        removal: .move(edge: .leading).combined(with: .opacity)
+      )
+    case .backward:
+      return .asymmetric(
+        insertion: .move(edge: .leading).combined(with: .opacity),
+        removal: .move(edge: .trailing).combined(with: .opacity)
+      )
+    }
   }
 
   private var compactStepHeader: some View {
     HStack(alignment: .top, spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
-        Text("STEP \(viewModel.currentStepIndex + 1) OF \(stepCount)")
+        // Mirror the full step card — use the lagged `displayedStep`
+        // so the lens content stays consistent during the celebration
+        // window. (In practice the onChange handler at the top of body
+        // collapses Reference/Insights to .collapsed before the slide
+        // starts, so this branch usually isn't even rendered during a
+        // step transition; using `displayedStep` here is just defensive
+        // consistency.)
+        Text("STEP \(viewModel.displayedStepIndex + 1) OF \(stepCount)")
           .font(.inter(.medium, size: 10))
           .tracking(1.0)
           .foregroundStyle(Color.white.opacity(0.7))
-        if let step = viewModel.currentStep {
+        if let step = viewModel.displayedStep {
           Text(step.title)
             .font(.inter(.bold, size: 14))
             .foregroundStyle(Color.white.opacity(0.96))
@@ -342,18 +495,6 @@ struct CoachingStepPage: RayBanHUDView {
     InsightsExpandedPanel(step: viewModel.currentStep)
   }
 
-  // MARK: - Helpers
-
-  private func triggerCompletionPulse() {
-    let duration = RayBanHUDLayoutTokens.completionPulseDuration
-    withAnimation(.easeInOut(duration: duration).repeatCount(2, autoreverses: true)) {
-      pulseOpacity = 0.35
-    }
-    Task { @MainActor in
-      try? await Task.sleep(nanoseconds: UInt64(duration * 2 * 1_000_000_000))
-      pulseOpacity = 0
-    }
-  }
 }
 
 // MARK: - Inline insights panel

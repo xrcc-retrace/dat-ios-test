@@ -41,6 +41,37 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     case searchingWeb
   }
 
+  /// Three-stage narration that drives the lens search-status surface.
+  /// Distinct from `searchStage` because we synthesize an explicit
+  /// `.libraryMissed` moment between DB miss and web search starting,
+  /// held for 3 seconds even if `web_search_for_fix` fires (or returns)
+  /// instantly. Deliberate pacing — gives the user a beat to register
+  /// the library miss before being whisked into the next phase.
+  @Published private(set) var searchNarration: SearchNarration? = nil
+
+  enum SearchNarration: Equatable {
+    case searchingLibrary
+    case libraryMissed
+    case searchingWeb
+  }
+
+  /// Owns the 3-second `.libraryMissed` hold. While non-nil, the
+  /// `pendingToolCallNames` sink ignores narration changes and the
+  /// `web_search_for_fix` result handler buffers its resolution into
+  /// `pendingResolution` instead of applying it.
+  private var libraryMissHoldTask: Task<Void, Never>?
+
+  /// Resolution buffered while the `.libraryMissed` hold is active.
+  /// Applied by the hold task after the 3-second floor elapses so the
+  /// user always sees the miss line for the full duration even when
+  /// `web_search_for_fix` returns in <3s.
+  private var pendingResolution: DiagnosticResolution?
+
+  /// Hard-floor for the `.libraryMissed` moment. 3.0s — long enough
+  /// to read "No procedure found in your library." comfortably,
+  /// short enough not to feel stalled.
+  private static let libraryMissedHoldSeconds: UInt64 = 3_000_000_000
+
   /// Transport chosen on the Troubleshoot intro picker. iPhone routes
   /// through the camera-first drawer layout; glasses keeps the current
   /// stacked layout.
@@ -60,14 +91,21 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     self.diagnosticTransport = transport
     super.init(wearables: wearables, serverBaseURL: serverBaseURL)
 
-    // Derive `searchStage` from the base's published map of in-flight tool
-    // names. Updates in real time as the AI fires search_procedures and
-    // web_search_for_fix.
+    // Derive `searchStage` and `searchNarration` from the base's
+    // published map of in-flight tool names. Updates in real time as
+    // the AI fires search_procedures and web_search_for_fix.
+    //
+    // `searchStage` is the raw mirror (kept for any consumer that
+    // wants the unfiltered signal). `searchNarration` is the user-
+    // facing surface and respects the synthetic `.libraryMissed` hold:
+    // while the 3s hold is active we don't override narration here —
+    // the hold task owns the next transition.
     $pendingToolCallNames
       .receive(on: DispatchQueue.main)
       .sink { [weak self] names in
         guard let self = self else { return }
         let activeNames = Set(names.values)
+
         if activeNames.contains("web_search_for_fix") {
           self.searchStage = .searchingWeb
         } else if activeNames.contains("search_procedures") {
@@ -75,6 +113,36 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
         } else {
           self.searchStage = nil
         }
+
+        // Narration. A fresh search_procedures call (e.g. retry after a
+        // manual upload) cancels any in-flight libraryMissed hold and
+        // rewinds the surface. We also clear any stale `resolution`
+        // here — if a previous search ended with a resolution that the
+        // user has since rejected and the AI re-issues search_procedures,
+        // the resolved/no-solution page would otherwise stay mounted
+        // while the new search ran invisibly.
+        if activeNames.contains("search_procedures") {
+          self.libraryMissHoldTask?.cancel()
+          self.libraryMissHoldTask = nil
+          self.pendingResolution = nil
+          self.resolution = nil
+          self.searchNarration = .searchingLibrary
+        } else if activeNames.contains("web_search_for_fix") {
+          // Hold owns the transition out of .libraryMissed; ignore web
+          // start while the hold is active.
+          if self.libraryMissHoldTask == nil {
+            // Clear any stale resolution (e.g. from a prior .noMatch the
+            // user is voice-retrying). Without this, the no-solution /
+            // resolved panel stays mounted while the new web call runs
+            // invisibly behind it. Gated on the hold being inactive
+            // because during the hold, resolution is already nil and the
+            // post-hold pendingResolution flow owns the transition.
+            self.resolution = nil
+            self.searchNarration = .searchingWeb
+          }
+        }
+        // No-op when activeNames empties — narration is cleared
+        // explicitly by the result branches in handleToolCallExtras.
       }
       .store(in: &cancellables)
   }
@@ -93,6 +161,10 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     handoffError = nil
     pendingConfirmation = false
     searchStage = nil
+    searchNarration = nil
+    libraryMissHoldTask?.cancel()
+    libraryMissHoldTask = nil
+    pendingResolution = nil
 
     await startGeminiLiveSession()
   }
@@ -120,6 +192,29 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     }
   }
 
+  /// User tapped "Rediagnose" on TroubleshootResolvedPage or
+  /// TroubleshootNoSolutionPage — wipe the resolution and re-enter the
+  /// diagnose phase. Keeps `identifiedProduct` because the product is
+  /// still the same; only the diagnostic angle (or the offered fix)
+  /// was wrong. Conversational nudge biases Gemini toward asking new
+  /// symptom questions before re-firing search_procedures /
+  /// web_search_for_fix.
+  func rediagnose() {
+    resolution = nil
+    candidateProcedures = []
+    pendingResolution = nil
+    searchNarration = nil
+    libraryMissHoldTask?.cancel()
+    libraryMissHoldTask = nil
+    pendingConfirmation = false
+    phase = .diagnosing
+    Task {
+      try? await geminiService?.sendClientTextTurn(
+        "Let's diagnose this again — that wasn't the right angle. Ask me different symptom questions so we can try the search with new info."
+      )
+    }
+  }
+
   func endSession() {
     let sid = sessionId
     if let sid {
@@ -130,6 +225,9 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
         await apiService.endDiagnosticSession(sessionId: sid)
       }
     }
+    libraryMissHoldTask?.cancel()
+    libraryMissHoldTask = nil
+    pendingResolution = nil
     stopCameraStream()
     stopGeminiLiveSession()
   }
@@ -216,6 +314,39 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
     diagnosticTransport == .iPhone ? .coachingPhoneOnly : .coaching
   }
 
+  // MARK: - Library-miss hold
+
+  /// Start the synthetic 3-second `.libraryMissed` moment. Called when
+  /// `search_procedures` returns no candidates. While the hold task is
+  /// alive:
+  ///   - the `pendingToolCallNames` sink ignores incoming
+  ///     `web_search_for_fix` so the surface doesn't flip mid-hold
+  ///   - the `web_search_for_fix` result handler buffers any resolution
+  ///     into `pendingResolution` instead of applying it
+  ///
+  /// When the 3s elapses, the task either applies the buffered
+  /// resolution (web finished during the hold) or transitions narration
+  /// to `.searchingWeb` (web is still in flight or hasn't started).
+  private func startLibraryMissedHold() {
+    libraryMissHoldTask?.cancel()
+    pendingResolution = nil
+    searchNarration = .libraryMissed
+
+    libraryMissHoldTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: Self.libraryMissedHoldSeconds)
+      guard let self = self, !Task.isCancelled else { return }
+      self.libraryMissHoldTask = nil
+
+      if let buffered = self.pendingResolution {
+        self.pendingResolution = nil
+        self.resolution = buffered
+        self.searchNarration = nil
+      } else {
+        self.searchNarration = .searchingWeb
+      }
+    }
+  }
+
   override func handleToolCallExtras(name: String, args: [String: Any], result: [String: Any]) async {
     switch name {
     case "identify_product":
@@ -239,31 +370,49 @@ class DiagnosticSessionViewModel: GeminiLiveSessionBase {
       phase = .diagnosing
 
     case "search_procedures":
-      if let arr = result["candidates"] as? [[String: Any]] {
-        candidateProcedures = arr.compactMap { CandidateProcedure(fromJSON: $0) }
-        phase = .resolving
-        if let top = candidateProcedures.first {
-          resolution = .matchedProcedure(top)
-        }
+      let candidates = (result["candidates"] as? [[String: Any]])?
+        .compactMap { CandidateProcedure(fromJSON: $0) } ?? []
+      candidateProcedures = candidates
+      phase = .resolving
+      if let top = candidates.first {
+        resolution = .matchedProcedure(top)
+        searchNarration = nil
       } else {
-        candidateProcedures = []
-        phase = .resolving
+        // Library miss. Drop the user into the explicit
+        // "No procedure found in your library." moment for a hard
+        // 3-second floor — even if web_search_for_fix fires (or
+        // returns) immediately, the surface stays put for the full
+        // duration. Pacing > responsiveness here.
+        startLibraryMissedHold()
       }
 
     case "web_search_for_fix":
-      let status = (result["status"] as? String) ?? ""
-      switch status {
-      case "ok":
-        if let procedureId = result["procedure_id"] as? String {
-          let title = (result["title"] as? String) ?? "Generated procedure"
-          resolution = .generatedSOP(procedureId: procedureId, title: title)
+      let pending: DiagnosticResolution? = {
+        let status = (result["status"] as? String) ?? ""
+        switch status {
+        case "ok":
+          if let procedureId = result["procedure_id"] as? String {
+            let title = (result["title"] as? String) ?? "Generated procedure"
+            return .generatedSOP(procedureId: procedureId, title: title)
+          }
+          return nil
+        case "no_fix_found", "error":
+          return .noMatch
+        default:
+          return nil
         }
-        phase = .resolving
-      case "no_fix_found", "error":
-        resolution = .noMatch
-        phase = .resolving
-      default:
-        break
+      }()
+      guard let pending = pending else { break }
+      phase = .resolving
+      if libraryMissHoldTask != nil {
+        // 3-second .libraryMissed hold is still active. Buffer the
+        // resolution; the hold task will apply it when the floor
+        // elapses. Without this the resolution panel would pop in
+        // mid-hold and the user would never read the miss line.
+        pendingResolution = pending
+      } else {
+        resolution = pending
+        searchNarration = nil
       }
 
     case "handoff_to_learner":

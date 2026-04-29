@@ -183,29 +183,19 @@ extension View {
 private struct HUDInputHandlerModifier: ViewModifier {
   let make: (HUDHoverCoordinator) -> HUDInputHandler
   @EnvironmentObject private var coordinator: HUDHoverCoordinator
-  @State private var handler: AnyHUDInputHandlerBox?
+  @State private var pushToken: UUID?
 
   func body(content: Content) -> some View {
     content
       .onAppear {
         let h = make(coordinator)
-        handler = AnyHUDInputHandlerBox(h)
-        coordinator.push(h)
+        pushToken = coordinator.push(h)
       }
       .onDisappear {
-        if let h = handler?.handler {
-          coordinator.pop(h)
+        if let token = pushToken {
+          coordinator.pop(token: token)
         }
-        handler = nil
+        pushToken = nil
       }
   }
-}
-
-/// `@State` requires `Equatable` — but we hold the handler purely as a
-/// reference for lifecycle. Wrap it so `@State` accepts it without the
-/// protocol-existential identity comparison `@State` would otherwise
-/// require.
-private struct AnyHUDInputHandlerBox {
-  let handler: HUDInputHandler
-  init(_ handler: HUDInputHandler) { self.handler = handler }
 }

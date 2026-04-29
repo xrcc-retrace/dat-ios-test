@@ -62,8 +62,6 @@
 	<string>This app needs access to save photos captured from your glasses.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Retrace needs access to your photo library so you can upload an existing video as an expert procedure.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Retrace transcribes your narration during expert recording so you can see what you just said.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>GolosText-Regular.ttf</string>

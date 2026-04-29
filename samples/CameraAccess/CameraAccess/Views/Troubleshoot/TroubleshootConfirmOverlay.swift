@@ -13,8 +13,6 @@ struct TroubleshootConfirmOverlay: View {
   let onConfirm: () -> Void
   let onReject: () -> Void
 
-  @EnvironmentObject private var hoverCoordinator: HUDHoverCoordinator
-
   var body: some View {
     VStack(spacing: 18) {
       deviceGroup
@@ -80,26 +78,39 @@ struct TroubleshootConfirmOverlay: View {
   }
 
   private var confirmPill: some View {
-    let isHovered = hoverCoordinator.hovered == .confirmIdentification
-    return Text("That's it")
-      .font(.inter(.medium, size: 14))
-      .foregroundStyle(isHovered ? Color.black.opacity(0.88) : Color.white.opacity(0.96))
-      .frame(maxWidth: .infinity)
-      .padding(.vertical, 12)
-      .background(
-        Capsule().fill(isHovered ? Color.white.opacity(0.95) : Color.clear)
-      )
-      .rayBanHUDPanel(shape: .capsule)
-      .hoverSelectable(.confirmIdentification, shape: .capsule, onConfirm: onConfirm)
+    // Forward-path action — leading checkmark + text signals "primary"
+    // (no permanent yellow outline; the hover-ring color was competing
+    // with the focus signal). Default focus on appear lands the
+    // unified yellow ring here, so the "this is the recommended next
+    // action" cue is already there without extra decoration.
+    HStack(spacing: 8) {
+      Image(systemName: "checkmark")
+        .font(.system(size: 13, weight: .semibold))
+      Text("That's it")
+        .font(.inter(.medium, size: 14))
+    }
+    .foregroundStyle(Color.white.opacity(0.96))
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 12)
+    .rayBanHUDPanel(shape: .capsule)
+    .hoverSelectable(.confirmIdentification, shape: .capsule, onConfirm: onConfirm)
   }
 
   private var rejectPill: some View {
-    Text("Try again")
-      .font(.inter(.medium, size: 12))
-      .foregroundStyle(Color.white.opacity(0.7))
-      .frame(maxWidth: .infinity)
-      .padding(.vertical, 10)
-      .rayBanHUDPanel(shape: .capsule)
-      .hoverSelectable(.reIdentify, shape: .capsule, onConfirm: onReject)
+    // Secondary path — leading `arrow.clockwise` redo glyph mirrors
+    // the rediagnose pills on the Resolved / NoSolution pages so
+    // "go back and re-do the previous phase" reads the same wherever
+    // it appears.
+    HStack(spacing: 6) {
+      Image(systemName: "arrow.clockwise")
+        .font(.system(size: 11, weight: .semibold))
+      Text("Try again")
+        .font(.inter(.medium, size: 12))
+    }
+    .foregroundStyle(Color.white.opacity(0.7))
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 10)
+    .rayBanHUDPanel(shape: .capsule)
+    .hoverSelectable(.reIdentify, shape: .capsule, onConfirm: onReject)
   }
 }

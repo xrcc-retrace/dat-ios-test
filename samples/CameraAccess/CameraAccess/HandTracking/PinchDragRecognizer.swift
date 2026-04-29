@@ -107,7 +107,7 @@ struct PinchDragRecognizer {
     // image-unit thresholds tighten when the hand is close (handSize
     // grows), making sustained pinches release on jitter.
     var indexContactRatio: Float = 0.22
-    var indexReleaseRatio: Float = 0.28
+    var indexReleaseRatio: Float = 0.24
 
     /// Center "dead zone" radius, in normalized image units. Drift
     /// below this is treated as zero (no quadrant highlights, release
@@ -131,9 +131,21 @@ struct PinchDragRecognizer {
 
     // MARK: - Orientation start-gate
 
-    var gatePalmFacingZMin: Float = -0.5
-    var gatePalmFacingZMax: Float = 0.5
-    var gateHandSizeMin: Float = 0.10
+    var gatePalmFacingZMin: Float = -0.4
+    var gatePalmFacingZMax: Float = 0.4
+    var gateHandSizeMin: Float = 0.15
+
+    /// 2D palm-angle gate (top-to-bottom rotation of the hand in the
+    /// image; `wrist → middleMCP` direction). Image coords are y-down so
+    /// `−90°` = pointing up, `0°` = pointing right, `+90°` = pointing
+    /// down, `±180°` = pointing left. Defaults span the full circle so
+    /// the recognizer's unit tests (which use `Config()`) are unaffected;
+    /// `productionConfig()` narrows this to the canonical "hand-up"
+    /// posture. Wrap-around (a range that crosses `±180°`) is not
+    /// handled — keep min ≤ max within `[-180, 180]`.
+    var gatePalmAngleMin: Float = -180.0
+    var gatePalmAngleMax: Float = 180.0
+
     var gateDisabled: Bool = false
 
     var maxMissingFramesDuringPinching: Int = 4
@@ -264,7 +276,9 @@ struct PinchDragRecognizer {
         guard let orient = frame.orientation else { return nil }
         if orient.palmFacingZ < config.gatePalmFacingZMin ||
            orient.palmFacingZ > config.gatePalmFacingZMax ||
-           orient.handSize < config.gateHandSizeMin {
+           orient.handSize < config.gateHandSizeMin ||
+           orient.palmAngleDegrees < config.gatePalmAngleMin ||
+           orient.palmAngleDegrees > config.gatePalmAngleMax {
           return nil
         }
       }

@@ -23,6 +23,9 @@ protocol HandGestureDebugProvider: ObservableObject {
   var gatePalmFacingZMin: Float { get }
   var gatePalmFacingZMax: Float { get }
   var gateHandSizeMin: Float { get }
+  // Palm-angle gate (top-to-bottom rotation of the hand in the image).
+  var gatePalmAngleMin: Float { get }
+  var gatePalmAngleMax: Float { get }
 
   /// True while the recognizer is holding a deferred `.select` waiting
   /// for a possible second tap. Drives the overlay's "TAP 1/2" chip.
@@ -63,6 +66,8 @@ struct HandGestureDebugStack<Provider: HandGestureDebugProvider>: View {
           gatePalmFacingZMin: provider.gatePalmFacingZMin,
           gatePalmFacingZMax: provider.gatePalmFacingZMax,
           gateHandSizeMin: provider.gateHandSizeMin,
+          gatePalmAngleMin: provider.gatePalmAngleMin,
+          gatePalmAngleMax: provider.gatePalmAngleMax,
           pendingSelectActive: provider.pendingSelectActive,
           contactStartNormalized: provider.lastContactStartPosition,
           contactEndNormalized: provider.lastContactReleasePosition

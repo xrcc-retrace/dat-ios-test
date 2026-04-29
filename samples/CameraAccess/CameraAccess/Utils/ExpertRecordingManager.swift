@@ -14,6 +14,12 @@ class ExpertRecordingManager: ObservableObject {
   /// were captured.
   @Published var isStarting = false
 
+  /// HUD-visibility gate. True from the instant the user taps Start (during
+  /// the async writer + audio bring-up) through the live recording. Lets the
+  /// Ray-Ban lens mount immediately on tap instead of waiting for the audio
+  /// engine to come up.
+  var isHUDActive: Bool { isStarting || isRecording }
+
   private var assetWriter: AVAssetWriter?
   private var videoInput: AVAssetWriterInput?
   private var audioInput: AVAssetWriterInput?

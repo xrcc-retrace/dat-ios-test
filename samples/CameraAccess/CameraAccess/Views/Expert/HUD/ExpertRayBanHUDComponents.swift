@@ -50,7 +50,6 @@ private struct ExpertHUDRecordingDot: View {
       .fill(Color(red: 0.96, green: 0.26, blue: 0.21))
       .frame(width: 10, height: 10)
       .opacity(pulse ? 0.5 : 1.0)
-      .shadow(color: Color(red: 0.96, green: 0.26, blue: 0.21).opacity(0.6), radius: 4)
       .onAppear {
         guard isActive else { return }
         withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
@@ -251,52 +250,3 @@ struct ExpertHUDNarrationTipCard: View {
   }
 }
 
-// MARK: - Rolling transcript card
-
-/// 3-line rolling transcript. Latest line at bottom, full opacity; older
-/// lines fade. Fixed height so long lines don't reflow the cluster.
-struct ExpertHUDRollingTranscriptCard: View {
-  let segments: [String]
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text("YOU'RE SAYING")
-        .font(.inter(.medium, size: 11))
-        .tracking(1.2)
-        .foregroundStyle(Color.white.opacity(0.8))
-
-      VStack(alignment: .leading, spacing: 2) {
-        ForEach(displayed.indices, id: \.self) { index in
-          Text(displayed[index])
-            .font(.inter(.medium, size: 14))
-            .foregroundStyle(Color.white.opacity(opacity(forIndex: index)))
-            .lineLimit(1)
-            .truncationMode(.head)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .frame(height: 92)
-    .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
-    .padding(.vertical, 12)
-    .rayBanHUDPanel(shape: .rounded(RayBanHUDLayoutTokens.cardRadius))
-  }
-
-  /// Three slots, top-to-bottom. Older entries padded with empty strings so
-  /// the card never collapses vertically.
-  private var displayed: [String] {
-    let capped = segments.suffix(3)
-    let padded = Array(repeating: "", count: max(0, 3 - capped.count)) + Array(capped)
-    return padded
-  }
-
-  private func opacity(forIndex index: Int) -> Double {
-    // index 0 is top (oldest), index 2 is bottom (newest).
-    switch index {
-    case 0: return 0.40
-    case 1: return 0.72
-    default: return 1.0
-    }
-  }
-}

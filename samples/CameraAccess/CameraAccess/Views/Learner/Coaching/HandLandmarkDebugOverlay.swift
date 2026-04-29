@@ -25,11 +25,13 @@ struct HandLandmarkDebugOverlay: View {
   let indexContactRatio: Float
   /// Orientation start-gate bounds. The overlay uses these to render a
   /// POSE OK / POSE OFF chip — matches the gate the recognizer itself
-  /// applies at IDLE → pinching transitions. Both palm-facing-Z AND
-  /// hand-size conditions must pass.
+  /// applies at IDLE → pinching transitions. All four conditions
+  /// (palmFacingZ range, handSize min, palmAngle range) must pass.
   let gatePalmFacingZMin: Float
   let gatePalmFacingZMax: Float
   let gateHandSizeMin: Float
+  let gatePalmAngleMin: Float
+  let gatePalmAngleMax: Float
   /// True while the recognizer is holding a deferred `.select` waiting
   /// for a possible second tap. Renders a TAP 1/2 chip so users can see
   /// the double-tap window is open.
@@ -110,12 +112,15 @@ struct HandLandmarkDebugOverlay: View {
 
           // Orientation gate evaluation — mirrors the check inside
           // PinchDragRecognizer. Used for the POSE OK / POSE OFF chip.
-          // Both palm-facing-Z AND hand-size conditions must pass.
+          // All four conditions must pass: palm-facing-Z range,
+          // hand-size min, and palm-angle range (top-to-bottom rotation).
           let poseOK: Bool = {
             guard let orient = frame.orientation else { return false }
             return orient.palmFacingZ >= gatePalmFacingZMin
               && orient.palmFacingZ <= gatePalmFacingZMax
               && orient.handSize >= gateHandSizeMin
+              && orient.palmAngleDegrees >= gatePalmAngleMin
+              && orient.palmAngleDegrees <= gatePalmAngleMax
           }()
 
           VStack(alignment: .leading, spacing: 3) {
@@ -170,6 +175,40 @@ struct HandLandmarkDebugOverlay: View {
             Text(String(format: "gate <%.2f", indexContactRatio))
               .font(.system(size: 8, design: .monospaced))
               .foregroundStyle(.white.opacity(0.5))
+
+            // Live orientation readout. Surfaces the same signals the
+            // recognizer's start-gate evaluates so the user can read
+            // values on-device. Each line is colored by its individual
+            // gate: green = passing, red = blocking IDLE → pinching.
+            if let orient = frame.orientation {
+              let anglePass = orient.palmAngleDegrees >= gatePalmAngleMin
+                && orient.palmAngleDegrees <= gatePalmAngleMax
+              let zPass = orient.palmFacingZ >= gatePalmFacingZMin
+                && orient.palmFacingZ <= gatePalmFacingZMax
+              let sizePass = orient.handSize >= gateHandSizeMin
+
+              VStack(alignment: .leading, spacing: 2) {
+                Text(String(format: "palmAngle  %+7.1f°  (gate %+.0f…%+.0f)",
+                            orient.palmAngleDegrees,
+                            gatePalmAngleMin,
+                            gatePalmAngleMax))
+                  .foregroundStyle(anglePass ? .green : .red.opacity(0.85))
+                Text(String(format: "palmFacingZ %+5.2f  (gate %.2f…%.2f)",
+                            orient.palmFacingZ,
+                            gatePalmFacingZMin,
+                            gatePalmFacingZMax))
+                  .foregroundStyle(zPass ? .green : .red.opacity(0.85))
+                Text(String(format: "handSize    %5.2f  (gate ≥ %.2f)",
+                            orient.handSize,
+                            gateHandSizeMin))
+                  .foregroundStyle(sizePass ? .green : .red.opacity(0.85))
+              }
+              .font(.system(size: 9, design: .monospaced))
+            } else {
+              Text("orientation —")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+            }
           }
           .padding(.horizontal, 10)
           .padding(.vertical, 6)

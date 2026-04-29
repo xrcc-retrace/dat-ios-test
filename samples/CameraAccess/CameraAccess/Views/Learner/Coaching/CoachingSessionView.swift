@@ -16,8 +16,10 @@ struct CoachingSessionView: View {
   @StateObject private var viewModel: CoachingSessionViewModel
 
   @State private var showDismissConfirmation = false
-  // Drawer state for the iPhone camera-first layout. Ignored on glasses
-  // transport (which keeps the existing vertical stack).
+  // Drawer state for the camera-first layout. Both transports use the
+  // same drawer — the camera feed (iPhone preview layer or glasses video
+  // stream) sits behind the HUD; pull up the drawer for the activity
+  // feed and controls.
   @State private var drawerExpanded = false
   // Portrait is the app's default; the real value is overwritten in
   // `.onAppear` from `resolveInterfaceOrientation()` so the session
@@ -59,76 +61,71 @@ struct CoachingSessionView: View {
 
   var body: some View {
     ZStack {
-      // Transport switch: iPhone gets the camera-first layout with a
-      // pull-up drawer; glasses keeps today's stacked layout because
-      // there's no iPhone camera feed to use as a base.
-      if transport == .iPhone {
-        IPhoneCoachingLayout(
-          viewModel: viewModel,
-          drawerExpanded: $drawerExpanded,
-          showDrawer: currentInterfaceOrientation.isPortrait,
-          hud: {
-            let pages = coachingPages
-            // Overlay sits *inside* the emulator's page closure (mirrors
-            // ExpertNarrationTipPage's ZStack pattern) so both the page
-            // and the overlay are children of the emulator and inherit
-            // its `HUDHoverCoordinator` environmentObject. Rendering the
-            // overlay as a sibling of the emulator left it without the
-            // env and crashed on first hover read.
-            RayBanHUDEmulator(
-              pageCount: pages.count,
-              pageIndex: $coachingPageIndex,
-              showBoundary: debugMode,
-              additiveBlend: hudAdditiveBlend,
-              enableDismissGesture: true
-            ) { idx in
-              ZStack {
-                coachingPageContent(for: pages[min(idx, pages.count - 1)])
-                  // Recede the page so the overlay reads as foreground.
-                  // The strong scale + opacity dip + blur is what
-                  // establishes foreground/background separation; the
-                  // overlay panel itself stays on the standard surface.
-                  .scaleEffect(showDismissConfirmation ? 0.92 : 1.0)
-                  .opacity(showDismissConfirmation ? 0.32 : 1.0)
-                  .blur(radius: showDismissConfirmation ? 6 : 0)
-                  .allowsHitTesting(!showDismissConfirmation)
-
-                if showDismissConfirmation {
-                  CoachingExitConfirmationOverlay(
-                    onCancel: {
-                      withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                        showDismissConfirmation = false
-                      }
-                    },
-                    onConfirm: {
-                      viewModel.endSession(progressStore: progressStore)
-                      dismiss()
-                    }
-                  )
-                  .transition(.scale(scale: 0.88).combined(with: .opacity))
-                  .padding(.horizontal, 32)
-                }
-              }
-              .animation(
-                .spring(response: 0.32, dampingFraction: 0.85),
-                value: showDismissConfirmation
-              )
+      // One layout for both transports — only the camera content layer
+      // differs. The HUD, drawer, gesture surface, and overlays are
+      // identical. The reference clip lives inside `CoachingStepPage`
+      // for both transports, so no separate floating PiP is needed.
+      IPhoneCoachingLayout(
+        viewModel: viewModel,
+        drawerExpanded: $drawerExpanded,
+        showDrawer: currentInterfaceOrientation.isPortrait,
+        cameraContent: {
+          switch transport {
+          case .iPhone:
+            if let previewLayer = viewModel.iPhonePreviewLayer {
+              IPhoneCameraPreview(previewLayer: previewLayer)
+            } else {
+              Color.black
             }
+          case .glasses:
+            GlassesCameraPreview(image: viewModel.glassesPreviewFrame)
           }
-        ) {
-          stackedBody
-        }
-      } else {
-        RetraceScreen {
-          stackedBody
-        }
-      }
+        },
+        hud: {
+          let pages = coachingPages
+          // Overlay sits *inside* the emulator's page closure (mirrors
+          // ExpertNarrationTipPage's ZStack pattern) so both the page
+          // and the overlay are children of the emulator and inherit
+          // its `HUDHoverCoordinator` environmentObject. Rendering the
+          // overlay as a sibling of the emulator left it without the
+          // env and crashed on first hover read.
+          RayBanHUDEmulator(
+            pageCount: pages.count,
+            pageIndex: $coachingPageIndex,
+            showBoundary: debugMode,
+            additiveBlend: hudAdditiveBlend,
+            enableDismissGesture: true
+          ) { idx in
+            ZStack {
+              coachingPageContent(for: pages[min(idx, pages.count - 1)])
+                // Canonical recede so the overlay reads as foreground.
+                // Numbers live in `RayBanHUDLayoutTokens.recede*`.
+                .rayBanHUDRecede(active: showDismissConfirmation)
 
-      // Floating PiP stays on the glasses transport only. On iPhone, the
-      // Ray-Ban HUD renders the reference clip inline inside its square
-      // detail panel, so no separate floating window is needed.
-      if viewModel.showPiP, transport == .glasses, let clipURL = currentStepClipURL {
-        PiPReferenceView(url: clipURL)
+              if showDismissConfirmation {
+                CoachingExitConfirmationOverlay(
+                  onCancel: {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                      showDismissConfirmation = false
+                    }
+                  },
+                  onConfirm: {
+                    viewModel.endSession(progressStore: progressStore)
+                    dismiss()
+                  }
+                )
+                .transition(.scale(scale: 0.88).combined(with: .opacity))
+                .padding(.horizontal, 32)
+              }
+            }
+            .animation(
+              .spring(response: 0.32, dampingFraction: 0.85),
+              value: showDismissConfirmation
+            )
+          }
+        }
+      ) {
+        stackedBody
       }
 
       // Hand-tracking dev overlay — landmark dots, pinch-drag cross, event
@@ -531,6 +528,11 @@ struct CoachingSessionView: View {
         viewModel: viewModel,
         stepCount: procedure.steps.count,
         clipURL: currentStepClipURL,
+        // Pass through the exit-overlay flag so the step card's
+        // auto-scrolling description suspends while the recede recipe
+        // is up — the user's scroll position is preserved across the
+        // confirm/cancel cycle. See DESIGN.md → Animation System.
+        isOverlayActive: showDismissConfirmation,
         onShowExitConfirmation: {
           withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
             showDismissConfirmation = true

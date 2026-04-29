@@ -468,7 +468,7 @@ struct ProcedureStepChapterRow<Footer: View>: View {
             .foregroundColor(.textSecondary)
 
           if let imageURL = inlineManualImageURL {
-            AsyncImage(url: imageURL) { phase in
+            CachedAsyncImage(url: imageURL) { phase in
               switch phase {
               case .success(let image):
                 image.resizable().aspectRatio(contentMode: .fit)

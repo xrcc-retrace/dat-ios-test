@@ -18,8 +18,6 @@ struct TroubleshootResolvedPage: RayBanHUDView {
   /// alert. Owned by `TroubleshootSessionView`.
   let onDismiss: () -> Void
 
-  @EnvironmentObject private var hoverCoordinator: HUDHoverCoordinator
-
   var body: some View {
     VStack(spacing: 8) {
       Spacer(minLength: 0)
@@ -31,6 +29,7 @@ struct TroubleshootResolvedPage: RayBanHUDView {
         bodyText: sourceText
       )
       startPill
+      rediagnosePill
       bottomActionRow
 
       Spacer(minLength: 0)
@@ -38,12 +37,17 @@ struct TroubleshootResolvedPage: RayBanHUDView {
     .padding(.horizontal, RayBanHUDLayoutTokens.contentPadding)
     .padding(.vertical, RayBanHUDLayoutTokens.contentPadding)
     // Focus-engine handler. `defaultFocus = .startProcedure` lands the
-    // cursor on the Start pill on appear.
+    // cursor on the Start pill on appear; rediagnose is the secondary
+    // escape path one swipe-down away. The voice label is "rediagnose"
+    // (not "try again") to avoid colliding with the existing "Try again"
+    // semantics in the handoffError state of the start pill.
     .hudInputHandler { coord in
       TroubleshootPageHandler(
         coordinator: coord,
         focusedControl: .startProcedure,
         voiceCommandLabel: "start",
+        secondaryControl: .rediagnose,
+        secondaryVoiceLabel: "rediagnose",
         onSetMuted: { muted in viewModel.setMuted(muted) },
         onDismiss: onDismiss
       )
@@ -85,18 +89,45 @@ struct TroubleshootResolvedPage: RayBanHUDView {
         .rayBanHUDPanel(shape: .capsule)
         .hoverSelectable(.startProcedure, shape: .capsule, onConfirm: { fireHandoff() })
     } else {
-      let isHovered = hoverCoordinator.hovered == .startProcedure
-      Text("Start")
-        .font(.inter(.medium, size: 14))
-        .foregroundStyle(isHovered ? Color.black.opacity(0.88) : Color.white.opacity(0.96))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(
-          Capsule().fill(isHovered ? Color.white.opacity(0.95) : Color.clear)
-        )
-        .rayBanHUDPanel(shape: .capsule)
-        .hoverSelectable(.startProcedure, shape: .capsule, onConfirm: { fireHandoff() })
+      // Forward-path action — leading icon + text signals "primary"
+      // (no permanent yellow outline; that was the hover-ring color
+      // and made the focus signal ambiguous). The unified yellow
+      // hover ring lands here on appear via default focus and is the
+      // only yellow visual on the page. See DESIGN.md → Pills.
+      HStack(spacing: 8) {
+        Image(systemName: "arrow.right")
+          .font(.system(size: 13, weight: .semibold))
+        Text("Start")
+          .font(.inter(.medium, size: 14))
+      }
+      .foregroundStyle(Color.white.opacity(0.96))
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 12)
+      .rayBanHUDPanel(shape: .capsule)
+      .hoverSelectable(.startProcedure, shape: .capsule, onConfirm: { fireHandoff() })
     }
+  }
+
+  private var rediagnosePill: some View {
+    // Secondary path — text-only at rest plus the canonical
+    // `arrow.clockwise` redo glyph so the affordance reads at a
+    // glance. No yellow accent at rest; only the unified hover ring
+    // on focus. Stays mounted in all three startPill states so the
+    // user always has an escape route — particularly important when
+    // handoffError leaves the primary pill stuck on "Try again".
+    HStack(spacing: 6) {
+      Image(systemName: "arrow.clockwise")
+        .font(.system(size: 11, weight: .semibold))
+      Text("Rediagnose")
+        .font(.inter(.medium, size: 12))
+    }
+    .foregroundStyle(Color.white.opacity(0.7))
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 10)
+    .rayBanHUDPanel(shape: .capsule)
+    .hoverSelectable(.rediagnose, shape: .capsule, onConfirm: {
+      viewModel.rediagnose()
+    })
   }
 
   // MARK: - Helpers

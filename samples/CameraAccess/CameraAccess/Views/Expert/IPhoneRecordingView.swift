@@ -216,10 +216,15 @@ private struct GlassesRecordingEngine: View {
         }
       )
     } chrome: {
+      // Glasses-only: gate the Start CTA on `isReadyToRecord` (set
+      // true after the silent warmup cycle in `prepare()`) AND
+      // `isPreviewLive`. The chrome param is named `isPreviewLive`
+      // for shape-parity with the iPhone engine, but we feed both
+      // signals into it so the disabled state covers warmup too.
       expertRecordingChrome(
         recordingManager: viewModel.recordingManager,
         hudViewModel: viewModel.hudViewModel,
-        isPreviewLive: viewModel.isPreviewLive,
+        isPreviewLive: viewModel.isPreviewLive && viewModel.isReadyToRecord,
         debugMode: debugMode,
         onClose: { dismiss() },
         onStart: { viewModel.startRecording(landscape: false) }

@@ -9,7 +9,7 @@
 The phone client for **Retrace**, an AI coaching system built for the **XRCC Berlin 2026** hackathon.
 A SwiftUI app that captures from Ray-Ban Meta glasses or the iPhone camera, then talks **directly** to Gemini Live for real-time, visually-verified voice coaching.
 
-[**▶ Watch the demo**](https://www.youtube.com/watch?v=gMlgZh2H5eE) &nbsp;·&nbsp; [**🏛 Org overview**](https://github.com/xrcc-retrace) &nbsp;·&nbsp; [**🛰 Backend repo**](https://github.com/xrcc-retrace/main-local-server-test)
+[**▶ Watch the demo**](https://www.youtube.com/watch?v=azK-CLpyRQg) &nbsp;·&nbsp; [**🎬 Full walkthrough video**](https://www.youtube.com/watch?v=CqUj5HtP0QE) &nbsp;·&nbsp; [**🏛 Org overview**](https://github.com/xrcc-retrace) &nbsp;·&nbsp; [**🛰 Backend repo**](https://github.com/xrcc-retrace/main-local-server-test)
 
 </div>
 
@@ -351,7 +351,7 @@ Requires `pip install pbxproj` once.
 
 ## Attribution
 
-Forked from Meta's [`meta-wearables-dat-ios`](https://github.com/facebook/meta-wearables-dat-ios) `CameraAccess` sample. The DAT SDK, the bundled `.claude/` skills, and the original sample-app scaffolding carry their Meta licensing — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+Forked from Meta's [`meta-wearables-dat-ios`](https://github.com/facebook/meta-wearables-dat-ios) `CameraAccess` sample. All inherited Meta scaffolding — `LICENSE`, `NOTICE`, `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`, `AGENTS.md`, `CHANGELOG.md`, `install-skills.sh`, and the `.cursor/rules/` set — lives under [`meta-dat-fork/`](meta-dat-fork/) so the repo root reads as Retrace, not as a Meta SDK fork. The actively-developed Xcode project still lives at `samples/CameraAccess/`.
 
 A second README at [`samples/CameraAccess/README.md`](samples/CameraAccess/README.md) covers the same iOS app at the Xcode-project scope (handy when navigating the project from inside Xcode).
 

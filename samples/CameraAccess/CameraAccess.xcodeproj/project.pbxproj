@@ -49,6 +49,7 @@
 		445E454AA5E3911B776A814A /* OnboardingExpertView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02744CCAB572D3E3345190F /* OnboardingExpertView.swift */; };
 		44A54FBC8816981749777AA4 /* ProcedureCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607149ADAC868392CEA214B7 /* ProcedureCardView.swift */; };
 		46804CD584501C88D173A7C1 /* UploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0946179E2E3FE4233AE018 /* UploadService.swift */; };
+		47714C6EB4B516B37D200490 /* GlassesCoachingFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08341B2B93A541E594BF44D /* GlassesCoachingFrameSource.swift */; };
 		4A6A4F24BDA3113C383E66D0 /* HandTrackingConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D641498040FBF8E042EB56 /* HandTrackingConfig.swift */; };
 		4C04452990C6F8F436662C43 /* ExpertStopOverlayHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20BE4BBB978E785298A72DB4 /* ExpertStopOverlayHandler.swift */; };
 		4CAE4A8384C430E4A6F8D27C /* OnboardingFlowStoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83DE4B6C905E7F884DD3F5E8 /* OnboardingFlowStoryView.swift */; };
@@ -347,6 +348,7 @@
 		BAF64431B3ECB5AA67C38CC5 /* ExpertTipPageHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExpertTipPageHandler.swift; path = CameraAccess/Views/Expert/HUD/Pages/ExpertTipPageHandler.swift; sourceTree = SOURCE_ROOT; };
 		BEE54FA7947BC4C9AC7B7884 /* AutoScrollingContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AutoScrollingContainer.swift; path = CameraAccess/Views/Learner/Coaching/AutoScrollingContainer.swift; sourceTree = SOURCE_ROOT; };
 		C06C456A852E3B95EE5276D9 /* CategoryChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CategoryChip.swift; path = CameraAccess/Views/Components/CategoryChip.swift; sourceTree = SOURCE_ROOT; };
+		C08341B2B93A541E594BF44D /* GlassesCoachingFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GlassesCoachingFrameSource.swift; path = CameraAccess/ViewModels/GlassesCoachingFrameSource.swift; sourceTree = SOURCE_ROOT; };
 		C5A74777935E25D644D50055 /* AccentedHeroCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AccentedHeroCard.swift; path = CameraAccess/Views/Components/AccentedHeroCard.swift; sourceTree = SOURCE_ROOT; };
 		C63E4DB6B45A9AAD0ECFEE8F /* DiagnosticPhaseBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticPhaseBar.swift; path = CameraAccess/Views/Troubleshoot/DiagnosticPhaseBar.swift; sourceTree = SOURCE_ROOT; };
 		C6774179B49818FB9612C61E /* StepEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StepEditView.swift; path = CameraAccess/Views/Expert/StepEditView.swift; sourceTree = SOURCE_ROOT; };
@@ -564,6 +566,7 @@
 				55A543B296CFA2F3491B13E3 /* HandTrackingStatusIndicator.swift */,
 				987E45559FBEF6734EBC7931 /* StepCompletionOverlay.swift */,
 				D6BD4EEEA270A1F20B895BA5 /* CompletionFeedback.swift */,
+				C08341B2B93A541E594BF44D /* GlassesCoachingFrameSource.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1050,6 +1053,7 @@
 				42F04F65B13181AD663F8F9B /* HandTrackingStatusIndicator.swift in Sources */,
 				5D814FE48DB22EA1AC1F10D6 /* StepCompletionOverlay.swift in Sources */,
 				06B04EF6950DF925B13B574F /* CompletionFeedback.swift in Sources */,
+				47714C6EB4B516B37D200490 /* GlassesCoachingFrameSource.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

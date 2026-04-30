@@ -113,6 +113,10 @@ class GeminiLiveSessionBase: ObservableObject {
   var videoFrameListenerToken: AnyListenerToken?
   var iPhoneCamera: IPhoneCameraCapture?
   var iPhoneVideoSource: IPhoneCoachingCameraSource?
+  /// Off-MainActor frame fan-out for the glasses transport. Owns the JPEG
+  /// throttle, preview decode, and hand-tracking handoff so `setupCameraStream`'s
+  /// publisher listener body stays a one-line `submit(_:)` call.
+  var glassesCoachingSource: GlassesCoachingFrameSource?
   var cameraLifecycleTask: Task<Void, Never>?
 
   // Hand tracking: owns the MediaPipe service. The pinch-drag recognizer
@@ -140,17 +144,14 @@ class GeminiLiveSessionBase: ObservableObject {
   @Published var iPhonePreviewLayer: AVCaptureVideoPreviewLayer?
   /// Latest decoded glasses video frame, published so the phone-side
   /// `GlassesCameraPreview` can render the live glasses feed behind the
-  /// HUD emulator. Throttled to ~10 Hz inside the frame listener so the
-  /// MainActor doesn't burn cycles on display work that competes with
-  /// the JPEG → Gemini send path. Nil for iPhone transport.
+  /// HUD emulator. Throttled to ~10 Hz inside `GlassesCoachingFrameSource`
+  /// (off-main) so the MainActor only pays for the `@Published` assignment
+  /// and not the UIImage decode. Nil for iPhone transport.
   @Published var glassesPreviewFrame: UIImage?
-  private var lastGlassesPreviewUpdateAt: Date = .distantPast
   /// Latest interface orientation pushed by the view. Cached here so that
   /// orientation updates arriving before the async camera start can be
   /// replayed onto `iPhoneCamera` the moment it becomes available.
   private var pendingPreviewOrientation: UIInterfaceOrientation?
-  var lastVideoSendAt: Date?
-  var isForwardingFrame = false
 
   // MARK: - Resumption (also used by coaching's goAway → reconnect path)
 
@@ -471,8 +472,6 @@ class GeminiLiveSessionBase: ObservableObject {
     sessionId = nil
     pendingToolCallIds.removeAll()
     pendingToolCallNames.removeAll()
-    lastVideoSendAt = nil
-    isForwardingFrame = false
     learnerTurnOpen = false
     assistantTurnOpen = false
     resumptionHandle = nil
@@ -505,8 +504,8 @@ class GeminiLiveSessionBase: ObservableObject {
       }
       self.handLandmarkerService?.stop()
       self.handLandmarkerService = nil
+      self.glassesCoachingSource = nil
       self.glassesPreviewFrame = nil
-      self.lastGlassesPreviewUpdateAt = .distantPast
 
       let deviceSelector = AutoDeviceSelector(wearables: self.wearables)
       let config = StreamSessionConfig(
@@ -557,27 +556,36 @@ class GeminiLiveSessionBase: ObservableObject {
         print("[GeminiLive] Hand tracking suppressed by user setting (glasses path)")
       }
 
-      self.videoFrameListenerToken = stream.videoFramePublisher.listen { [weak self] videoFrame in
-        // All per-frame work hops onto MainActor: `handLandmarkerService`
-        // is a `@MainActor`-isolated property (Swift's data-race checker
-        // refuses a direct read from this Sendable closure), and the
-        // forward/preview path was already MainActor-bound. `submit(...)`
-        // delegates immediately to MediaPipe's async detect, so the hop
-        // costs only a queue dispatch.
-        Task { @MainActor [weak self] in
-          guard let self = self else { return }
-          self.handLandmarkerService?.submit(sampleBuffer: videoFrame.sampleBuffer)
-          self.forwardFrameToGemini(videoFrame)
-          // Throttle the phone-side preview to ~10 Hz so the MainActor
-          // doesn't waste cycles re-encoding UIImages that won't render
-          // any sooner than the screen's refresh rate.
-          let now = Date()
-          if now.timeIntervalSince(self.lastGlassesPreviewUpdateAt) >= 0.1,
-             let image = videoFrame.makeUIImage() {
-            self.lastGlassesPreviewUpdateAt = now
-            self.glassesPreviewFrame = image
+      // Off-MainActor frame fan-out — mirrors the iPhone path
+      // (`IPhoneCoachingCameraSource`). `HandLandmarkerService.submit(_:)`
+      // is documented Sendable-safe; capture a local strong ref so the
+      // Sendable closure can call it without re-reading the
+      // `@MainActor`-isolated `self.handLandmarkerService` property.
+      let handForSource = self.handLandmarkerService
+      let source = GlassesCoachingFrameSource(
+        minInterval: self.videoMinInterval,
+        jpegQuality: self.videoJpegQuality,
+        submitHand: { [weak handForSource] sampleBuffer in
+          handForSource?.submit(sampleBuffer: sampleBuffer)
+        },
+        sendJpeg: { [weak self] jpeg in
+          let gate = await MainActor.run { [weak self] () -> Bool in
+            guard let self = self else { return false }
+            return self.isGeminiReady && self.pendingToolCallIds.isEmpty
+          }
+          guard gate else { return }
+          try? await self?.geminiService?.sendVideoFrame(jpeg)
+        },
+        sendPreview: { [weak self] image in
+          await MainActor.run { [weak self] in
+            self?.glassesPreviewFrame = image
           }
         }
+      )
+      self.glassesCoachingSource = source
+
+      self.videoFrameListenerToken = stream.videoFramePublisher.listen { [weak source] videoFrame in
+        source?.submit(videoFrame)
       }
 
       do {
@@ -716,8 +724,8 @@ class GeminiLiveSessionBase: ObservableObject {
       self.iPhoneCamera = nil
       self.iPhoneVideoSource = nil
       self.iPhonePreviewLayer = nil
+      self.glassesCoachingSource = nil
       self.glassesPreviewFrame = nil
-      self.lastGlassesPreviewUpdateAt = .distantPast
       self.handLandmarkerService?.stop()
       self.handLandmarkerService = nil
       // Clear the shared gesture service's hooks so a teardown doesn't
@@ -725,26 +733,6 @@ class GeminiLiveSessionBase: ObservableObject {
       // different mode).
       HandGestureService.shared.onBackGesture = nil
       HandGestureService.shared.onEvent = nil
-    }
-  }
-
-  // MARK: - Frame forwarding
-
-  private func forwardFrameToGemini(_ frame: VideoFrame) {
-    guard isGeminiReady, pendingToolCallIds.isEmpty, !isForwardingFrame else { return }
-    let now = Date()
-    if let last = lastVideoSendAt, now.timeIntervalSince(last) < videoMinInterval {
-      return
-    }
-    guard let image = frame.makeUIImage(),
-          let jpeg = image.jpegData(compressionQuality: videoJpegQuality)
-    else { return }
-
-    lastVideoSendAt = now
-    isForwardingFrame = true
-    Task { [weak self] in
-      defer { Task { @MainActor in self?.isForwardingFrame = false } }
-      try? await self?.geminiService?.sendVideoFrame(jpeg)
     }
   }
 

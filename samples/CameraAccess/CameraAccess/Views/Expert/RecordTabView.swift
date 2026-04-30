@@ -227,13 +227,9 @@ struct RecordTabView: View {
     pendingTransport = nil
     switch transport {
     case .glasses:
-      if wearablesVM.registrationState != .registered {
-        showRegistrationSheet = true
-      } else if !wearablesVM.hasActiveDevice {
-        showGlassesInactiveSheet = true
-      } else {
-        recordingTransport = .glasses
-      }
+      // HOTFIX: glasses + Gemini Live + HFP mic isn't ready — always land on
+      // the inactive sheet so the user can fall through to iPhone transport.
+      showGlassesInactiveSheet = true
     case .iPhone:
       recordingTransport = .iPhone
     }

@@ -146,14 +146,8 @@ struct TroubleshootIntroView: View {
   }
 
   private func launchGlasses() {
-    // Three-way gate, identical to LearnerProcedureDetailView.freshCTAs.
-    if wearablesVM.registrationState != .registered {
-      showRegistrationSheet = true
-    } else if !wearablesVM.hasActiveDevice {
-      showGlassesInactiveSheet = true
-    } else {
-      presentedTransport = .glasses
-    }
+    // HOTFIX: see RecordTabView.handlePickedTransport.
+    showGlassesInactiveSheet = true
   }
 }
 

@@ -331,13 +331,8 @@ struct LearnerProcedureDetailView: View {
     coachingStartingStep = startingStep
     switch transport {
     case .glasses:
-      if wearablesVM.registrationState != .registered {
-        showRegistrationSheet = true
-      } else if !wearablesVM.hasActiveDevice {
-        showGlassesInactiveSheet = true
-      } else {
-        presentedCoaching = .glasses
-      }
+      // HOTFIX: see RecordTabView.handlePickedTransport.
+      showGlassesInactiveSheet = true
     case .iPhone:
       presentedCoaching = .iPhone
     }
